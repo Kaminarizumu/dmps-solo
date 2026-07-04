@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>デュエプレ一人回し v6.5</title>
+<title>DM Re:Vault v6.6</title>
 <style>
 :root{
   --bg:#0c0f16; --panel:#151b28; --panel-2:#1d2536; --line:#2a3550;
@@ -346,7 +346,7 @@ body.vs .pboard{gap:3px}
 <body>
 
 <div id="topbar">
-  <h1>⚡ DMPS 一人回し</h1>
+  <h1>⚡ DM Re:Vault</h1>
   <span id="turnBadge">ターン 0</span>
   <button class="btn small ex" id="btnExpert">EX</button>
   <button class="btn small" id="btnDeckMenu">🃏 デッキ</button>
@@ -457,6 +457,7 @@ body.vs .pboard{gap:3px}
       </div>
       <div class="row"><label><input type="checkbox" id="setAutoTap"> コスト自動マナタップ（EX時：コスト登録済みカードを手札から出すと左から自動タップ）</label></div>
       <div class="row"><label><input type="checkbox" id="setNoUntapMana"> ターン開始時にマナを自動アンタップしない</label></div>
+      <div class="row"><label><input type="checkbox" id="setTapMultiMana"> 多色カード（文明2つ以上を登録）はタップしてマナに置く</label></div>
     </section>
     <section>
       <h3>データの書き出し / 読み込み（端末間の引っ越し用）</h3>
@@ -525,6 +526,18 @@ body.vs .pboard{gap:3px}
       </select>
     </div>
     <div class="hint">初手・シールドの決め方を選んでください。</div>
+    <section style="margin-top:8px;border-top:1px solid var(--line);padding-top:8px">
+      <h3 style="margin:0 0 6px;font-size:13px">🌐 友達と遊ぶ（オンライン・ベータ）</h3>
+      <div class="row">
+        <input type="text" id="olPass" placeholder="合言葉（友達と同じ言葉）" style="flex:1;background:#0d1119;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px">
+      </div>
+      <div class="row">
+        <button class="btn small primary" id="olHost">部屋を作る（ホスト）</button>
+        <button class="btn small" id="olJoin">部屋に入る（ゲスト）</button>
+        <button class="btn small ghost" id="olLeave" style="display:none">切断</button>
+      </div>
+      <div class="hint" id="olStatus">未接続。ホストが部屋を作る→ゲストが同じ合言葉で入る→ホストがデッキを選んで対戦開始すると、盤面が自動同期されます。</div>
+    </section>
     <div class="row">
       <button class="btn primary" id="stRandom" style="flex:1 1 100%">ランダムで開始（初手5・盾5）</button>
       <button class="btn" id="stPick" style="flex:1 1 47%">初手だけ選ぶ</button>
@@ -891,7 +904,7 @@ document.addEventListener("click",e=>{
 /* ================= state ================= */
 let nextId=1;
 function makeCard(name){return {id:nextId++, name, tapped:false, faceup:true, sideways:false, face:0, rot:0, mark:false, buff:null, under:[], seals:[], gear:[]};}
-function emptyZones(){return {deck:[],hand:[],mana:[],battle:[],grave:[],shield:[],gr:[],hyper:[],resolve:[],reveal:[],look:[]};}
+function emptyZones(){return {deck:[],hand:[],mana:[],battle:[],grave:[],shield:[],gr:[],hyper:[],resolve:[],reveal:[],look:[],exile:[]};}
 const S={
   vs:false, flip:false, hideOpp:true, who:0, turn:0,
   expert:false, sound:true,
@@ -902,7 +915,7 @@ const S={
   ],
   multi:false, sel:null, msel:[],
   extra:[0,0],
-  gameMode:"dmps", autoTap:false, noUntapMana:false,
+  gameMode:"dmps", autoTap:false, noUntapMana:false, tapMultiMana:true,
 };
 const imgURL=new Map();
 const dispName=new Map();
@@ -920,6 +933,7 @@ function getReg(c){return FXDB.get(faceKeyOf(c))||FXDB.get(normName(c.name))||nu
 const HIST=[];
 const REDO=[];
 const LIMWARN=[{},{}];
+const ONLINE={peer:null,conn:null,role:null,applying:false,timer:null};
 function serializeState(){return JSON.stringify({t:S.turn,w:S.who,z:S.players.map(p=>p.zones)});}
 function snap(){
   const s=serializeState();
@@ -1212,7 +1226,7 @@ async function recollectAll(){
   snap();
   for(const P of S.players){
     const Z=P.zones;
-    for(const z of ["hand","mana","battle","grave","shield","resolve","reveal","look"]){
+    for(const z of ["hand","mana","battle","grave","shield","resolve","reveal","look","exile"]){
       for(const c of Z[z]){
         const stack=[c,...(c.under||[]),...(c.seals||[]),...(c.gear||[])];
         for(const cc of stack){
@@ -2475,20 +2489,19 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
     emitEvent(pTo,"spell");
   }
   else if((toZone==="shield"||toZone==="shieldUp")&&(()=>{const rg=getReg(c);return rg&&rg.ctype==="gcastle";})()){
-    if(Z.deck.length){
-      const ns=Z.deck.shift();
-      ns.faceup=false;ns.mark=S.turn>0;ns.under=ns.under||[];
-      c.faceup=true;c.mark=S.turn>0;
-      ns.under.push(c);
-      Z.shield.push(ns);
-      toast(`🏰 G城：新しい盾を追加し、その上に《${faceNameOf(c)}》を要塞化`);
-      sfx("ok");
-    }else{
-      c.faceup=true;Z.shield.push(c);
-      toast("山札がないため、G城をそのまま盾に置きました");
-    }
+    c.faceup=true;c.mark=S.turn>0;
+    Z.shield.push(c);
+    toast(`🏰 G城：《${faceNameOf(c)}》を表向きのシールドとして追加（画像表示）`);
+    sfx("ok");
   }
   else placeCard(Z,toZone,c);
+  if(toZone==="mana"&&S.tapMultiMana){
+    const rgm=getReg(c);
+    if(rgm&&rgm.civs&&rgm.civs.length>=2){
+      c.tapped=true;
+      toast(`多色：${faceNameOf(c)} はタップしてマナゾーンへ`);
+    }
+  }
   if(toZone!=="battle"){
     if(c.gear&&c.gear.length){
       const gs=c.gear.splice(0);
@@ -2571,11 +2584,11 @@ function buildBoards(){
           <span class="spacer"></span>${selBtn("battle")}
         </div>
         <div class="brow">
-          <div class="cards" id="zBattle-${pi}"></div>
           <div class="resolvebox" data-zone="resolve">
             <span class="rlabel">解決中</span>
             <div class="cards" id="zResolve-${pi}"></div>
           </div>
+          <div class="cards" id="zBattle-${pi}"></div>
         </div>
       </div>`,
       mana:`
@@ -2791,6 +2804,16 @@ function renderPlayer(pi){
     hwrap.appendChild(hl);
     row.appendChild(hwrap);
   }
+  if(Z.exile.length){
+    const xwrap=document.createElement("div");xwrap.className="pilewrap";
+    const xtop=Z.exile[Z.exile.length-1];
+    xwrap.appendChild(pileEl({n:Z.exile.length,label:"ゲーム外",dz:"exile",
+      img:xtop&&imgURL.get(faceKeyOf(xtop))||null,
+      onTap:()=>openExileViewer(pi)}));
+    const xl=document.createElement("button");xl.className="pmenu";xl.textContent="タップ=一覧";
+    xwrap.appendChild(xl);
+    row.appendChild(xwrap);
+  }
   const gwrap=document.createElement("div");gwrap.className="pilewrap";
   const top=Z.grave[Z.grave.length-1];
   gwrap.appendChild(pileEl({n:Z.grave.length,label:"墓地",cls:"gravepile",dz:"grave",
@@ -2882,6 +2905,7 @@ function renderAll(){
     mb.classList.add("show");
     $("multiCount").textContent=`${S.msel.length}枚 選択中`;
   }else mb.classList.remove("show");
+  if(ONLINE.conn)olBroadcast();
   fitBoard();
 }
 let fitRaf=null;
@@ -2906,6 +2930,119 @@ function fitBoard(){
   });
 }
 window.addEventListener("resize",fitBoard);
+
+/* ================= オンライン対戦（PeerJS・ベータ） ================= */
+function olStatus(t){const el=$("olStatus");if(el)el.textContent=t;}
+async function loadPeerJS(){
+  if(window.Peer)return true;
+  olStatus("接続ライブラリを読み込み中…");
+  try{
+    await new Promise((res,rej)=>{
+      const sc=document.createElement("script");
+      sc.src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js";
+      sc.onload=res;sc.onerror=rej;
+      document.head.appendChild(sc);
+    });
+  }catch(e){}
+  return !!window.Peer;
+}
+function roomIdFromPass(pass){
+  let h=5381;
+  const p2=pass.trim();
+  for(let i=0;i<p2.length;i++)h=((h*33)^p2.charCodeAt(i))>>>0;
+  return "dmrv-"+h.toString(36);
+}
+function serializeFull(){
+  return {t:"state",turn:S.turn,who:S.who,vs:S.vs,z:S.players.map(pl=>pl.zones)};
+}
+function applyRemote(msg){
+  ONLINE.applying=true;
+  try{
+    S.turn=msg.turn;S.who=msg.who;S.vs=!!msg.vs;
+    msg.z.forEach((z,i)=>{
+      for(const k of Object.keys(emptyZones()))if(!z[k])z[k]=[];
+      for(const k of Object.keys(z))z[k].forEach(normalizeCard);
+      S.players[i].zones=z;
+    });
+    S.sel=null;S.msel=[];
+    renderAll();
+  }finally{ONLINE.applying=false;}
+}
+function olBroadcast(){
+  if(!ONLINE.conn||!ONLINE.conn.open||ONLINE.applying)return;
+  clearTimeout(ONLINE.timer);
+  ONLINE.timer=setTimeout(()=>{
+    try{ONLINE.conn.send(serializeFull());}catch(e){}
+  },120);
+}
+function setupConn(conn){
+  ONLINE.conn=conn;
+  conn.on("data",msg=>{
+    if(msg&&msg.t==="state")applyRemote(msg);
+  });
+  conn.on("open",()=>{
+    $("olLeave").style.display="";
+    if(ONLINE.role==="guest"){
+      S.flip=true;
+      olStatus("接続完了！ あなたはゲスト（P2側）。盤面はホストから自動同期されます。下部の「操作」をP2にしてください。");
+    }else{
+      olStatus("接続完了！ デッキを選んで対戦開始すると相手にも盤面が同期されます。");
+      olBroadcast();
+    }
+    toast("🌐 オンライン接続しました");
+    sfx("ok");
+    renderAll();
+  });
+  conn.on("close",()=>{
+    olStatus("相手が切断しました");
+    toast("🌐 相手が切断しました");
+    ONLINE.conn=null;
+  });
+  conn.on("error",e=>olStatus("接続エラー："+e));
+}
+async function olHostStart(){
+  const pass=$("olPass").value.trim();
+  if(!pass){toast("合言葉を入力してください");return;}
+  if(!(await loadPeerJS())){olStatus("ライブラリの読込に失敗しました（通信環境を確認）");return;}
+  olLeaveRoom();
+  ONLINE.role="host";
+  olStatus(`部屋を作成中…（合言葉：${pass}）`);
+  const peer=new Peer(roomIdFromPass(pass));
+  ONLINE.peer=peer;
+  peer.on("open",()=>olStatus(`部屋を作りました（合言葉：${pass}）。相手が「部屋に入る」のを待っています…`));
+  peer.on("connection",conn=>setupConn(conn));
+  peer.on("error",e=>{
+    if(String(e.type)==="unavailable-id")olStatus("その合言葉の部屋はすでに存在します。別の合言葉にするか、「部屋に入る」で参加してください。");
+    else olStatus("エラー："+(e.type||e));
+  });
+}
+async function olJoinRoom(){
+  const pass=$("olPass").value.trim();
+  if(!pass){toast("合言葉を入力してください");return;}
+  if(!(await loadPeerJS())){olStatus("ライブラリの読込に失敗しました（通信環境を確認）");return;}
+  olLeaveRoom();
+  ONLINE.role="guest";
+  olStatus("部屋を探しています…");
+  const peer=new Peer();
+  ONLINE.peer=peer;
+  peer.on("open",()=>{
+    const conn=peer.connect(roomIdFromPass(pass),{reliable:true});
+    setupConn(conn);
+  });
+  peer.on("error",e=>{
+    if(String(e.type)==="peer-unavailable")olStatus("部屋が見つかりません。ホストが先に「部屋を作る」を押しているか確認してください。");
+    else olStatus("エラー："+(e.type||e));
+  });
+}
+function olLeaveRoom(){
+  try{if(ONLINE.conn)ONLINE.conn.close();}catch(e){}
+  try{if(ONLINE.peer)ONLINE.peer.destroy();}catch(e){}
+  ONLINE.conn=null;ONLINE.peer=null;
+  const b=$("olLeave");if(b)b.style.display="none";
+}
+$("olHost").addEventListener("click",olHostStart);
+$("olJoin").addEventListener("click",olJoinRoom);
+$("olLeave").addEventListener("click",()=>{olLeaveRoom();olStatus("切断しました");});
 
 /* ================= drag & tap ================= */
 function attachPointer(el,ctx){
@@ -2998,7 +3135,7 @@ function dropTargetAt(x,y){
       if(zone==="sys")continue;
       const pb=z.closest(".pboard");
       const p=pb?+pb.dataset.p:0;
-      const valid=["hand","mana","battle","grave","shield","shieldUp","resolve","reveal","deckTop","grBottom","hyper"];
+      const valid=["hand","mana","battle","grave","shield","shieldUp","resolve","reveal","deckTop","grBottom","hyper","exile"];
       if(valid.includes(zone))return {el:z,zone,p};
     }
   }
@@ -3009,7 +3146,7 @@ function dropTargetAt(x,y){
 const MOVE_TARGETS=[
   ["hand","手札へ"],["mana","マナへ"],["battle","バトルへ"],["grave","墓地へ"],
   ["shield","シールドへ（裏）"],["shieldUp","シールドへ（表向き）"],["resolve","解決中へ"],
-  ["deckTop","山札の上へ"],["deckBottom","山札の下へ"],
+  ["deckTop","山札の上へ"],["deckBottom","山札の下へ"],["exile","ゲーム外へ"],
 ];
 let EVO=null;
 function cancelEvo(msg){
@@ -3900,6 +4037,25 @@ function vCardEl(name,opts={}){
 function closeViewer(){$("viewerOlay").classList.remove("open");}
 const defaultVCancel=closeViewer;
 $("vCancel").onclick=defaultVCancel;
+function openExileViewer(pi){
+  const Z=zonesOf(pi);
+  $("vTitle").textContent=`ゲーム外ゾーン（${Z.exile.length}枚）　[${S.players[pi].label}]`;
+  $("vHint").textContent="タップ→操作 ／ ドラッグで他のゾーンへ戻せます";
+  $("vSearch").style.display="none";
+  $("vOk").style.display="none";$("vStatus").textContent="";
+  const g=$("vGrid");g.innerHTML="";
+  if(!Z.exile.length)g.innerHTML="<div class='hint' style='grid-column:1/-1'>ゲーム外ゾーンは空です</div>";
+  Z.exile.forEach(c=>{
+    const el=vCardEl(dispName.get(faceKeyOf(c))||c.name);
+    attachPointer(el,{p:pi,zone:"exile",id:c.id,viewer:true,tap:()=>{
+      closeViewer();
+      S.sel={p:pi,zone:"exile",id:c.id};renderAll();
+      openCardSheet({p:pi,zone:"exile",id:c.id});
+    }});
+    g.appendChild(el);
+  });
+  $("viewerOlay").classList.add("open");
+}
 function openHyperViewer(pi){
   const Z=zonesOf(pi);
   $("vTitle").textContent=`超次元ゾーン（${Z.hyper.length}枚）　[${S.players[pi].label}]`;
@@ -4458,8 +4614,14 @@ function openSettings(){
   $("setMode").value=S.gameMode||"dmps";
   $("setAutoTap").checked=!!S.autoTap;
   $("setNoUntapMana").checked=!!S.noUntapMana;
+  $("setTapMultiMana").checked=!!S.tapMultiMana;
   $("settingsOlay").classList.add("open");
 }
+$("setTapMultiMana").addEventListener("change",async ()=>{
+  S.tapMultiMana=$("setTapMultiMana").checked;
+  if(db)await idbPut("misc","tapMultiMana",S.tapMultiMana);
+  toast(S.tapMultiMana?"多色タップイン：ON":"多色タップイン：OFF");
+});
 $("setNoUntapMana").addEventListener("change",async ()=>{
   S.noUntapMana=$("setNoUntapMana").checked;
   if(db)await idbPut("misc","noUntapMana",S.noUntapMana);
@@ -4745,6 +4907,8 @@ $("bApply").addEventListener("click",()=>{
   if(at!==null&&at!==undefined)S.autoTap=!!at;
   const nu=db?await idbGet("misc","noUntapMana"):null;
   if(nu!==null&&nu!==undefined)S.noUntapMana=!!nu;
+  const tm=db?await idbGet("misc","tapMultiMana"):null;
+  if(tm!==null&&tm!==undefined)S.tapMultiMana=!!tm;
   for(const pi of [0,1]){
     const sk=db?await idbGet("misc",`sleeve${pi}`):null;
     if(sk&&imgURL.has(sk))S.sleeve[pi]=sk;
