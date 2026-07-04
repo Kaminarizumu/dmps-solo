@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>DM Re:Vault v7.3</title>
+<title>DM Re:Vault v7.5</title>
 <style>
 :root{
   --bg:#0c0f16; --panel:#151b28; --panel-2:#1d2536; --line:#2a3550;
@@ -147,8 +147,11 @@ body.vs .pboard{gap:3px}
 .card.msel{box-shadow:0 0 0 2px var(--tap),0 0 12px 2px rgba(63,182,201,.55);z-index:2}
 .resolvebox .card{box-shadow:0 0 0 2px var(--resolve),0 0 14px 3px rgba(180,107,255,.5);animation:pulse 1.2s ease-in-out infinite alternate}
 @keyframes pulse{from{box-shadow:0 0 0 2px var(--resolve),0 0 8px 2px rgba(180,107,255,.35)}to{box-shadow:0 0 0 2px var(--resolve),0 0 18px 5px rgba(180,107,255,.6)}}
-@keyframes arrive{from{opacity:0;scale:.55;translate:0 12px}to{opacity:1;scale:1;translate:0 0}}
-.card.arrive{animation:arrive .2s ease-out}
+@keyframes arrive{from{opacity:0;scale:.5;translate:16px 18px;rotate:7deg}to{opacity:1;scale:1;translate:0 0;rotate:0deg}}
+.card.arrive{animation:arrive .3s cubic-bezier(.2,.8,.3,1.18) backwards}
+@keyframes pileShake{0%,100%{translate:0 0;rotate:0deg}18%{translate:-2px 2px;rotate:-4deg}36%{translate:3px -1px;rotate:4deg}54%{translate:-3px 0;rotate:-3deg}72%{translate:2px 1px;rotate:3deg}90%{translate:-1px -1px;rotate:-1deg}}
+.pile.shuffling{animation:pileShake .55s ease}
+.card:active{box-shadow:0 0 0 2px var(--accent),0 8px 22px rgba(0,0,0,.55)}
 .card .stacktag{
   position:absolute;left:0;bottom:0;z-index:1;
   background:var(--accent);color:#1a1405;
@@ -679,6 +682,29 @@ body.vs .pboard{gap:3px}
         <label><input type="checkbox" id="fxAtkUn"> タップしていないクリーチャーも攻撃できる</label>
         <label><input type="checkbox" id="fxMachF"> マッハファイター（出たターンでも相手獣を攻撃可・アンタップ獣も対象）</label>
       </div>
+      <div class="row" style="gap:12px;flex-wrap:wrap">
+        <label><input type="checkbox" id="fxNoBlock"> ブロックされない</label>
+        <label><input type="checkbox" id="fxNoAtked"> 攻撃されない</label>
+        <label><input type="checkbox" id="fxNoChoose"> 選ばれない（アンタッチャブル）</label>
+        <label><input type="checkbox" id="fxGS"> G・ストライク</label>
+        <label><input type="checkbox" id="fxCharger"> チャージャー（呪文使用後マナへ）</label>
+      </div>
+      <div class="row" style="gap:12px;flex-wrap:wrap">
+        <label><input type="checkbox" id="fxInvade"> 侵略（攻撃時、手札から重ねて進化）</label>
+        <label><input type="checkbox" id="fxKakumei"> 革命チェンジ（攻撃時、手札と入れ替え）</label>
+        <span style="font-size:12px;font-weight:700">ニンジャ・ストライク</span>
+        <select id="fxNinja" style="width:auto;flex:0 0 90px">
+          <option value="0">なし</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option>
+        </select>
+      </div>
+      <div class="row" style="gap:12px;flex-wrap:wrap">
+        <span style="font-size:12px;font-weight:700">破壊置換：</span>
+        <label><input type="checkbox" id="fxEscape"> エスケープ</label>
+        <label><input type="checkbox" id="fxExLife"> EXライフ</label>
+        <label><input type="checkbox" id="fxStarEvo"> スター進化</label>
+        <label><input type="checkbox" id="fxShieldGo"> シールド・ゴー</label>
+        <label><input type="checkbox" id="fxSeiba"> セイバー（他の身代わりになれる）</label>
+      </div>
       <div class="row">
         <span style="font-size:12px;font-weight:700">パワーアタッカー ＋</span>
         <input type="number" id="fxPA" style="width:100px" placeholder="0" min="0">
@@ -943,7 +969,7 @@ let db=null;
 const memImages=new Map(), memDecks=new Map();
 let PENDING=null;
 const arrived=new Set();
-function markArrive(c){arrived.add(c.id);setTimeout(()=>arrived.delete(c.id),300);}
+function markArrive(c){c.dealIdx=null;arrived.add(c.id);setTimeout(()=>arrived.delete(c.id),1000);}
 function getReg(c){return FXDB.get(faceKeyOf(c))||FXDB.get(normName(c.name))||null;}
 
 /* ================= undo ================= */
@@ -1122,7 +1148,19 @@ async function refreshDeckSelects(){
 
 /* ================= game ================= */
 function buildPool(list){const a=[];list.forEach(c=>{for(let i=0;i<c.count;i++)a.push(makeCard(c.name));});return a;}
-function shuffleDeck(Z){Z.deck.forEach(c=>c.sideways=false);shuffle(Z.deck);}
+function shuffleDeck(Z){
+  Z.deck.forEach(c=>c.sideways=false);
+  shuffle(Z.deck);
+  try{
+    document.querySelectorAll(".pile").forEach(pl=>{
+      pl.classList.remove("shuffling");
+      void pl.offsetWidth;
+      pl.classList.add("shuffling");
+      setTimeout(()=>pl.classList.remove("shuffling"),580);
+    });
+    sfx("flip");
+  }catch(e){}
+}
 function takeByNames(pool,names){
   const out=[];
   for(const nm of names){
@@ -1146,7 +1184,9 @@ function dealPlayer(pi,pick){
   shuffle(pool);
   P.zones.deck=pool;
   while(P.zones.shield.length<5&&P.zones.deck.length){const c=P.zones.deck.shift();c.faceup=false;P.zones.shield.push(c);}
+  P.zones.shield.forEach((c,i)=>{markArrive(c);c.dealIdx=i;});
   while(P.zones.hand.length<5&&P.zones.deck.length)P.zones.hand.push(P.zones.deck.shift());
+  P.zones.hand.forEach((c,i)=>{c.faceup=true;markArrive(c);c.dealIdx=i;});
   for(const e of (P.exList||[])){
     for(let i=0;i<e.count;i++){
       const c=makeCard(e.name);
@@ -1629,6 +1669,16 @@ function destroyCreature(pi,c){
   const Z=zonesOf(pi);
   const i=Z.battle.findIndex(x=>x.id===c.id);
   if(i<0)return;
+  if(S.expert){
+    const rp=getReg(c);
+    if(rp&&rp.watchFx&&rp.watchFx.length){
+      const fx=rp.watchFx.filter(w=>w.ev==="pig");
+      if(fx.length){
+        toast(`⚡破壊された時の効果：${faceNameOf(c)}`);
+        runFxList(pi,fx);
+      }
+    }
+  }
   Z.battle.splice(i,1);
   if(c.gear&&c.gear.length){
     const gs=c.gear.splice(0);
@@ -1703,7 +1753,7 @@ async function runFxList(pi,list){
       if(!S.vs){toast("（ソロのためスキップ）");continue;}
       for(let i=0;i<n&&OZ.battle.length;i++){
         const j=randInt(OZ.battle.length);
-        destroyCreature(op,OZ.battle[j]);
+        await destroyWithReplace(op,OZ.battle[j]);
       }
     }else if(f.t==="grsummon"){
       for(let i=0;i<n;i++){
@@ -1782,22 +1832,93 @@ async function effPower(c,attacking){
   if(c.buff)p+=(c.buff.pa||0)+(c.buff.pm||0);
   return p;
 }
+async function destroyWithReplace(pi,c){
+  const r=getReg(c);
+  const Z=zonesOf(pi);
+  if(S.expert&&r){
+    const opts=[];
+    if(r.escape&&Z.shield.length)opts.push(["escape","🛡 エスケープ（盾を1枚手札に加えて、場に残る）"]);
+    if(r.exlife&&Z.shield.length)opts.push(["exlife","💠 EXライフ（盾を1枚墓地に置いて、場に残る）"]);
+    if(r.starEvo&&c.under&&c.under.length)opts.push(["star","⭐ スター進化（自身だけ離れ、下のカードは場に残る）"]);
+    if(r.shieldGo)opts.push(["sgo","🏰 シールド・ゴー（墓地の代わりに表向きの盾になる）"]);
+    if(Z.battle.some(x=>x.id!==c.id&&(()=>{const r2=getReg(x);return r2&&r2.seiba;})()))
+      opts.push(["seiba","⚔ セイバー（他のクリーチャーを身代わりに破壊）"]);
+    if(opts.length){
+      const j=await askChoice(`💀 ${faceNameOf(c)} が破壊されます。置換しますか？`,[...opts.map(o=>o[1]),"そのまま破壊"]);
+      if(j!==null&&j<opts.length){
+        const kind=opts[j][0];
+        if(kind==="escape"||kind==="exlife"){
+          const si=Z.shield.length===1?0:await askChoice(kind==="escape"?"手札に加える盾を選択":"墓地に置く盾を選択",
+            Z.shield.map((x,k)=>`盾${k+1}${x.faceup?`（${x.name}）`:""}${x.under&&x.under.length?` +${x.under.length}`:""}`));
+          if(si!==null){
+            snap();
+            const sh=Z.shield.splice(si,1)[0];
+            const stack=[sh,...(sh.under?sh.under.splice(0):[])];
+            if(kind==="escape"){
+              stack.forEach(x=>{x.faceup=true;Z.hand.push(x);markArrive(x);});
+              toast(`🛡 エスケープ！ ${faceNameOf(c)} は場に残る`);
+              sfx("flip");
+            }else{
+              stack.forEach(x=>{x.faceup=true;Z.grave.push(x);});
+              toast(`💠 EXライフ！ ${faceNameOf(c)} は場に残る`);
+              sfx("grave");
+            }
+            renderAll();return;
+          }
+        }else if(kind==="star"){
+          snap();
+          const arr=Z.battle;
+          const i=arr.findIndex(x=>x.id===c.id);
+          const kids=c.under.splice(0);
+          kids.forEach(k=>{k.tapped=false;});
+          arr.splice(i,1,...kids);
+          c.faceup=true;
+          Z.grave.push(c);
+          toast(`⭐ スター進化：${faceNameOf(c)} だけが離れ、下のカードは場に残った`);
+          sfx("grave");renderAll();return;
+        }else if(kind==="sgo"){
+          snap();
+          const arr=Z.battle;
+          const i=arr.findIndex(x=>x.id===c.id);
+          if(i>=0)arr.splice(i,1);
+          if(c.gear&&c.gear.length){const gs=c.gear.splice(0);gs.forEach(g=>{g.face=0;g.rot=0;g.tapped=false;Z.hyper.push(g);});}
+          if(c.seals&&c.seals.length){const sl=c.seals.splice(0);sl.forEach(x=>{x.faceup=true;Z.grave.push(x);});}
+          if(c.under&&c.under.length){const kids=c.under.splice(0);kids.forEach(u=>{u.tapped=false;u.faceup=true;Z.grave.push(u);});}
+          c.faceup=true;c.tapped=false;c.rot=0;c.mark=S.turn>0;
+          Z.shield.push(c);
+          toast(`🏰 シールド・ゴー！ ${faceNameOf(c)} は盾になった`);
+          sfx("ok");renderAll();return;
+        }else if(kind==="seiba"){
+          const sabers=Z.battle.filter(x=>x.id!==c.id&&(()=>{const r2=getReg(x);return r2&&r2.seiba;})());
+          const k=sabers.length===1?0:await askChoice("身代わりにするセイバーを選択",sabers.map(x=>faceNameOf(x)));
+          if(k!==null){
+            snap();
+            destroyCreature(pi,sabers[k]);
+            toast(`⚔ セイバー！ ${faceNameOf(sabers[k])} が身代わりになった`);
+            renderAll();return;
+          }
+        }
+      }
+    }
+  }
+  destroyCreature(pi,c);
+}
 function hasSlayer(c){const r=getReg(c);return !!((r&&r.slayer)||(c.buff&&c.buff.slayer));}
 async function doBattle(pa,a,pd,d){
   const Pa=await effPower(a,true), Pd=await effPower(d,false);
   sfx("atk");
   toast(`⚔ バトル：${faceNameOf(a)}(${Pa}) vs ${faceNameOf(d)}(${Pd})`);
   await new Promise(r=>setTimeout(r,350));
-  if(Pa>Pd)destroyCreature(pd,d);
-  else if(Pd>Pa)destroyCreature(pa,a);
-  else{destroyCreature(pa,a);destroyCreature(pd,d);}
+  if(Pa>Pd)await destroyWithReplace(pd,d);
+  else if(Pd>Pa)await destroyWithReplace(pa,a);
+  else{await destroyWithReplace(pa,a);await destroyWithReplace(pd,d);}
   if(hasSlayer(d)&&zonesOf(pa).battle.some(x=>x.id===a.id)){
     toast(`💀 スレイヤー！ ${faceNameOf(a)} を破壊`);
-    destroyCreature(pa,a);
+    await destroyWithReplace(pa,a);
   }
   if(hasSlayer(a)&&zonesOf(pd).battle.some(x=>x.id===d.id)){
     toast(`💀 スレイヤー！ ${faceNameOf(d)} を破壊`);
-    destroyCreature(pd,d);
+    await destroyWithReplace(pd,d);
   }
   renderAll();
 }
@@ -1857,6 +1978,13 @@ function processBroken(op,stack,label){
           const badge=document.createElement("div");
           badge.style.cssText="position:absolute;bottom:0;left:0;right:0;background:#f59e0b;color:#000;font-size:10px;font-weight:900;text-align:center;padding:1px 0;z-index:5;border-radius:0 0 4px 4px";
           badge.textContent="サバキZ";
+          el.querySelector(".thumb").style.position="relative";
+          el.querySelector(".thumb").appendChild(badge);
+        }else if(r2&&r2.gs){
+          el.style.outline="2px solid #22c55e";
+          const badge=document.createElement("div");
+          badge.style.cssText="position:absolute;bottom:0;left:0;right:0;background:#22c55e;color:#000;font-size:10px;font-weight:900;text-align:center;padding:1px 0;z-index:5;border-radius:0 0 4px 4px";
+          badge.textContent="G・ストライク";
           el.querySelector(".thumb").style.position="relative";
           el.querySelector(".thumb").appendChild(badge);
         }
@@ -2040,6 +2168,8 @@ async function startAttack(pi,id){
   const atkAll=!!(reg&&(reg.atkUn||reg.machf));
   const targets=[];
   OZ.battle.forEach(t=>{
+    const tr=getReg(t);
+    if(tr&&tr.noAtked)return;
     if(t.tapped||atkAll)targets.push({kind:"creature",cid:t.id,label:`⚔ ${faceNameOf(t)}${t.tapped?"（タップ中）":"（アンタップ）"}`});
   });
   if(OZ.shield.length)targets.push({kind:"shield",label:`🛡 シールドをブレイク（残り${OZ.shield.length}枚）`});
@@ -2065,7 +2195,7 @@ async function startAttack(pi,id){
 }
 async function execAttack(pi,id,tg){
   const Z=zonesOf(pi);
-  const c=Z.battle.find(x=>x.id===id);
+  let c=Z.battle.find(x=>x.id===id);
   if(!c){toast("攻撃クリーチャーが場を離れたため、攻撃は中止されました");renderAll();return;}
   const op=pi===0?1:0, OZ=zonesOf(op);
   if(S.expert){
@@ -2080,7 +2210,65 @@ async function execAttack(pi,id,tg){
       }
     }
   }
-  const blockers=OZ.battle.filter(b=>!b.tapped&&((getReg(b)&&getReg(b).blocker)||(b.buff&&b.buff.blocker)));
+  // 侵略・革命チェンジ
+  if(S.expert){
+    const hands=Z.hand.filter(h=>{const r=getReg(h);return r&&(r.invade||r.kakumei);});
+    if(hands.length){
+      const j=await askChoice(`⚔ 攻撃時：侵略／革命チェンジしますか？\n（条件の適否はプレイヤー判断）`,
+        [...hands.map(h=>{const r=getReg(h);return (r.invade?"⚡侵略：":"♻革命チェンジ：")+faceNameOf(h);}),"しない"]);
+      if(j!==null&&j<hands.length){
+        const hcard=hands[j];
+        const r=getReg(hcard);
+        snap();
+        const hi=Z.hand.findIndex(x=>x.id===hcard.id);
+        Z.hand.splice(hi,1);
+        const bi=Z.battle.findIndex(x=>x.id===c.id);
+        hcard.faceup=true;
+        hcard.tapped=c.tapped;
+        if(r.invade){
+          hcard.under=[c,...(c.under?c.under.splice(0):[]),...(hcard.under||[])];
+          Z.battle[bi]=hcard;
+          toast(`⚡侵略！ ${faceNameOf(hcard)}（攻撃継続）`);
+        }else{
+          Z.battle[bi]=hcard;
+          c.tapped=false;
+          Z.hand.push(c);
+          toast(`♻革命チェンジ！ ${faceNameOf(hcard)}（${faceNameOf(c)}は手札へ・攻撃継続）`);
+        }
+        markArrive(hcard);
+        emitEvent(pi,"summon");
+        enqueueFx(pi,hcard);
+        c=hcard;
+        id=hcard.id;
+        renderAll();
+      }
+    }
+  }
+  // ニンジャ・ストライク（防御側）
+  if(S.expert&&S.vs){
+    while(true){
+      const ns=OZ.hand.filter(h=>{const r=getReg(h);return r&&r.ninja&&OZ.mana.length>=r.ninja;});
+      if(!ns.length)break;
+      const j=await askChoice(`🥷 ${S.players[op].label}：ニンジャ・ストライク発動？（マナ${OZ.mana.length}枚）`,
+        [...ns.map(h=>{const r=getReg(h);return `NS${r.ninja}：${faceNameOf(h)}`;}),"発動しない"]);
+      if(j===null||j>=ns.length)break;
+      snap();
+      const h=ns[j];
+      const hi=OZ.hand.findIndex(x=>x.id===h.id);
+      OZ.hand.splice(hi,1);
+      h.faceup=true;h.tapped=false;
+      OZ.battle.push(h);
+      markArrive(h);
+      emitEvent(op,"summon");
+      enqueueFx(op,h);
+      sfx("ok");renderAll();
+      toast(`🥷 ニンジャ・ストライク！ ${faceNameOf(h)}`);
+    }
+  }
+  const aregNB=getReg(c);
+  const blockers=(aregNB&&aregNB.noBlock)?[]:OZ.battle.filter(b=>!b.tapped&&((getReg(b)&&getReg(b).blocker)||(b.buff&&b.buff.blocker)));
+  if(aregNB&&aregNB.noBlock&&OZ.battle.some(b=>!b.tapped&&((getReg(b)&&getReg(b).blocker)||(b.buff&&b.buff.blocker))))
+    toast(`${faceNameOf(c)} はブロックされない`);
   let defender=null;
   if(blockers.length){
     const bl=await askChoice(`${S.players[op].label}：ブロックしますか？`,
@@ -2166,6 +2354,8 @@ function fxRowEl(faceIdx,i){
 }
 const CIVS=[["fxCivL","light","光"],["fxCivW","water","水"],["fxCivD","dark","闇"],["fxCivF","fire","火"],["fxCivN","nature","自然"],["fxCivZ","zero","ゼロ"]];
 const TRIG_EVS=[
+  ["pig","このクリーチャーが破壊された時"],
+  ["tapAbility","タップ能力（攻撃の代わりにタップ）"],
   ["selfAtk","このクリーチャーが攻撃する時（対象問わず）"],
   ["selfAtkC","このクリーチャーがクリーチャーを攻撃する時"],
   ["selfAtkP","このクリーチャーがプレイヤー/盾を攻撃する時"],
@@ -2218,6 +2408,19 @@ function renderFxEditor(){
   $("fxSlayer").checked=!!FXEDIT.slayer;
   $("fxAtkUn").checked=!!FXEDIT.atkUn;
   $("fxMachF").checked=!!FXEDIT.machf;
+  $("fxNoBlock").checked=!!FXEDIT.noBlock;
+  $("fxNoAtked").checked=!!FXEDIT.noAtked;
+  $("fxNoChoose").checked=!!FXEDIT.noChoose;
+  $("fxGS").checked=!!FXEDIT.gs;
+  $("fxCharger").checked=!!FXEDIT.charger;
+  $("fxInvade").checked=!!FXEDIT.invade;
+  $("fxKakumei").checked=!!FXEDIT.kakumei;
+  $("fxNinja").value=String(FXEDIT.ninja||0);
+  $("fxEscape").checked=!!FXEDIT.escape;
+  $("fxExLife").checked=!!FXEDIT.exlife;
+  $("fxStarEvo").checked=!!FXEDIT.starEvo;
+  $("fxShieldGo").checked=!!FXEDIT.shieldGo;
+  $("fxSeiba").checked=!!FXEDIT.seiba;
   const tl=$("fxTrigList");tl.innerHTML="";
   FXEDIT.watchFx.forEach((_,i)=>tl.appendChild(fxTrigRowEl(i)));
   if(!FXEDIT.watchFx.length){
@@ -2275,6 +2478,19 @@ function openFxEditor(key){
     slayer:cur?!!cur.slayer:false,
     atkUn:cur?!!cur.atkUn:false,
     machf:cur?!!cur.machf:false,
+    noBlock:cur?!!cur.noBlock:false,
+    noAtked:cur?!!cur.noAtked:false,
+    noChoose:cur?!!cur.noChoose:false,
+    gs:cur?!!cur.gs:false,
+    charger:cur?!!cur.charger:false,
+    invade:cur?!!cur.invade:false,
+    kakumei:cur?!!cur.kakumei:false,
+    ninja:cur&&cur.ninja||0,
+    escape:cur?!!cur.escape:false,
+    exlife:cur?!!cur.exlife:false,
+    starEvo:cur?!!cur.starEvo:false,
+    shieldGo:cur?!!cur.shieldGo:false,
+    seiba:cur?!!cur.seiba:false,
     watchFx:cur&&cur.watchFx?cur.watchFx.map(x=>({...x})):[],
     d2:cur?!!cur.d2:false,
     seal:cur&&cur.seal||0,
@@ -2338,6 +2554,19 @@ $("fxSave").addEventListener("click",async ()=>{
     slayer:$("fxSlayer").checked,
     atkUn:$("fxAtkUn").checked,
     machf:$("fxMachF").checked,
+    noBlock:$("fxNoBlock").checked,
+    noAtked:$("fxNoAtked").checked,
+    noChoose:$("fxNoChoose").checked,
+    gs:$("fxGS").checked,
+    charger:$("fxCharger").checked,
+    invade:$("fxInvade").checked,
+    kakumei:$("fxKakumei").checked,
+    ninja:+$("fxNinja").value||0,
+    escape:$("fxEscape").checked,
+    exlife:$("fxExLife").checked,
+    starEvo:$("fxStarEvo").checked,
+    shieldGo:$("fxShieldGo").checked,
+    seiba:$("fxSeiba").checked,
     watchFx:FXEDIT.watchFx,
     d2:$("fxD2").checked,
     seal:Math.max(0,parseInt($("fxSeal").value,10)||0),
@@ -2465,6 +2694,19 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.dragonB)attrs.push("ドラゴンB");
     if(v.auraTapIn||v.auraNote)attrs.push("常在");
     if(v.machf)attrs.push("マッハファイター");
+    if(v.noBlock)attrs.push("ブロックされない");
+    if(v.noAtked)attrs.push("攻撃されない");
+    if(v.noChoose)attrs.push("選ばれない");
+    if(v.gs)attrs.push("Gストライク");
+    if(v.charger)attrs.push("チャージャー");
+    if(v.invade)attrs.push("侵略");
+    if(v.kakumei)attrs.push("革命チェンジ");
+    if(v.ninja)attrs.push(`NS${v.ninja}`);
+    if(v.escape)attrs.push("エスケープ");
+    if(v.exlife)attrs.push("EXライフ");
+    if(v.starEvo)attrs.push("スター進化");
+    if(v.shieldGo)attrs.push("シールド・ゴー");
+    if(v.seiba)attrs.push("セイバー");
     if(v.watchFx&&v.watchFx.length)attrs.push(`誘発処理${v.watchFx.length}`);
     if(v.modeN)attrs.push(`選択効果${v.modeN}回`);
     nm.textContent=(dispName.get(k)||k)+(v.twin?"（ツインパクト）":"")+(attrs.length?" ["+attrs.join("/")+"]":"");
@@ -2529,6 +2771,11 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
     }
     Z.resolve.push(c);
     emitEvent(pTo,"spell");
+  }
+  else if(fromZone==="resolve"&&toZone==="grave"&&(()=>{const rg=getReg(c);return rg&&rg.charger;})()){
+    placeCard(Z,"mana",c);
+    toast(`⚡チャージャー：${faceNameOf(c)} はマナゾーンへ`);
+    sfx("move");
   }
   else if((toZone==="shield"||toZone==="shieldUp")&&(()=>{const rg=getReg(c);return rg&&rg.ctype==="gcastle";})()){
     c.faceup=true;c.mark=S.turn>0;
@@ -2723,7 +2970,10 @@ function cardEl(pi,zone,c){
   const showFace=c.faceup&&!hidden;
   if(c.tapped)el.classList.add("tapped");
   if(!showFace)el.classList.add("facedown");
-  if(arrived.has(c.id))el.classList.add("arrive");
+  if(arrived.has(c.id)){
+    el.classList.add("arrive");
+    if(c.dealIdx!=null)el.style.animationDelay=(c.dealIdx*110)+"ms";
+  }
   if(S.sel&&S.sel.p===pi&&S.sel.zone===zone&&S.sel.id===c.id)el.classList.add("selected");
   if(S.msel.some(s=>s.p===pi&&s.zone===zone&&s.id===c.id))el.classList.add("msel");
   if(PENDING&&PENDING.list.some(s=>s.id===c.id))el.classList.add("msel");
@@ -2741,6 +2991,17 @@ function cardEl(pi,zone,c){
   if(c.seals&&c.seals.length){
     const sl=document.createElement("span");sl.className="sealtag";sl.textContent="封"+c.seals.length;
     el.appendChild(sl);
+  }
+  {
+    const regT0=getReg(c);
+    if(regT0&&regT0.noChoose&&zone==="battle"&&c.faceup){
+      const nc=document.createElement("span");
+      nc.className="auratag";
+      nc.style.background="#b45309";
+      nc.textContent="選×";
+      nc.title="選ばれない（アンタッチャブル）";
+      el.appendChild(nc);
+    }
   }
   {
     const regT=getReg(c);
@@ -3516,6 +3777,18 @@ function openCardSheet(ctx){
       c.seals=c.seals||[];c.seals.push(sc);
       sfx("flip");toast(`封印を付けた（封${c.seals.length}）`);rerender();
     }));
+    {
+      const rT=getReg(c);
+      if(rT&&rT.watchFx&&rT.watchFx.some(w=>w.ev==="tapAbility")&&!c.tapped){
+        box.appendChild(actBtn("🔃 タップ能力を使う（攻撃の代わりにタップ）",async ()=>{
+          snap();
+          c.tapped=true;
+          closeSel();renderAll();
+          toast(`🔃 タップ能力：${faceNameOf(c)}`);
+          await runFxList(ctx.p,rT.watchFx.filter(w=>w.ev==="tapAbility"));
+        },"primary",true));
+      }
+    }
     box.appendChild(actBtn("✨ 1ターン付与（パワー±/PA/スレイヤー等）",async ()=>{
       const pick=await askChoice(`《${faceNameOf(c)}》に付与\n（バフはターン終了で解除／❄フリーズ・JDは自動解除）`,
         ["パワー ＋（数値入力）","パワー −（数値入力）","パワーアタッカー ＋（数値入力）","スレイヤー","ブロッカー","メモ（自由入力）","❄ フリーズ（次のターン アンタップしない）","🌀 ジャストダイバー（次の自分のターン開始まで）"]);
