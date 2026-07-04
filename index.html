@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>デュエプレ一人回し v6.1</title>
+<title>デュエプレ一人回し v6.3</title>
 <style>
 :root{
   --bg:#0c0f16; --panel:#151b28; --panel-2:#1d2536; --line:#2a3550;
@@ -127,7 +127,8 @@ body.vs .pboard{gap:3px}
   transition:transform .14s ease, box-shadow .14s ease;
   touch-action:none;
 }
-.card img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;-webkit-user-drag:none}
+.card img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;-webkit-user-drag:none;user-select:none}
+.card{user-select:none;-webkit-user-select:none}
 .card .nameplate{
   position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   padding:4px;font-size:9px;font-weight:700;line-height:1.25;
@@ -423,6 +424,17 @@ body.vs .pboard{gap:3px}
       <div class="row"><button class="btn small" id="btnSound">🔊 効果音：ON</button></div>
     </section>
     <section>
+      <h3>対戦設定</h3>
+      <div class="row">
+        <span style="font-size:12px;font-weight:700">ルール</span>
+        <select id="setMode" style="width:auto;flex:1">
+          <option value="dmps">デュエプレ（手札11/盤面7/盾10超えで警告）</option>
+          <option value="tcg">TCG（上限警告なし）</option>
+        </select>
+      </div>
+      <div class="row"><label><input type="checkbox" id="setAutoTap"> コスト自動マナタップ（EX時：コスト登録済みカードを手札から出すと左から自動タップ）</label></div>
+    </section>
+    <section>
       <h3>データの書き出し / 読み込み（端末間の引っ越し用）</h3>
       <div class="row">
         <button class="btn small" id="btnExport">📤 書き出し</button>
@@ -518,9 +530,10 @@ body.vs .pboard{gap:3px}
   <div class="panelbox" style="max-width:680px">
     <h2 id="rvTitle">公開されたカード</h2>
     <div class="hint">カードをタップして行き先を選択。残りはまとめて処理できます。</div>
-    <div id="rvGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px;max-height:44dvh;overflow-y:auto;padding:4px"></div>
+    <div id="rvGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px;max-height:38dvh;overflow-y:auto;padding:4px"></div>
     <div class="row" id="rvActions" style="display:none;background:#0f1524;border:1px solid var(--line);border-radius:10px;padding:8px"></div>
     <div class="row">
+      <button class="btn small primary" id="rvReveal1More">＋1枚公開</button>
       <button class="btn small" id="rvAllTop">残りを山札の上へ（元の順）</button>
       <button class="btn small" id="rvAllBottom">残りを山札の下へ（ランダム順）</button>
       <button class="btn small" id="rvAllHand">残りを手札へ</button>
@@ -537,6 +550,7 @@ body.vs .pboard{gap:3px}
     <div class="row" id="stActions" style="display:none;background:#0f1524;border:1px solid var(--line);border-radius:10px;padding:8px"></div>
     <div class="row">
       <button class="btn small" id="stAllGrave">すべて墓地へ</button>
+      <button class="btn small" id="stShowAll">全部のカードを見る（上のカード含む）</button>
       <button class="btn small ghost" id="stClose">閉じる</button>
     </div>
   </div>
@@ -653,7 +667,9 @@ body.vs .pboard{gap:3px}
         <label><input type="checkbox" id="fxWatchDraw"> 相手がカードを引いた時</label>
         <label><input type="checkbox" id="fxWatchSummon"> 相手がクリーチャーを出した時</label>
         <label><input type="checkbox" id="fxWatchSpell"> 相手が呪文を唱えた時（解決中に置いた時）</label>
-        <label><input type="checkbox" id="fxWatchTurnEnd"> ターンの終わりに（どちらのターンでも）</label>
+        <label><input type="checkbox" id="fxWatchTurnEndMine"> 自分のターンの終わりに</label>
+        <label><input type="checkbox" id="fxWatchTurnEndOpp"> 相手のターンの終わりに</label>
+        <label><input type="checkbox" id="fxWatchTurnEndBoth"> お互いのターンの終わりに</label>
       <div class="row" style="align-items:center;margin-top:8px">
         <span style="font-size:12px;font-weight:700">誘発時の自動処理（〜時に n枚ドロー/ブースト/墓地肥やし等）</span>
         <button class="btn small" id="fxTrigAdd" type="button">＋追加</button>
@@ -820,7 +836,7 @@ document.addEventListener("click",e=>{
 
 /* ================= state ================= */
 let nextId=1;
-function makeCard(name){return {id:nextId++, name, tapped:false, faceup:true, sideways:false, face:0, rot:0, mark:false, buff:null, under:[], seals:[]};}
+function makeCard(name){return {id:nextId++, name, tapped:false, faceup:true, sideways:false, face:0, rot:0, mark:false, buff:null, under:[], seals:[], gear:[]};}
 function emptyZones(){return {deck:[],hand:[],mana:[],battle:[],grave:[],shield:[],gr:[],hyper:[],resolve:[],reveal:[],look:[]};}
 const S={
   vs:false, flip:false, hideOpp:true, who:0, turn:0,
@@ -832,6 +848,7 @@ const S={
   ],
   multi:false, sel:null, msel:[],
   extra:[0,0],
+  gameMode:"dmps", autoTap:false,
 };
 const imgURL=new Map();
 const dispName=new Map();
@@ -848,6 +865,7 @@ function getReg(c){return FXDB.get(faceKeyOf(c))||FXDB.get(normName(c.name))||nu
 /* ================= undo ================= */
 const HIST=[];
 const REDO=[];
+const LIMWARN=[{},{}];
 function serializeState(){return JSON.stringify({t:S.turn,w:S.who,z:S.players.map(p=>p.zones)});}
 function snap(){
   const s=serializeState();
@@ -871,11 +889,12 @@ function restoreState(st){
 function normalizeCard(c){
   if(c.under==null)c.under=[];
   if(c.seals==null)c.seals=[];
+  if(c.gear==null)c.gear=[];
   if(c.face==null)c.face=0;
   if(c.rot==null)c.rot=0;
   if(c.mark==null)c.mark=false;
   if(c.buff===undefined)c.buff=null;
-  c.under.forEach(normalizeCard);c.seals.forEach(normalizeCard);
+  c.under.forEach(normalizeCard);c.seals.forEach(normalizeCard);c.gear.forEach(normalizeCard);
 }
 function undo(){
   if(!HIST.length){toast("戻れる操作がありません");return;}
@@ -1095,12 +1114,21 @@ function nextTurn(){
   }
   const cur=S.vs?S.who:0;
   if(S.expert){
+    const cur2=S.vs?S.who:0;
     const ten=[];
     for(const pi2 of (S.vs?[0,1]:[0])){
-      zonesOf(pi2).battle.forEach(c=>{const r=getReg(c);if(r&&r.watch&&r.watch.turnEnd)ten.push(faceNameOf(c));});
+      zonesOf(pi2).battle.forEach(c=>{
+        const r=getReg(c);if(!r||!r.watch)return;
+        const isMine=pi2===cur2;
+        if(r.watch.turnEndBoth||(isMine&&r.watch.turnEndMine)||(!isMine&&r.watch.turnEndOpp))
+          ten.push(faceNameOf(c));
+      });
     }
     if(ten.length)toast(`⚡ターン終了時の効果確認：${[...new Set(ten)].join("、")}`);
-    for(const pi2 of (S.vs?[0,1]:[0]))runWatchFx(pi2,"turnEnd");
+    for(const pi2 of (S.vs?[0,1]:[0])){
+      const isMine=pi2===cur2;
+      runWatchFxCond(pi2,(ev)=>ev==="turnEndBoth"||(isMine&&ev==="turnEndMine")||(!isMine&&ev==="turnEndOpp"));
+    }
   }
   for(const P of S.players)P.zones.battle.forEach(c=>c.buff=null);
   let extra=false;
@@ -1140,12 +1168,19 @@ async function recollectAll(){
 }
 
 /* ================= 誘発アナウンス ================= */
-const WATCH_LABEL={atkC:"相手がクリーチャーに攻撃",atkP:"相手がプレイヤーに攻撃",draw:"相手がカードを引いた",summon:"相手がクリーチャーを出した",spell:"相手が呪文を唱えた"};
+const WATCH_LABEL={atkC:"相手がクリーチャーに攻撃",atkP:"相手がプレイヤーに攻撃",draw:"相手がカードを引いた",summon:"相手がクリーチャーを出した",spell:"相手が呪文を唱えた",turnEndMine:"自分のターン終了時",turnEndOpp:"相手のターン終了時",turnEndBoth:"ターン終了時（お互い）"};
 function watchNames(actor,type){
   if(!S.vs)return [];
   const watcher=actor===0?1:0;
   return [...new Set(zonesOf(watcher).battle
     .filter(c=>{const r=getReg(c);return r&&r.watch&&r.watch[type];})
+    .map(c=>faceNameOf(c)))];
+}
+function watchNamesTurnEnd(pi){
+  const cur2=S.vs?S.who:0;
+  const isMine=pi===cur2;
+  return [...new Set(zonesOf(pi).battle
+    .filter(c=>{const r=getReg(c);return r&&r.watch&&(r.watch.turnEndBoth||(isMine&&r.watch.turnEndMine)||(!isMine&&r.watch.turnEndOpp));})
     .map(c=>faceNameOf(c)))];
 }
 function runWatchFx(pi,type){
@@ -1154,10 +1189,17 @@ function runWatchFx(pi,type){
     const r=getReg(c);
     if(r&&r.watchFx&&r.watchFx.length){
       const fx=r.watchFx.filter(w=>w.ev===type);
-      if(fx.length){
-        toast(`⚡誘発処理：${faceNameOf(c)}`);
-        runFxList(pi,fx);
-      }
+      if(fx.length){toast(`⚡誘発処理：${faceNameOf(c)}`);runFxList(pi,fx);}
+    }
+  }
+}
+function runWatchFxCond(pi,cond){
+  if(!S.expert)return;
+  for(const c of zonesOf(pi).battle){
+    const r=getReg(c);
+    if(r&&r.watchFx&&r.watchFx.length){
+      const fx=r.watchFx.filter(w=>cond(w.ev));
+      if(fx.length){toast(`⚡誘発処理：${faceNameOf(c)}`);runFxList(pi,fx);}
     }
   }
 }
@@ -1169,6 +1211,80 @@ function emitEvent(actor,type){
     toast(`⚡誘発確認（${WATCH_LABEL[type]}時）：${names.join("、")}`);
   }
   if(S.vs)runWatchFx(actor===0?1:0,type);
+}
+// v6.2 marker
+
+async function searchZone(pi,zone,kinds){
+  const Z=zonesOf(pi);
+  const src=Z[zone];
+  const zoneName=zone==="deck"?"山札":zone==="grave"?"墓地":"マナゾーン";
+  if(!src||!src.length){toast(`${zoneName}にカードがありません`);return;}
+  const ct=await askChoice(`🔎 ${zoneName}の${kinds===5?"超探索":"探索"}：カードタイプ`,
+    ["指定なし","クリーチャー","呪文","その他（クロスギア/D2/タマシード等）"]);
+  if(ct===null)return;
+  const mc=await askNumber("コスト◯以下で絞る（0＝指定なし）",0,99);
+  if(mc===null)return;
+  const kw=await askText("名前に含む文字で絞る（空欄OK）","");
+  if(kw===null)return;
+  const match=c=>{
+    const r=getReg(c);
+    if(ct===1&&(!r||r.ctype!=="creature"))return false;
+    if(ct===2&&(!r||r.ctype!=="spell"))return false;
+    if(ct===3&&(!r||!r.ctype||r.ctype==="creature"||r.ctype==="spell"))return false;
+    if(mc>0&&(!r||r.cost==null||r.cost>mc))return false;
+    if(kw&&!normName(c.name).includes(normName(kw)))return false;
+    return true;
+  };
+  const nameSet=new Map();
+  for(const c of src)if(match(c)&&!nameSet.has(normName(c.name)))nameSet.set(normName(c.name),c.name);
+  const namesAll=[...nameSet.values()];
+  if(!namesAll.length){toast("条件に合うカードがありません（タイプ/コストでの絞り込みは効果登録が必要です）");return;}
+  const pickN=shuffle(namesAll.slice()).slice(0,kinds);
+  const j=await askChoice(`🔎 提示された${pickN.length}種から1枚選択（種類単位でランダム提示）`,[...pickN,"選ばない"]);
+  if(j===null||j>=pickN.length){
+    if(zone==="deck"){shuffleDeck(Z);renderAll();toast("選ばずに終了→山札をシャッフルしました");}
+    return;
+  }
+  const nm=pickN[j];
+  const idx=src.findIndex(c=>normName(c.name)===normName(nm));
+  if(idx<0)return;
+  snap();
+  const c=src.splice(idx,1)[0];
+  const dst=await askChoice(`《${c.name}》の行き先`,["手札へ","バトルへ","マナへ","墓地へ","シールドへ（表向き）"]);
+  c.faceup=true;c.tapped=false;
+  if(dst===1){Z.battle.push(c);markArrive(c);emitEvent(pi,"summon");enqueueFx(pi,c);}
+  else if(dst===2)Z.mana.push(c);
+  else if(dst===3)Z.grave.push(c);
+  else if(dst===4){c.mark=S.turn>0;Z.shield.push(c);}
+  else{Z.hand.push(c);markArrive(c);}
+  if(zone==="deck"){shuffleDeck(Z);toast(`探索：${c.name} → 山札をシャッフル`);}
+  else toast(`探索：${c.name}`);
+  sfx("ok");renderAll();
+}
+function revealMaxMin(op,spellOnly){
+  const Z=zonesOf(op);
+  const cand=Z.hand.map(c=>({c,r:getReg(c)}))
+    .filter(x=>x.r&&x.r.cost!=null&&(!spellOnly||x.r.ctype==="spell"));
+  if(!cand.length){
+    toast(spellOnly?"コスト登録済みの呪文が相手の手札にありません":"コスト登録済みのカードが相手の手札にありません（コスト/タイプの効果登録が必要）");
+    return;
+  }
+  let mx=cand[0],mn=cand[0];
+  for(const x of cand){
+    if(x.r.cost>mx.r.cost)mx=x;
+    if(x.r.cost<mn.r.cost)mn=x;
+  }
+  snap();
+  const ids=[...new Set([mx.c.id,mn.c.id])];
+  for(const id of ids){
+    const j=Z.hand.findIndex(c=>c.id===id);
+    if(j<0)continue;
+    const c=Z.hand.splice(j,1)[0];
+    c.faceup=true;Z.reveal.push(c);
+  }
+  sfx("flip");renderAll();
+  openRevealPanel(op,"reveal");
+  toast(`公開：最大コスト${mx.r.cost}／最小コスト${mn.r.cost}（パネルから墓地へ捨てられます）`);
 }
 
 /* ================= 汎用効果 ================= */
@@ -1191,6 +1307,85 @@ const EFFECTS=[
      }
      closeSheet();renderAll();sfx("ok");
      toast("Vivy-ラプチャー解決：手札・墓地→山札→各5ドロー");
+   }},
+  {name:"探索/超探索（山札・墓地・マナ）",
+   desc:"ゾーンと条件を指定→条件に合うカードから3種（超探索は5種）をランダム提示",
+   async run(){
+     const pi=S.vs?S.who:0;
+     closeSheet();
+     const z=await askChoice("探索するゾーン",["山札","墓地","マナゾーン"]);
+     if(z===null)return;
+     const k=await askChoice("種類",["探索（3種提示）","超探索（5種提示）"]);
+     if(k===null)return;
+     searchZone(pi,["deck","grave","mana"][z],k===0?3:5);
+   }},
+  {name:"相手の手札：最大＆最小コストを公開（ジェニージェーン型）",
+   desc:"相手の手札からコスト最大と最小のカードを公開ゾーンへ（コスト登録カードのみ対象）",
+   async run(){
+     if(!S.vs){toast("対戦モードのみ使用できます");closeSheet();return;}
+     const pi=S.vs?S.who:0, op=pi===0?1:0;
+     closeSheet();
+     revealMaxMin(op,false);
+   }},
+  {name:"相手の手札：最大＆最小コストの呪文を公開（ガシュラバッド型）",
+   desc:"相手の手札の呪文からコスト最大と最小を公開ゾーンへ（コスト＋タイプ登録カードのみ対象）",
+   async run(){
+     if(!S.vs){toast("対戦モードのみ使用できます");closeSheet();return;}
+     const pi=S.vs?S.who:0, op=pi===0?1:0;
+     closeSheet();
+     revealMaxMin(op,true);
+   }},
+  {name:"手札を1枚見せる（対面に公開）",
+   desc:"自分の手札を1枚選んで、相手に見せる（公開ゾーンに一時的に表示）",
+   async run(){
+     const Z=zonesOf(S.vs?S.who:0);
+     if(!Z.hand.length){toast("手札がありません");closeSheet();return;}
+     const j=await askChoice("見せるカードを選択",Z.hand.map(c=>faceNameOf(c)));
+     if(j===null){closeSheet();return;}
+     const c=Z.hand[j];
+     c.faceup=true;
+     const pi=S.vs?S.who:0;
+     const op=pi===0?1:0;
+     const Z2=zonesOf(op);
+     Z2.reveal.push({...c,id:nextId++});
+     closeSheet();renderAll();
+     toast(`《${faceNameOf(c)}》を相手に見せました（公開ゾーンに表示）`);
+     sfx("flip");
+   }},
+  {name:"手札を全て見せる（対面に公開）",
+   desc:"自分の手札を全て相手に見せる",
+   async run(){
+     if(!S.vs){toast("対戦モードのみ使用できます");closeSheet();return;}
+     const pi=S.vs?S.who:0;
+     const op=pi===0?1:0;
+     const Z=zonesOf(pi),Z2=zonesOf(op);
+     Z.hand.forEach(c=>{c.faceup=true;Z2.reveal.push({...c,id:nextId++});});
+     closeSheet();renderAll();
+     toast(`手札を全て公開しました`);sfx("flip");
+   }},
+  {name:"ガチンコ・ジャッジ",
+   desc:"両プレイヤーの山札の上1枚を公開しコストを比較。勝者を判定（Cは高コスト勝利）",
+   async run(){
+     const pis=S.vs?[0,1]:[0];
+     const cards=[];
+     for(const pi of pis){
+       const Z=zonesOf(pi);
+       if(!Z.deck.length){toast(`${S.players[pi].label}の山札が空`);closeSheet();return;}
+       const c=Z.deck.shift();c.faceup=true;Z.reveal.push(c);
+       cards.push({pi,c});
+     }
+     closeSheet();renderAll();
+     if(cards.length<2){toast("ガチンコジャッジ：山札の上を公開しました");return;}
+     const [a,b]=cards;
+     const rA=getReg(a.c),rB=getReg(b.c);
+     const cA=rA&&rA.cost!=null?rA.cost:null;
+     const cB=rB&&rB.cost!=null?rB.cost:null;
+     if(cA!==null&&cB!==null){
+       if(cA>cB)toast(`ガチンコジャッジ！ ${S.players[a.pi].label}の勝利（コスト${cA} vs ${cB}）`);
+       else if(cB>cA)toast(`ガチンコジャッジ！ ${S.players[b.pi].label}の勝利（コスト${cB} vs ${cA}）`);
+       else toast(`ガチンコジャッジ：引き分け（コスト${cA} vs ${cB}）`);
+     }else toast("ガチンコジャッジ：山札の上を公開しました（コスト未登録のため手動で比較してください）");
+     sfx("atk");
    }},
   {name:"エクストラターン（追加ターン）",
    desc:"次に「次のターン」を押しても手番が同じプレイヤーのまま続く",
@@ -1238,11 +1433,46 @@ function fxSummary(list){
   if(!list||!list.length)return "（効果なし）";
   return list.map(f=>FX_LABEL[f.t].replace("n",f.n)).join(" → ");
 }
+async function autoTapCost(pi,c){
+  const r=getReg(c);
+  if(!r||(r.cost==null&&r.cost2==null))return;
+  let cost=r.cost;
+  if(r.twin&&r.cost2!=null){
+    const j=await askChoice(`《${faceNameOf(c)}》どちらの面のコストを支払う？`,
+      [`上面：コスト${r.cost!=null?r.cost:"未設定"}`,`下面：コスト${r.cost2}`,"支払わない"]);
+    if(j===null||j===2)return;
+    cost=j===0?r.cost:r.cost2;
+  }
+  if(cost==null)return;
+  const Z=zonesOf(pi);
+  let n=0;
+  for(const m of Z.mana){
+    if(n>=cost)break;
+    if(!m.tapped){m.tapped=true;n++;}
+  }
+  renderAll();
+  if(n<cost)toast(`⚠ マナ不足：${n}/${cost} だけタップしました`);
+  else if(cost>0)toast(`マナ自動タップ：${cost}`);
+}
 function destroyCreature(pi,c){
   const Z=zonesOf(pi);
   const i=Z.battle.findIndex(x=>x.id===c.id);
   if(i<0)return;
   Z.battle.splice(i,1);
+  if(c.gear&&c.gear.length){
+    const gs=c.gear.splice(0);
+    gs.forEach(g=>{g.face=0;g.rot=0;g.tapped=false;Z.hyper.push(g);});
+  }
+  if(c.seals&&c.seals.length){
+    const sl=c.seals.splice(0);
+    sl.forEach(x=>{x.faceup=true;Z.grave.push(x);});
+  }
+  if(c.under&&c.under.length){
+    const r0=getReg(c);
+    const d0=(r0&&r0.dest)||"grave";
+    const kids=c.under.splice(0);
+    kids.forEach(u=>{u.tapped=false;u.faceup=true;(Z[d0]||Z.grave).push(u);});
+  }
   const r=getReg(c);
   const dest=(r&&r.dest)||"grave";
   c.tapped=false;c.faceup=true;c.rot=0;
@@ -1404,12 +1634,29 @@ function processBroken(op,stack,label){
       const g=$("bkGrid");g.innerHTML="";
       remaining.forEach(c=>{
         const r2=getReg(c);
-        const badges=[];
-        if(r2&&r2.st)badges.push("⚡ST");
-        if(r2&&r2.monsho)badges.push("裁");
-        if(r2&&r2.sback)badges.push("SB");
-        const el=vCardEl((badges.length?"【"+badges.join("・")+"】":"")+c.name);
-        if(r2&&r2.st)el.style.outline="2px solid var(--accent)";
+        const el=vCardEl(c.name);
+        if(r2&&r2.st){
+          el.style.outline="2px solid var(--accent)";
+          const badge=document.createElement("div");
+          badge.style.cssText="position:absolute;bottom:0;left:0;right:0;background:var(--accent);color:#000;font-size:10px;font-weight:900;text-align:center;padding:1px 0;z-index:5;border-radius:0 0 4px 4px";
+          badge.textContent="⚡ S・トリガー";
+          el.querySelector(".thumb").style.position="relative";
+          el.querySelector(".thumb").appendChild(badge);
+        }else if(r2&&r2.sback){
+          el.style.outline="2px solid #a78bfa";
+          const badge=document.createElement("div");
+          badge.style.cssText="position:absolute;bottom:0;left:0;right:0;background:#a78bfa;color:#000;font-size:10px;font-weight:900;text-align:center;padding:1px 0;z-index:5;border-radius:0 0 4px 4px";
+          badge.textContent="S・バック";
+          el.querySelector(".thumb").style.position="relative";
+          el.querySelector(".thumb").appendChild(badge);
+        }else if(r2&&r2.sabaki){
+          el.style.outline="2px solid #f59e0b";
+          const badge=document.createElement("div");
+          badge.style.cssText="position:absolute;bottom:0;left:0;right:0;background:#f59e0b;color:#000;font-size:10px;font-weight:900;text-align:center;padding:1px 0;z-index:5;border-radius:0 0 4px 4px";
+          badge.textContent="サバキZ";
+          el.querySelector(".thumb").style.position="relative";
+          el.querySelector(".thumb").appendChild(badge);
+        }
         if(sel===c.id)el.classList.add("picked");
         el.addEventListener("click",()=>{sel=(sel===c.id)?null:c.id;render();});
         g.appendChild(el);
@@ -1692,7 +1939,9 @@ const TRIG_EVS=[
   ["draw","相手がドローした時"],
   ["summon","相手がクリーチャーを出した時"],
   ["spell","相手が呪文を唱えた時"],
-  ["turnEnd","ターンの終わりに"],
+  ["turnEndMine","自分のターンの終わりに"],
+  ["turnEndOpp","相手のターンの終わりに"],
+  ["turnEndBoth","お互いのターンの終わりに"],
 ];
 function fxTrigRowEl(i){
   const f=FXEDIT.watchFx[i];
@@ -1746,7 +1995,9 @@ function renderFxEditor(){
   $("fxWatchDraw").checked=!!FXEDIT.watch.draw;
   $("fxWatchSummon").checked=!!FXEDIT.watch.summon;
   $("fxWatchSpell").checked=!!FXEDIT.watch.spell;
-  $("fxWatchTurnEnd").checked=!!FXEDIT.watch.turnEnd;
+  $("fxWatchTurnEndMine").checked=!!FXEDIT.watch.turnEndMine;
+  $("fxWatchTurnEndOpp").checked=!!FXEDIT.watch.turnEndOpp;
+  $("fxWatchTurnEndBoth").checked=!!FXEDIT.watch.turnEndBoth;
   $("fxPA").value=FXEDIT.pa||"";
   $("fxBreaks").value=FXEDIT.breaks||"1";
   $("fxGimmick").value=FXEDIT.gimmick||"";
@@ -1799,7 +2050,7 @@ function openFxEditor(key){
     dragonB:cur?!!cur.dragonB:false,
     auraTapIn:cur?!!cur.auraTapIn:false,
     auraNote:cur&&cur.auraNote||"",
-    watch:cur&&cur.watch?{...cur.watch}:{atkC:false,atkP:false,draw:false,summon:false,spell:false,turnEnd:false},
+    watch:cur&&cur.watch?{...cur.watch}:{atkC:false,atkP:false,draw:false,summon:false,spell:false,turnEndMine:false,turnEndOpp:false,turnEndBoth:false},
   };
   renderFxEditor();
   $("fxOlay").classList.add("open");
@@ -1861,7 +2112,10 @@ $("fxSave").addEventListener("click",async ()=>{
     watch:{
       atkC:$("fxWatchAtkC").checked, atkP:$("fxWatchAtkP").checked,
       draw:$("fxWatchDraw").checked, summon:$("fxWatchSummon").checked,
-      spell:$("fxWatchSpell").checked, turnEnd:$("fxWatchTurnEnd").checked,
+      spell:$("fxWatchSpell").checked,
+      turnEndMine:$("fxWatchTurnEndMine").checked,
+      turnEndOpp:$("fxWatchTurnEndOpp").checked,
+      turnEndBoth:$("fxWatchTurnEndBoth").checked,
     },
   });
   await persistFx();
@@ -2025,6 +2279,11 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
   }
   else placeCard(Z,toZone,c);
   if(toZone!=="battle"){
+    if(c.gear&&c.gear.length){
+      const gs=c.gear.splice(0);
+      gs.forEach(g=>{g.face=0;g.rot=0;g.tapped=false;zonesOf(pFrom).hyper.push(g);});
+      toast(`装備${gs.length}枚は超次元へ戻った`);
+    }
     if(c.seals&&c.seals.length){
       const sl=c.seals.splice(0);
       sl.forEach(x=>{x.faceup=true;zonesOf(pFrom).grave.push(x);});
@@ -2052,6 +2311,9 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
       }
     }
     emitEvent(pTo,"summon");
+  }
+  if(S.expert&&S.autoTap&&fromZone==="hand"&&(toZone==="battle"||toZone==="resolve")){
+    autoTapCost(pTo,c);
   }
   sfx("move");
   if(toZone==="battle"||toZone==="resolve")enqueueFx(pTo,c);
@@ -2217,6 +2479,13 @@ function cardEl(pi,zone,c){
     const gt=document.createElement("span");gt.className="gitag";gt.textContent=`儀${gn}/4`;
     el.appendChild(gt);
   }
+  if(c.gear&&c.gear.length){
+    const gr=document.createElement("span");
+    gr.className="auratag";
+    gr.style.top="16px";gr.style.background="#8446c9";
+    gr.textContent="装"+c.gear.length;
+    el.appendChild(gr);
+  }
   const link=LINKS.get(normName(c.name));
   if(showFace&&link&&link.length>1){
     const ft=document.createElement("span");ft.className="facetag";ft.textContent=`${(c.face||0)+1}/${link.length}`;
@@ -2343,6 +2612,19 @@ function renderAll(){
   document.querySelectorAll(".pboard.opp").forEach(el=>el.classList.toggle("flipped",S.flip));
   $("btnMulti").classList.toggle("on",S.multi);
   document.body.classList.toggle("vs",S.vs);
+  if(S.gameMode!=="tcg"&&S.turn>0){
+    for(const pi of (S.vs?[0,1]:[0])){
+      const Z=S.players[pi].zones;
+      const lw=LIMWARN[pi];
+      const chk=(cond,key,msg)=>{
+        if(cond&&!lw[key]){lw[key]=true;toast(msg);sfx("flip");}
+        else if(!cond)lw[key]=false;
+      };
+      chk(Z.hand.length>=11,"h",`⚠ ${S.players[pi].label}：手札が11枚以上（デュエプレは10枚まで）`);
+      chk(Z.battle.length>=8,"b",`⚠ ${S.players[pi].label}：バトルゾーンが8体以上（デュエプレは7面まで）`);
+      chk(Z.shield.length>=11,"s",`⚠ ${S.players[pi].label}：シールドが11枚以上（デュエプレは10枚まで）`);
+    }
+  }
   const mb=$("multiBar");
   if(S.multi&&S.msel.length){
     mb.classList.add("show");
@@ -2375,6 +2657,7 @@ window.addEventListener("resize",fitBoard);
 
 /* ================= drag & tap ================= */
 function attachPointer(el,ctx){
+  el.addEventListener("dragstart",ev=>ev.preventDefault());
   el.addEventListener("pointerdown",ev=>{
     if(ev.button&&ev.button!==0)return;
     const sx=ev.clientX,sy=ev.clientY;
@@ -2393,7 +2676,9 @@ function attachPointer(el,ctx){
             const ol=$("viewerOlay");
             ol.style.opacity="0";ol.style.pointerEvents="none";
           }
-          try{el.setPointerCapture(ev.pointerId);}catch(e){}
+          try{
+            if(ev.pointerId!=null)el.setPointerCapture(ev.pointerId);
+          }catch(e){}
           ghost=el.cloneNode(true);
           ghost.classList.remove("tapped","selected","msel","arrive");
           ghost.classList.add("ghost");
@@ -2461,7 +2746,7 @@ function dropTargetAt(x,y){
       if(zone==="sys")continue;
       const pb=z.closest(".pboard");
       const p=pb?+pb.dataset.p:0;
-      const valid=["hand","mana","battle","grave","shield","resolve","reveal","deckTop","grBottom","hyper"];
+      const valid=["hand","mana","battle","grave","shield","shieldUp","resolve","reveal","deckTop","grBottom","hyper"];
       if(valid.includes(zone))return {el:z,zone,p};
     }
   }
@@ -2474,7 +2759,49 @@ const MOVE_TARGETS=[
   ["shield","シールドへ（裏）"],["shieldUp","シールドへ（表向き）"],["resolve","解決中へ"],
   ["deckTop","山札の上へ"],["deckBottom","山札の下へ"],
 ];
+let EVO=null;
 function onCardTap(ctx,ev){
+  if(EVO){
+    if(ctx.zone!=="battle"||ctx.p!==EVO.p){
+      EVO=null;renderAll();
+      toast("進化を中止しました");
+      return;
+    }
+    const base=findCard(ctx.p,"battle",ctx.id);
+    const src=findCard(EVO.p,EVO.zone,EVO.id);
+    if(!src||!base){EVO=null;toast("進化を中止しました");renderAll();return;}
+    snap();
+    // 追加の進化元（複数選択されているバトルゾーンのカード）
+    const babies=[];
+    const extras=S.msel.filter(x=>x.p===ctx.p&&x.zone==="battle"&&x.id!==ctx.id);
+    for(const x of extras){
+      const f=findCard(x.p,"battle",x.id);
+      if(f){
+        f.arr.splice(f.idx,1);
+        babies.push(f.card,...(f.card.under?f.card.under.splice(0):[]));
+      }
+    }
+    src.arr.splice(src.idx,1);
+    const evc=src.card;
+    const arr=zonesOf(ctx.p).battle;
+    const bi=arr.findIndex(x=>x.id===ctx.id);
+    if(bi<0){EVO=null;renderAll();return;}
+    const baseC=arr[bi];
+    const under0=[baseC,...(baseC.under?baseC.under.splice(0):[]),...babies];
+    under0.forEach(b=>{b.tapped=false;});
+    evc.tapped=baseC.tapped;
+    evc.faceup=true;evc.sideways=false;evc.rot=0;
+    evc.under=[...under0,...(evc.under||[])];
+    arr[bi]=evc;
+    EVO=null;endMulti();
+    markArrive(evc);
+    sfx("ok");
+    emitEvent(ctx.p,"summon");
+    enqueueFx(ctx.p,evc);
+    renderAll();closeSheet();
+    toast(`⤴ 進化！ ${faceNameOf(evc)}（下に${under0.length}枚）`);
+    return;
+  }
   if(PENDING){
     const tgt=findCard(ctx.p,ctx.zone,ctx.id);
     if(!tgt){PENDING=null;return;}
@@ -2563,6 +2890,63 @@ function openCardSheet(ctx){
       c.face=((c.face||0)+1)%link.length;
       sfx("flip");rerender();
     },"primary"));
+  }
+  if(c.gl&&ctx.zone==="battle"){
+    box.appendChild(actBtn("🔗 リンク解除（元のカードに戻す）",()=>{
+      const arr=zonesOf(ctx.p).battle;
+      const i=arr.findIndex(x=>x.id===c.id);
+      if(i<0)return;
+      const parts=c.under.splice(0);
+      parts.forEach(b=>{b.tapped=false;});
+      arr.splice(i,1,...parts);
+      sfx("move");closeSel();renderAll();
+      toast(`リンク解除：${parts.map(x=>faceNameOf(x)).join("、")}`);
+    },"warn"));
+  }
+  if(ctx.zone==="hyper"){
+    box.appendChild(actBtn("⚙ クリーチャーに装備（ドラグハート）",async ()=>{
+      const arr=zonesOf(ctx.p).battle;
+      if(!arr.length){toast("自分のバトルゾーンにクリーチャーがいません");return;}
+      const j=await askChoice("装備するクリーチャーを選択",arr.map(x=>faceNameOf(x)));
+      if(j===null)return;
+      snap();
+      const f=findCard(ctx.p,"hyper",ctx.id);
+      if(!f)return;
+      f.arr.splice(f.idx,1);
+      const g=f.card;
+      g.faceup=true;g.tapped=false;g.face=g.face||0;
+      const t=arr[j];
+      t.gear=t.gear||[];t.gear.push(g);
+      sfx("move");closeSel();closeViewer();renderAll();
+      toast(`装備：${faceNameOf(t)} に ${faceNameOf(g)}（カードの「装」タグ→メニューから龍解）`);
+    },"primary",true));
+  }
+  if(c.gear&&c.gear.length&&ctx.zone==="battle"){
+    box.appendChild(actBtn(`⚙ 装備を確認/龍解（${c.gear.length}）`,async ()=>{
+      const j=await askChoice("装備中のドラグハート",c.gear.map(x=>faceNameOf(x)));
+      if(j===null)return;
+      const g=c.gear[j];
+      const link2=LINKS.get(normName(g.name));
+      const act=await askChoice(`《${faceNameOf(g)}》`,
+        [link2&&link2.length>1?"🐉 龍解（外して裏返し、バトルゾーンへ）":"🐉 龍解（外してバトルゾーンへ・多面カード未登録）",
+         "外して超次元ゾーンへ戻す"]);
+      if(act===null)return;
+      snap();
+      c.gear.splice(j,1);
+      if(act===0){
+        if(link2&&link2.length>1)g.face=((g.face||0)+1)%link2.length;
+        g.rot=0;g.tapped=false;
+        zonesOf(ctx.p).battle.push(g);
+        markArrive(g);sfx("ok");
+        toast(`🐉 龍解！ ${faceNameOf(g)}`);
+      }else{
+        g.face=0;g.rot=0;g.tapped=false;
+        zonesOf(ctx.p).hyper.push(g);
+        sfx("move");
+        toast("超次元ゾーンに戻しました");
+      }
+      closeSel();renderAll();
+    },"",true));
   }
   if(reg&&reg.d2&&ctx.zone==="battle"){
     box.appendChild(actBtn(c.rot===270?"Dスイッチ解除（横向きに戻す）":"⤵ Dスイッチ（上下逆さに）",()=>{
@@ -2683,6 +3067,21 @@ function openCardSheet(ctx){
   if(!masked&&ctx.zone!=="shield"){
     box.appendChild(actBtn(c.faceup?"裏向きにする":"表向きにする",()=>{c.faceup=!c.faceup;sfx("flip");rerender();}));
   }
+  if(!masked&&["hand","mana","grave","deck"].includes(ctx.zone)){
+    box.appendChild(actBtn("⤴ 進化する（盤面のカードに乗せる）",()=>{
+      EVO={p:ctx.p,zone:ctx.zone,id:ctx.id};
+      closeSheet();closeSel();closeViewer();
+      renderAll();
+      toast("進化元にするバトルゾーンのカードをタップ（複数選択済みならまとめて下に／NEO進化もこの操作でOK。他をタップで中止）");
+    },"primary",true));
+  }
+  if(!masked&&reg&&reg.auraNote){
+    const an=document.createElement("div");
+    an.className="hint";
+    an.style.cssText="background:#0e2a22;border:1px solid #0e7a5f;border-radius:8px;padding:6px 8px;margin:2px 0";
+    an.textContent="常在効果："+reg.auraNote;
+    box.appendChild(an);
+  }
   if(!masked){
     box.appendChild(actBtn("⚡ このカードの効果を登録/編集",()=>{
       closeSheet();closeSel();
@@ -2790,6 +3189,36 @@ function openMultiSheet(){
     endMulti();renderAll();closeSheet();
     toast(`指定順で山下へ：${names.join(" → ")}`);
   },"",true));
+  if(S.msel.length>=2&&S.msel.every(x=>x.zone==="battle")&&S.msel.every(x=>x.p===S.msel[0].p)){
+    box.appendChild(actBtn("🔗 リンク合体（ゴッド/サイキックリンク）",async ()=>{
+      const p0=S.msel[0].p;
+      let key=null;
+      if(dispName.size){
+        closeSheet();
+        key=await pickImage("合体後のカードを選ぶ","例：死海龍 ガロウズ・デビル・ドラゴン（キャンセルすると名前を手入力）");
+      }
+      let nm=key?(dispName.get(key)||key):await askText("合体後のカード名を入力","");
+      if(!nm)return;
+      const wide=await ask("合体後のカードを横向きで置きますか？");
+      snap();
+      const parts=[];
+      for(const x of S.msel){
+        const f=findCard(x.p,"battle",x.id);
+        if(f){f.arr.splice(f.idx,1);parts.push(f.card);}
+      }
+      if(!parts.length)return;
+      const nc=makeCard(nm);
+      nc.gl=true;
+      nc.under=parts;
+      nc.rot=wide?90:0;
+      parts.forEach(b=>{b.tapped=false;});
+      zonesOf(p0).battle.push(nc);
+      markArrive(nc);
+      endMulti();closeSheet();
+      sfx("ok");renderAll();
+      toast(`🔗 リンク！ ${nm}（${parts.length}枚合体・カードメニューから解除できます）`);
+    },"primary",true));
+  }
   box.appendChild(actBtn("選択を重ねる →（無月の門：先に門/重ね先のカードを場に出しておく）",()=>{
     PENDING={list:S.msel.slice()};
     S.msel=[];
@@ -2820,6 +3249,9 @@ function openDeckMenu(pi){
   box.appendChild(actBtn("シャッフル（横差し解除）",()=>{
     shuffleDeck(Z);renderAll();toast("シャッフルしました（横差しは解除）");closeSheet();
   }));
+  box.appendChild(actBtn("🔍 すべて見る（上から順・パネル）",()=>{closeSheet();openDeckViewer(pi);}));
+  box.appendChild(actBtn("🔎 探索（条件を指定→3種提示）",()=>{closeSheet();searchZone(pi,"deck",3);}));
+  box.appendChild(actBtn("🔎 超探索（条件を指定→5種提示）",()=>{closeSheet();searchZone(pi,"deck",5);}));
   box.appendChild(actBtn("上からn枚 見る（非公開）",async ()=>{
     const n=await askNumber(`上から何枚 見ますか？（1〜${Z.deck.length}）`,3,Z.deck.length);
     if(!n||n<1)return;
@@ -2929,6 +3361,15 @@ function rvBulk(fn){
   rvSel=null;
   renderAll();renderRevealPanel();
 }
+$("rvReveal1More").addEventListener("click",()=>{
+  const Z=zonesOf(rvPi);
+  const src=(rvMode==="look")?"look":"reveal";
+  if(!Z.deck.length){toast("山札がありません");return;}
+  snap();
+  const c=Z.deck.shift();c.faceup=true;Z[src].push(c);
+  sfx("flip");toast(`1枚公開：${c.name}`);
+  renderRevealPanel();renderAll();
+});
 $("rvAllTop").addEventListener("click",()=>rvBulk((Z,arr)=>{arr.forEach(c=>c.faceup=true);Z.deck.unshift(...arr);}));
 $("rvAllBottom").addEventListener("click",()=>rvBulk((Z,arr)=>{arr.forEach(c=>c.faceup=true);shuffle(arr);Z.deck.push(...arr);toast("残りをランダムな順で山札の下に送りました");}));
 $("rvAllHand").addEventListener("click",()=>rvBulk((Z,arr)=>{Z.hand.push(...arr);}));
@@ -3004,6 +3445,26 @@ $("stAllGrave").addEventListener("click",()=>{
   f.card.under=[];
   sfx("grave");
   renderAll();renderStackPanel();
+});
+$("stShowAll").addEventListener("click",()=>{
+  const f=stCtx&&findCard(stCtx.p,stCtx.zone,stCtx.id);
+  if(!f)return;
+  const c=f.card;
+  const all=[c,...(c.under||[])];
+  $("stTitle").textContent=`重なっているカード 全${all.length}枚（上から順）`;
+  const g=$("stGrid");g.innerHTML="";
+  all.forEach((u,i)=>{
+    const el=vCardEl(u.faceup?faceNameOf(u):"（裏向き）",{idx:i===0?"上":i+1});
+    if(i===0){
+      el.style.outline="2px solid var(--accent)";
+      const lb=document.createElement("div");
+      lb.style.cssText="font-size:9px;text-align:center;color:var(--accent);font-weight:900;margin-top:2px";
+      lb.textContent="▲ 一番上";
+      el.appendChild(lb);
+    }
+    g.appendChild(el);
+  });
+  $("stActions").innerHTML="";$("stActions").style.display="none";
 });
 $("stClose").addEventListener("click",()=>{$("stackOlay").classList.remove("open");renderAll();});
 
@@ -3168,10 +3629,92 @@ async function deleteImage(key){
   await persistNames();
   await loadAllImages();renderAll();
 }
+async function loadTesseract(){
+  if(window.Tesseract)return true;
+  toast("OCRエンジンを読み込み中…（初回は時間がかかります）");
+  try{
+    await new Promise((res,rej)=>{
+      const sc=document.createElement("script");
+      sc.src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js";
+      sc.onload=res;sc.onerror=rej;
+      document.head.appendChild(sc);
+    });
+  }catch(e){}
+  return !!window.Tesseract;
+}
+function bigrams(str){
+  const a=new Set();
+  for(let i=0;i<str.length-1;i++)a.add(str.slice(i,i+2));
+  return a;
+}
+function nameSim(a,b){
+  const A=bigrams(a),B=bigrams(b);
+  if(!A.size||!B.size)return a===b?1:0;
+  let hit=0;
+  for(const g of A)if(B.has(g))hit++;
+  return (2*hit)/(A.size+B.size);
+}
+async function ocrRename(key){
+  if(!(await loadTesseract())){toast("OCRエンジンの読み込みに失敗（通信環境を確認してください）");return;}
+  const blob=db?await idbGet("images",key):memImages.get(key);
+  if(!blob){toast("画像が見つかりません");return;}
+  toast("🔤 読み取り中…（初回は辞書DLで1分ほどかかることがあります）");
+  const img=await new Promise(res=>{
+    const im=new Image();
+    im.onload=()=>res(im);
+    im.onerror=()=>res(null);
+    im.src=URL.createObjectURL(blob);
+  });
+  if(!img){toast("画像を読み込めませんでした");return;}
+  const w=img.naturalWidth,h=img.naturalHeight;
+  const bandH=Math.max(20,Math.round(h*0.13));
+  const cv=document.createElement("canvas");
+  cv.width=w*2;cv.height=bandH*2;
+  const ctx2=cv.getContext("2d");
+  ctx2.imageSmoothingEnabled=true;
+  ctx2.drawImage(img,0,0,w,bandH,0,0,w*2,bandH*2);
+  const d=ctx2.getImageData(0,0,cv.width,cv.height);
+  for(let i=0;i<d.data.length;i+=4){
+    const g=d.data[i]*0.3+d.data[i+1]*0.59+d.data[i+2]*0.11;
+    const v=g>140?255:0;
+    d.data[i]=d.data[i+1]=d.data[i+2]=v;
+  }
+  ctx2.putImageData(d,0,0);
+  let text="";
+  try{
+    const res=await Tesseract.recognize(cv,"jpn");
+    text=(res&&res.data&&res.data.text||"").replace(/[\s\u3000]+/g,"");
+  }catch(e){toast("OCRに失敗しました");return;}
+  if(!text){toast("文字を読み取れませんでした（画像上部に名前が写っているか確認）");return;}
+  const q=normName(text);
+  const scored=[...dispName.entries()]
+    .filter(([k])=>k!==key)
+    .map(([k,nm])=>({k,nm,sc:nameSim(q,k)}))
+    .sort((a,b)=>b.sc-a.sc)
+    .slice(0,3)
+    .filter(x=>x.sc>0.15);
+  const opts=[
+    ...scored.map(x=>`${x.nm}（一致度${Math.round(x.sc*100)}%）`),
+    `読み取り結果をそのまま使う：「${text}」`,
+    "手入力する"
+  ];
+  const j=await askChoice(`🔤 OCR結果：「${text}」\n新しい名前を選択`,opts);
+  if(j===null)return;
+  let nn=null;
+  if(j<scored.length)nn=scored[j].nm;
+  else if(j===scored.length)nn=text;
+  else nn=await askText("新しいカード名",text);
+  if(!nn)return;
+  await renameImageTo(key,nn);
+}
 async function renameImage(key){
   const cur=key==="__back__"?"裏面":(dispName.get(key)||key);
   const nn=await askText("新しいカード名を入力してください",cur);
   if(!nn)return false;
+  return renameImageTo(key,nn);
+}
+async function renameImageTo(key,nn){
+  const cur=key==="__back__"?"裏面":(dispName.get(key)||key);
   const newKey=BACK_KEYS.has(normName(nn))?"__back__":normName(nn);
   if(!newKey||newKey===key){toast("変更はありません");return false;}
   if(imgURL.has(newKey)){
@@ -3227,6 +3770,7 @@ function openImageManager(){
         const reg0=FXDB.get(k);
         const act=await askChoice(`「${name}」`,
           ["✏️ 名前を変更",
+           "🔤 OCRで名前を読み取る（画像上部の名前帯）",
            `↔️ 横向きカード：${reg0&&reg0.wide?"解除する":"登録する"}`,
            "⚡ 効果を登録/編集",
            "🗑 削除"]);
@@ -3235,17 +3779,22 @@ function openImageManager(){
           $("vTitle").textContent=`登録画像の管理（${imgURL.size}枚）`;
           render();
         }else if(act===1){
+          if(k==="__back__"){toast("裏面には使用できません");return;}
+          await ocrRename(k);
+          $("vTitle").textContent=`登録画像の管理（${imgURL.size}枚）`;
+          render();
+        }else if(act===2){
           if(k==="__back__"){toast("裏面には設定できません");return;}
           const reg2=FXDB.get(k)||{twin:false,faces:[[],[]],dest:"grave"};
           reg2.wide=!reg2.wide;
           FXDB.set(k,reg2);
           await persistFx();
           toast(reg2.wide?`「${name}」を横向きカードに設定しました`:`「${name}」の横向き設定を解除しました`);
-        }else if(act===2){
+        }else if(act===3){
           if(k==="__back__"){toast("裏面には登録できません");return;}
           closeViewer();
           openFxEditor(k);
-        }else if(act===3){
+        }else if(act===4){
           if(!await ask(`画像「${name}」を削除しますか？`))return;
           await deleteImage(k);
           $("vTitle").textContent=`登録画像の管理（${imgURL.size}枚）`;
@@ -3489,7 +4038,21 @@ $("peekChip").addEventListener("click",()=>{
 });
 
 /* ================= settings ================= */
-function openSettings(){$("settingsOlay").classList.add("open");}
+function openSettings(){
+  $("setMode").value=S.gameMode||"dmps";
+  $("setAutoTap").checked=!!S.autoTap;
+  $("settingsOlay").classList.add("open");
+}
+$("setMode").addEventListener("change",async ()=>{
+  S.gameMode=$("setMode").value;
+  if(db)await idbPut("misc","gameMode",S.gameMode);
+  toast(S.gameMode==="tcg"?"TCGモード（上限警告なし）":"デュエプレモード（上限警告あり）");
+});
+$("setAutoTap").addEventListener("change",async ()=>{
+  S.autoTap=$("setAutoTap").checked;
+  if(db)await idbPut("misc","autoTap",S.autoTap);
+  toast(S.autoTap?"自動マナタップ：ON":"自動マナタップ：OFF");
+});
 function openDeckPanel(){$("deckOlay").classList.add("open");refreshDeckSelects();}
 $("btnSettings").addEventListener("click",openSettings);
 $("btnCloseSettings").addEventListener("click",()=>$("settingsOlay").classList.remove("open"));
@@ -3754,6 +4317,10 @@ $("bApply").addEventListener("click",()=>{
   if(so!==null&&so!==undefined)S.sound=!!so;
   const ex=db?await idbGet("misc","expert"):null;
   if(ex!==null&&ex!==undefined)S.expert=!!ex;
+  const gm=db?await idbGet("misc","gameMode"):null;
+  if(gm)S.gameMode=gm;
+  const at=db?await idbGet("misc","autoTap"):null;
+  if(at!==null&&at!==undefined)S.autoTap=!!at;
   for(const pi of [0,1]){
     const sk=db?await idbGet("misc",`sleeve${pi}`):null;
     if(sk&&imgURL.has(sk))S.sleeve[pi]=sk;
