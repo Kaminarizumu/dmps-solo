@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>デュエプレ一人回し v5</title>
+<title>デュエプレ一人回し v6.1</title>
 <style>
 :root{
   --bg:#0c0f16; --panel:#151b28; --panel-2:#1d2536; --line:#2a3550;
@@ -159,10 +159,34 @@ body.vs .pboard{gap:3px}
   font-size:9px;font-weight:800;padding:0 4px;border-bottom-left-radius:6px;
 }
 .card .sealtag{
-  position:absolute;left:0;top:0;z-index:1;
+  position:absolute;left:0;top:0;z-index:2;
   background:var(--danger);color:#fff;
-  font-size:9px;font-weight:800;padding:0 5px;border-bottom-right-radius:6px;
+  font-size:12px;font-weight:900;padding:1px 7px;border-bottom-right-radius:8px;
+  box-shadow:0 1px 4px rgba(0,0,0,.6);letter-spacing:.5px;
 }
+.card .bufftag{
+  position:absolute;left:0;bottom:0;z-index:2;
+  background:#7b5cff;color:#fff;
+  font-size:9px;font-weight:800;padding:0 5px;border-top-right-radius:6px;
+  max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+}
+.card .gitag{
+  position:absolute;right:0;bottom:0;z-index:2;
+  background:#222;color:#ffd76a;border:1px solid #ffd76a;
+  font-size:9px;font-weight:900;padding:0 4px;border-top-left-radius:6px;
+}
+.card .auratag{
+  position:absolute;right:0;top:0;z-index:2;
+  background:#0e7a5f;color:#fff;
+  font-size:9px;font-weight:900;padding:0 4px;border-bottom-left-radius:6px;
+}
+#peekChip{
+  position:fixed;right:10px;bottom:calc(120px + env(safe-area-inset-bottom));z-index:650;
+  background:linear-gradient(180deg,var(--accent),#d9a520);color:#241a00;
+  border:none;border-radius:22px;padding:10px 14px;font-weight:900;font-size:13px;
+  box-shadow:0 6px 18px rgba(0,0,0,.55);display:none;
+}
+#peekChip.show{display:block}
 .card.ghost{
   position:fixed;z-index:300;pointer-events:none;
   transform:translate(-50%,-60%) scale(1.08) rotate(3deg);
@@ -456,6 +480,14 @@ body.vs .pboard{gap:3px}
       <span style="font-size:12px;color:var(--muted);width:44px">相手</span>
       <select id="stDeck1" style="flex:1"></select>
     </div>
+    <div class="row">
+      <span style="font-size:12px;color:var(--muted);width:44px">先行</span>
+      <select id="stFirst" style="flex:1">
+        <option value="random">ランダム（P1/P2）</option>
+        <option value="p1">P1が先行</option>
+        <option value="p2">P2が先行</option>
+      </select>
+    </div>
     <div class="hint">初手・シールドの決め方を選んでください。</div>
     <div class="row">
       <button class="btn primary" id="stRandom" style="flex:1 1 100%">ランダムで開始（初手5・盾5）</button>
@@ -532,12 +564,31 @@ body.vs .pboard{gap:3px}
       <h3>戦闘・属性</h3>
       <div class="row">
         <span style="font-size:12px;font-weight:700">パワー</span>
-        <input type="number" id="fxPower" style="width:110px" placeholder="例:6000" min="0">
+        <select id="fxPowerSel" style="width:auto;flex:0 0 118px"></select>
+        <input type="number" id="fxPower" style="width:96px" placeholder="直接入力" min="0" step="500">
         <span style="font-size:12px;font-weight:700">破壊されたら</span>
         <select id="fxDest" style="width:auto;flex:1;min-width:100px">
           <option value="grave">墓地へ</option>
           <option value="hand">手札へ</option>
           <option value="mana">マナへ</option>
+        </select>
+      </div>
+      <div class="row">
+        <span style="font-size:12px;font-weight:700">コスト</span>
+        <select id="fxCost" style="width:auto;flex:0 0 96px"></select>
+        <span style="font-size:12px;font-weight:700" id="fxCost2Label">下面コスト</span>
+        <select id="fxCost2" style="width:auto;flex:0 0 96px"></select>
+        <span style="font-size:12px;font-weight:700">タイプ</span>
+        <select id="fxCType" style="width:auto;flex:1;min-width:130px">
+          <option value="">（未設定）</option>
+          <option value="creature">クリーチャー</option>
+          <option value="spell">呪文</option>
+          <option value="crossgear">クロスギア</option>
+          <option value="d2">D2フィールド</option>
+          <option value="psychic">サイキック</option>
+          <option value="tamaseed">タマシード</option>
+          <option value="dragheart">ドラグハート</option>
+          <option value="other">その他</option>
         </select>
       </div>
       <div class="row" style="gap:12px">
@@ -546,6 +597,7 @@ body.vs .pboard{gap:3px}
       </div>
       <div class="row" style="gap:12px">
         <label><input type="checkbox" id="fxAtkUn"> タップしていないクリーチャーも攻撃できる</label>
+        <label><input type="checkbox" id="fxMachF"> マッハファイター（出たターンでも相手獣を攻撃可・アンタップ獣も対象）</label>
       </div>
       <div class="row">
         <span style="font-size:12px;font-weight:700">パワーアタッカー ＋</span>
@@ -556,7 +608,25 @@ body.vs .pboard{gap:3px}
           <option value="2">2（W・ブレイカー）</option>
           <option value="3">3（T・ブレイカー）</option>
           <option value="all">全部（ワールド・ブレイカー）</option>
+          <option value="powered">パワード・ブレイカー（パワー6000ごとに＋1）</option>
         </select>
+      </div>
+      <div class="row" style="gap:12px;flex-wrap:wrap">
+        <label><input type="checkbox" id="fxST"> ⚡S・トリガー</label>
+        <label><input type="checkbox" id="fxSBack"> S・バック</label>
+        <label><input type="checkbox" id="fxSabaki"> サバキZ</label>
+        <label><input type="checkbox" id="fxMonsho"> 裁きの紋章</label>
+      </div>
+      <div class="row" style="gap:12px;flex-wrap:wrap">
+        <label><input type="checkbox" id="fxWide"> 横向きカード（ドルマゲドン等・置いた時に横向き）</label>
+        <label><input type="checkbox" id="fxDragonB"> ドラゴン・ブレイカー（ブレイク数ぶん山上を盾へ）</label>
+      </div>
+      <div class="row" style="gap:12px;flex-wrap:wrap">
+        <label><input type="checkbox" id="fxAuraTapIn"> 常在：相手クリーチャーはタップして出る</label>
+      </div>
+      <div class="row">
+        <span style="font-size:12px;font-weight:700">常在効果メモ</span>
+        <input type="text" id="fxAuraNote" style="flex:1" placeholder="例：相手の呪文コスト+2（「常」マークが付きます）">
       </div>
       <div class="row" style="gap:12px">
         <label><input type="checkbox" id="fxD2"> D2フィールド（横向きで置く・Dスイッチ可）</label>
@@ -584,6 +654,11 @@ body.vs .pboard{gap:3px}
         <label><input type="checkbox" id="fxWatchSummon"> 相手がクリーチャーを出した時</label>
         <label><input type="checkbox" id="fxWatchSpell"> 相手が呪文を唱えた時（解決中に置いた時）</label>
         <label><input type="checkbox" id="fxWatchTurnEnd"> ターンの終わりに（どちらのターンでも）</label>
+      <div class="row" style="align-items:center;margin-top:8px">
+        <span style="font-size:12px;font-weight:700">誘発時の自動処理（〜時に n枚ドロー/ブースト/墓地肥やし等）</span>
+        <button class="btn small" id="fxTrigAdd" type="button">＋追加</button>
+      </div>
+      <div id="fxTrigList"></div>
       </div>
     </section>
     <div class="row" style="justify-content:flex-end">
@@ -607,6 +682,9 @@ body.vs .pboard{gap:3px}
 
 <div class="olay" id="askOlay" style="z-index:600;align-items:center">
   <div class="panelbox" style="max-width:400px">
+    <div class="row" style="margin:0;justify-content:flex-end">
+      <button class="btn small ghost" id="askPeek" style="padding:4px 10px">👁 盤面を見る</button>
+    </div>
     <div id="askMsg" style="font-size:13px;line-height:1.7;font-weight:700;white-space:pre-line"></div>
     <input type="number" id="askNum" min="1" inputmode="numeric" style="display:none">
     <input type="text" id="askTxt" style="display:none">
@@ -620,7 +698,10 @@ body.vs .pboard{gap:3px}
 
 <div class="olay" id="breakOlay" style="align-items:center;background:rgba(4,7,13,.72);z-index:95">
   <div class="panelbox" style="max-width:640px">
-    <h2 id="bkTitle">🛡 シールドブレイク</h2>
+    <div class="row" style="margin:0;justify-content:space-between;align-items:center">
+      <h2 id="bkTitle" style="margin:0">🛡 シールドブレイク</h2>
+      <button class="btn small ghost" id="bkPeek" style="padding:4px 10px">👁 盤面</button>
+    </div>
     <div class="hint" id="bkHint"></div>
     <div id="bkGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px;max-height:38dvh;overflow-y:auto;padding:4px"></div>
     <div class="row" id="bkActions" style="display:none;background:#0f1524;border:1px solid var(--line);border-radius:10px;padding:8px"></div>
@@ -641,6 +722,7 @@ body.vs .pboard{gap:3px}
   <button class="btn small ghost" id="multiClear">解除</button>
 </div>
 
+<button id="peekChip">📋 パネルに戻る</button>
 <div id="dropHint">📥 ドロップして画像を登録<br><span style="font-size:12px;font-weight:700;color:var(--muted)">フォルダごとでもOK（ファイル名＝カード名）</span></div>
 <div id="toast"></div>
 
@@ -765,12 +847,26 @@ function getReg(c){return FXDB.get(faceKeyOf(c))||FXDB.get(normName(c.name))||nu
 
 /* ================= undo ================= */
 const HIST=[];
+const REDO=[];
 function serializeState(){return JSON.stringify({t:S.turn,w:S.who,z:S.players.map(p=>p.zones)});}
 function snap(){
   const s=serializeState();
   if(HIST.length&&HIST[HIST.length-1]===s)return;
   HIST.push(s);
   if(HIST.length>50)HIST.shift();
+  REDO.length=0;
+}
+function restoreState(st){
+  S.turn=st.t;S.who=st.w;
+  st.z.forEach((z,i)=>{
+    for(const k of Object.keys(emptyZones()))if(!z[k])z[k]=[];
+    for(const k of Object.keys(z))z[k].forEach(normalizeCard);
+    S.players[i].zones=z;
+  });
+  S.sel=null;S.msel=[];PENDING=null;
+  $("revealOlay").classList.remove("open");
+  $("stackOlay").classList.remove("open");
+  closeSheet();renderAll();
 }
 function normalizeCard(c){
   if(c.under==null)c.under=[];
@@ -783,18 +879,15 @@ function normalizeCard(c){
 }
 function undo(){
   if(!HIST.length){toast("戻れる操作がありません");return;}
-  const st=JSON.parse(HIST.pop());
-  S.turn=st.t;S.who=st.w;
-  st.z.forEach((z,i)=>{
-    for(const k of Object.keys(emptyZones()))if(!z[k])z[k]=[];
-    for(const k of Object.keys(z))z[k].forEach(normalizeCard);
-    S.players[i].zones=z;
-  });
-  S.sel=null;S.msel=[];PENDING=null;
-  $("revealOlay").classList.remove("open");
-  $("stackOlay").classList.remove("open");
-  closeSheet();renderAll();
-  toast("1手戻しました");
+  REDO.push(serializeState());
+  restoreState(JSON.parse(HIST.pop()));
+  toast("1手戻しました（⌘⇧Zでやり直し）");
+}
+function redo(){
+  if(!REDO.length){toast("やり直す操作がありません");return;}
+  HIST.push(serializeState());
+  restoreState(JSON.parse(REDO.pop()));
+  toast("やり直しました");
 }
 
 /* ================= IndexedDB ================= */
@@ -957,7 +1050,7 @@ function dealPlayer(pi,pick){
       for(let s=0;s<sealN&&P.zones.deck.length;s++){
         const sc=P.zones.deck.shift();sc.faceup=false;c.seals.push(sc);
       }
-      if(reg&&reg.d2)c.rot=90;
+      if(reg&&(reg.d2||reg.wide))c.rot=90;
       P.zones.battle.push(c);
     }
   }
@@ -968,9 +1061,14 @@ function startGame(picks){
   dealPlayer(0,picks&&picks[0]||null);
   if(S.vs&&S.players[1].mainList.length)dealPlayer(1,picks&&picks[1]||null);
   S.turn=1;S.sel=null;S.msel=[];S.who=0;
+  if(S.vs){
+    const f=$("stFirst")?$("stFirst").value:"random";
+    if(f==="p2")S.who=1;
+    else if(f==="random")S.who=randInt(2);
+  }
   closeSheet();renderAll();
   sfx("ok");
-  toast("対戦開始！");
+  toast(S.vs?`対戦開始！ 先行：${S.players[S.who].label}`:"対戦開始！");
 }
 function draw(pi,n=1){
   const Z=S.players[pi].zones;
@@ -1002,6 +1100,7 @@ function nextTurn(){
       zonesOf(pi2).battle.forEach(c=>{const r=getReg(c);if(r&&r.watch&&r.watch.turnEnd)ten.push(faceNameOf(c));});
     }
     if(ten.length)toast(`⚡ターン終了時の効果確認：${[...new Set(ten)].join("、")}`);
+    for(const pi2 of (S.vs?[0,1]:[0]))runWatchFx(pi2,"turnEnd");
   }
   for(const P of S.players)P.zones.battle.forEach(c=>c.buff=null);
   let extra=false;
@@ -1049,6 +1148,19 @@ function watchNames(actor,type){
     .filter(c=>{const r=getReg(c);return r&&r.watch&&r.watch[type];})
     .map(c=>faceNameOf(c)))];
 }
+function runWatchFx(pi,type){
+  if(!S.expert)return;
+  for(const c of zonesOf(pi).battle){
+    const r=getReg(c);
+    if(r&&r.watchFx&&r.watchFx.length){
+      const fx=r.watchFx.filter(w=>w.ev===type);
+      if(fx.length){
+        toast(`⚡誘発処理：${faceNameOf(c)}`);
+        runFxList(pi,fx);
+      }
+    }
+  }
+}
 function emitEvent(actor,type){
   if(!S.expert)return;
   const names=watchNames(actor,type);
@@ -1056,6 +1168,7 @@ function emitEvent(actor,type){
     sfx("flip");
     toast(`⚡誘発確認（${WATCH_LABEL[type]}時）：${names.join("、")}`);
   }
+  if(S.vs)runWatchFx(actor===0?1:0,type);
 }
 
 /* ================= 汎用効果 ================= */
@@ -1221,8 +1334,16 @@ async function effPower(c,attacking){
   let p;
   if(r&&r.power!==""&&r.power!=null&&!isNaN(+r.power))p=+r.power;
   else{
-    const n=await askNumber(`《${faceNameOf(c)}》のパワーは？\n（効果登録でパワーを設定すると聞かれなくなります）`,3000);
+    const n=await askNumber(`《${faceNameOf(c)}》のパワーは？`,3000);
     p=n==null?0:n;
+    if(n!=null&&await ask(`パワー ${n} を《${faceNameOf(c)}》に登録しますか？\n（次からは聞かれなくなります）`)){
+      const key=faceKeyOf(c);
+      const reg2=FXDB.get(key)||{twin:false,faces:[[],[]],dest:"grave"};
+      reg2.power=n;
+      FXDB.set(key,reg2);
+      await persistFx();
+      toast(`パワー${n}を登録しました`);
+    }
   }
   if(attacking&&r&&r.pa)p+=(+r.pa||0);
   if(c.buff)p+=(c.buff.pa||0)+(c.buff.pm||0);
@@ -1251,20 +1372,27 @@ async function doBattle(pa,a,pd,d){
 function processBroken(op,stack,label){
   return new Promise(res=>{
     const Z=zonesOf(op);
-    let remaining=stack.slice(), sel=null;
-    const finish=()=>{$("breakOlay").classList.remove("open");renderAll();res();};
+    let remaining=stack.slice(), sel=null, wentGrave=false;
+    const finish=()=>{
+      $("breakOlay").classList.remove("open");renderAll();
+      if(wentGrave){
+        const hz=Z.hand.filter(h=>{const r3=getReg(h);return r3&&(r3.sback||r3.sabaki);});
+        if(hz.length)toast(`S・バック/サバキZ：${[...new Set(hz.map(h=>faceNameOf(h)))].join("、")} を手札から踏み倒せます`);
+      }
+      res();
+    };
     const put=(c,zone)=>{
       const i=remaining.findIndex(x=>x.id===c.id);
       if(i<0)return; remaining.splice(i,1);
       c.tapped=false;
-      if(zone==="grave"){c.faceup=true;Z.grave.push(c);sfx("grave");}
+      if(zone==="grave"){c.faceup=true;Z.grave.push(c);sfx("grave");wentGrave=true;}
       else if(zone==="resolve"){
         if(Z.resolve.length){const olds=Z.resolve.splice(0);olds.forEach(o=>{o.faceup=true;Z.grave.push(o);});}
         c.faceup=true;Z.resolve.push(c);markArrive(c);sfx("move");
         emitEvent(op,"spell");enqueueFx(op,c);
       }else if(zone==="battle"){
         c.faceup=true;Z.battle.push(c);markArrive(c);sfx("move");
-        const r=getReg(c);if(r&&r.d2)c.rot=90;
+        const r=getReg(c);if(r&&(r.d2||r.wide))c.rot=90;
         emitEvent(op,"summon");enqueueFx(op,c);
       }else{c.faceup=true;Z[zone].push(c);markArrive(c);sfx("move");}
       sel=null;renderAll();render();
@@ -1275,7 +1403,13 @@ function processBroken(op,stack,label){
       $("bkHint").textContent="カードをタップ→行き先を選択。S・トリガーは「解決中へ」または「バトルへ」。S・バック/サバキZのコストにする場合は「墓地へ」を選び、手札のカードを手動で踏み倒してください（サバキZは同時ブレイク分も捨て札にできます）。";
       const g=$("bkGrid");g.innerHTML="";
       remaining.forEach(c=>{
-        const el=vCardEl(c.name);
+        const r2=getReg(c);
+        const badges=[];
+        if(r2&&r2.st)badges.push("⚡ST");
+        if(r2&&r2.monsho)badges.push("裁");
+        if(r2&&r2.sback)badges.push("SB");
+        const el=vCardEl((badges.length?"【"+badges.join("・")+"】":"")+c.name);
+        if(r2&&r2.st)el.style.outline="2px solid var(--accent)";
         if(sel===c.id)el.classList.add("picked");
         el.addEventListener("click",()=>{sel=(sel===c.id)?null:c.id;render();});
         g.appendChild(el);
@@ -1305,26 +1439,94 @@ function processBroken(op,stack,label){
     if(remaining.length)$("breakOlay").classList.add("open");
   });
 }
-async function breakShields(op,count){
+function pickShieldIdxs(op,count){
+  const OZ=zonesOf(op);
+  return new Promise(res=>{
+    const picked=new Set();
+    const g=$("bkGrid");
+    const render=()=>{
+      $("bkTitle").textContent=`🛡 ブレイクするシールドを${count}枚 同時に選択`;
+      $("bkHint").textContent=`${picked.size} / ${count} 枚選択中。タップで選択/解除し、下のボタンで確定します。`;
+      g.innerHTML="";
+      OZ.shield.forEach((x,j)=>{
+        const nm=x.faceup?x.name:"（裏向きの盾）";
+        const el=vCardEl(nm+(x.under&&x.under.length?` ＋${x.under.length}`:""),{idx:j+1});
+        if(!x.faceup){
+          const th=el.querySelector(".thumb");th.innerHTML="";
+          const b=backURL(op);
+          if(b){const im=document.createElement("img");im.src=b;im.draggable=false;im.style.cssText="width:100%;height:100%;object-fit:cover";th.appendChild(im);}
+          else{const np=document.createElement("div");np.className="nameplate";np.textContent="盾";th.appendChild(np);}
+        }
+        if(picked.has(j))el.classList.add("picked");
+        el.addEventListener("click",()=>{
+          if(picked.has(j))picked.delete(j);
+          else if(picked.size<count)picked.add(j);
+          else{toast(`選べるのは${count}枚までです`);return;}
+          render();
+        });
+        g.appendChild(el);
+      });
+      const bar=$("bkActions");bar.innerHTML="";bar.style.display="";
+      const cx=document.createElement("button");
+      cx.className="btn small ghost";cx.textContent="キャンセル（ブレイク中止）";
+      cx.addEventListener("click",()=>{$("breakOlay").classList.remove("open");res(null);});
+      bar.appendChild(cx);
+      $("bkDone").textContent=`選択を確定して同時ブレイク（${picked.size}/${count}）`;
+      $("bkDone").onclick=()=>{
+        if(picked.size!==count){toast(`あと${count-picked.size}枚選択してください`);return;}
+        res([...picked]);
+      };
+    };
+    render();
+    $("breakOlay").classList.add("open");
+  });
+}
+async function breakShields(op,count,attacker){
   const OZ=zonesOf(op);
   const total=count==="all"?OZ.shield.length:Math.min(count,OZ.shield.length);
   if(!total){toast("シールドがありません");return;}
-  for(let i=0;i<total;i++){
-    if(!OZ.shield.length)break;
-    let idx=0;
-    if(OZ.shield.length>1){
-      const pick=await askChoice(`${S.players[op].label}のどのシールドをブレイク？（${i+1}/${total}）`,
-        OZ.shield.map((x,j)=>`シールド${j+1}${x.faceup?`（表：${x.name}）`:""}${x.under&&x.under.length?`（+${x.under.length}枚重ね）`:""}`));
-      if(pick===null)return;
-      idx=pick;
+  let idxs;
+  if(OZ.shield.length<=total){
+    idxs=OZ.shield.map((_,i)=>i);
+  }else if(total===1){
+    const pick=await askChoice(`${S.players[op].label}のどのシールドをブレイク？`,
+      OZ.shield.map((x,j)=>`シールド${j+1}${x.faceup?`（表：${x.name}）`:""}${x.under&&x.under.length?`（+${x.under.length}枚重ね）`:""}`));
+    if(pick===null)return;
+    idxs=[pick];
+  }else{
+    idxs=await pickShieldIdxs(op,total);
+    if(idxs===null)return;
+  }
+  snap();
+  idxs.sort((a,b)=>b-a);
+  const shs=[];
+  for(const i of idxs)shs.push(OZ.shield.splice(i,1)[0]);
+  const stack=[];
+  for(const sh of shs)stack.push(sh,...(sh.under?sh.under.splice(0):[]));
+  stack.forEach(c=>{c.faceup=true;c.mark=false;});
+  sfx("flip");
+  renderAll();
+  $("bkDone").textContent="残りをすべて手札へ（完了）";
+  await processBroken(op,stack,`🛡 ${shs.length>1?"同時ブレイク":"ブレイク"}：${S.players[op].label}のシールド（計${stack.length}枚）`);
+  const areg=attacker?getReg(attacker):null;
+  if(areg&&areg.dragonB&&shs.length){
+    const pi2=op===0?1:0;
+    const Z2=zonesOf(pi2);
+    for(let i=0;i<shs.length;i++){
+      if(!Z2.deck.length){toast("山札がないため、ドラゴン・ブレイカーは終了");break;}
+      const top=Z2.deck[0];
+      const pick=await askChoice(`🐲 ドラゴン・ブレイカー（${i+1}/${shs.length}枚目）\n山札の上：${top.name} を表向きでシールドへ`,
+        ["新しい盾として置く","既存の盾に重ねる","追加しない（終了）"]);
+      if(pick===null||pick===2)break;
+      const c2=Z2.deck.shift();c2.faceup=true;c2.mark=true;
+      if(pick===1&&Z2.shield.length){
+        const j=await askChoice("どの盾に重ねる？",Z2.shield.map((x,k)=>`盾${k+1}${x.faceup?`（表：${x.name}）`:""}${x.under&&x.under.length?` +${x.under.length}`:""}`));
+        if(j===null){c2.mark=false;Z2.deck.unshift(c2);break;}
+        const t=Z2.shield[j];t.under=t.under||[];t.under.push(c2);
+        toast(`盾${j+1}に重ねた：${c2.name}`);
+      }else{Z2.shield.push(c2);toast(`新しい盾：${c2.name}`);}
+      renderAll();
     }
-    snap();
-    const sh=OZ.shield.splice(idx,1)[0];
-    const stack=[sh,...(sh.under?sh.under.splice(0):[])];
-    stack.forEach(c=>{c.faceup=true;c.mark=false;});
-    sfx("flip");
-    renderAll();
-    await processBroken(op,stack,`🛡 ブレイク：${S.players[op].label}のシールド（${stack.length}枚）`);
   }
 }
 /* ドルマゲドン型：封印を外した時の効果選択 */
@@ -1385,7 +1587,7 @@ async function startAttack(pi,id){
   }
   const op=pi===0?1:0, OZ=zonesOf(op);
   const reg=getReg(c);
-  const atkAll=!!(reg&&reg.atkUn);
+  const atkAll=!!(reg&&(reg.atkUn||reg.machf));
   const targets=[];
   OZ.battle.forEach(t=>{
     if(t.tapped||atkAll)targets.push({kind:"creature",cid:t.id,label:`⚔ ${faceNameOf(t)}${t.tapped?"（タップ中）":"（アンタップ）"}`});
@@ -1416,7 +1618,7 @@ async function execAttack(pi,id,tg){
   const c=Z.battle.find(x=>x.id===id);
   if(!c){toast("攻撃クリーチャーが場を離れたため、攻撃は中止されました");renderAll();return;}
   const op=pi===0?1:0, OZ=zonesOf(op);
-  const blockers=OZ.battle.filter(b=>!b.tapped&&getReg(b)&&getReg(b).blocker);
+  const blockers=OZ.battle.filter(b=>!b.tapped&&((getReg(b)&&getReg(b).blocker)||(b.buff&&b.buff.blocker)));
   let defender=null;
   if(blockers.length){
     const bl=await askChoice(`${S.players[op].label}：ブロックしますか？`,
@@ -1438,7 +1640,15 @@ async function execAttack(pi,id,tg){
   else if(tg.kind==="shield"){
     const reg=getReg(c);
     const bk=reg&&reg.breaks?reg.breaks:"1";
-    await breakShields(op,bk==="all"?"all":(parseInt(bk,10)||1));
+    let n;
+    if(bk==="all")n="all";
+    else if(bk==="powered"){
+      const P=await effPower(c,true);
+      n=Math.max(1,1+Math.floor(P/6000));
+      toast(`パワード・ブレイカー！ パワー${P} → ${n}枚ブレイク`);
+    }
+    else n=parseInt(bk,10)||1;
+    await breakShields(op,n,c);
   }
   else{sfx("atk");toast(`💥 ダイレクトアタック！ ${S.players[pi].label} の勝利！`);}
   renderAll();
@@ -1454,15 +1664,54 @@ function fxRowEl(faceIdx,i){
     if(v===f.t)o.selected=true;
     sel.appendChild(o);
   }
-  const num=document.createElement("input");
-  num.type="number";num.min=1;num.max=40;num.value=f.n;
+  const num=document.createElement("select");
+  num.style.cssText="flex:0 0 64px;width:64px";
+  {
+    const vals=[1,2,3,4,5,6,7,8,9,10];
+    if(f.n&&!vals.includes(+f.n))vals.push(+f.n);
+    vals.sort((a,b)=>a-b);
+    for(const v of vals){
+      const o=document.createElement("option");
+      o.value=v;o.textContent=v;
+      if(+f.n===v)o.selected=true;
+      num.appendChild(o);
+    }
+  }
   num.style.display=FX_NO_N.has(f.t)?"none":"";
   sel.onchange=()=>{f.t=sel.value;num.style.display=FX_NO_N.has(f.t)?"none":"";};
-  num.oninput=()=>{f.n=Math.max(1,parseInt(num.value,10)||1);};
+  num.onchange=()=>{f.n=Math.max(1,parseInt(num.value,10)||1);};
   const del=document.createElement("button");
   del.className="btn small warn del";del.textContent="✕";
   del.onclick=()=>{FXEDIT.faces[faceIdx].splice(i,1);renderFxEditor();};
   row.appendChild(sel);row.appendChild(num);row.appendChild(del);
+  return row;
+}
+const TRIG_EVS=[
+  ["atkC","相手がクリーチャーを攻撃した時"],
+  ["atkP","相手がプレイヤーを攻撃した時"],
+  ["draw","相手がドローした時"],
+  ["summon","相手がクリーチャーを出した時"],
+  ["spell","相手が呪文を唱えた時"],
+  ["turnEnd","ターンの終わりに"],
+];
+function fxTrigRowEl(i){
+  const f=FXEDIT.watchFx[i];
+  const row=document.createElement("div");row.className="fxrow";
+  const ev=document.createElement("select");
+  for(const [v,lb] of TRIG_EVS){const o=document.createElement("option");o.value=v;o.textContent=lb;if(v===f.ev)o.selected=true;ev.appendChild(o);}
+  ev.onchange=()=>{f.ev=ev.value;};
+  const sel=document.createElement("select");
+  for(const [v,lb] of FX_TYPES){const o=document.createElement("option");o.value=v;o.textContent=lb;if(v===f.t)o.selected=true;sel.appendChild(o);}
+  const num=document.createElement("select");
+  num.style.cssText="flex:0 0 64px;width:64px";
+  for(let v=1;v<=10;v++){const o=document.createElement("option");o.value=v;o.textContent=v;if(+f.n===v)o.selected=true;num.appendChild(o);}
+  num.style.display=FX_NO_N.has(f.t)?"none":"";
+  sel.onchange=()=>{f.t=sel.value;num.style.display=FX_NO_N.has(f.t)?"none":"";};
+  num.onchange=()=>{f.n=Math.max(1,parseInt(num.value,10)||1);};
+  const del=document.createElement("button");
+  del.className="btn small warn del";del.textContent="✕";
+  del.onclick=()=>{FXEDIT.watchFx.splice(i,1);renderFxEditor();};
+  row.appendChild(ev);row.appendChild(sel);row.appendChild(num);row.appendChild(del);
   return row;
 }
 function renderFxEditor(){
@@ -1482,6 +1731,14 @@ function renderFxEditor(){
   $("fxBlocker").checked=!!FXEDIT.blocker;
   $("fxSlayer").checked=!!FXEDIT.slayer;
   $("fxAtkUn").checked=!!FXEDIT.atkUn;
+  $("fxMachF").checked=!!FXEDIT.machf;
+  const tl=$("fxTrigList");tl.innerHTML="";
+  FXEDIT.watchFx.forEach((_,i)=>tl.appendChild(fxTrigRowEl(i)));
+  if(!FXEDIT.watchFx.length){
+    const h=document.createElement("div");h.className="hint";
+    h.textContent="（自動処理なし。「〜時」の確認トーストは上のチェックだけでも出ます）";
+    tl.appendChild(h);
+  }
   $("fxD2").checked=!!FXEDIT.d2;
   $("fxSeal").value=FXEDIT.seal||0;
   $("fxWatchAtkC").checked=!!FXEDIT.watch.atkC;
@@ -1493,6 +1750,20 @@ function renderFxEditor(){
   $("fxPA").value=FXEDIT.pa||"";
   $("fxBreaks").value=FXEDIT.breaks||"1";
   $("fxGimmick").value=FXEDIT.gimmick||"";
+  $("fxPowerSel").value=(FXEDIT.power!=null&&[...$("fxPowerSel").options].some(o=>o.value===String(FXEDIT.power)))?String(FXEDIT.power):"";
+  $("fxCost").value=FXEDIT.cost==null?"":String(FXEDIT.cost);
+  $("fxCost2").value=FXEDIT.cost2==null?"":String(FXEDIT.cost2);
+  $("fxCost2").style.display=FXEDIT.twin?"":"none";
+  $("fxCost2Label").style.display=FXEDIT.twin?"":"none";
+  $("fxCType").value=FXEDIT.ctype||"";
+  $("fxST").checked=!!FXEDIT.st;
+  $("fxSBack").checked=!!FXEDIT.sback;
+  $("fxSabaki").checked=!!FXEDIT.sabaki;
+  $("fxMonsho").checked=!!FXEDIT.monsho;
+  $("fxWide").checked=!!FXEDIT.wide;
+  $("fxDragonB").checked=!!FXEDIT.dragonB;
+  $("fxAuraTapIn").checked=!!FXEDIT.auraTapIn;
+  $("fxAuraNote").value=FXEDIT.auraNote||"";
   const th=$("fxThumb");th.innerHTML="";
   const el=vCardEl(FXEDIT.name);
   el.style.pointerEvents="none";
@@ -1510,19 +1781,54 @@ function openFxEditor(key){
     blocker:cur?!!cur.blocker:false,
     slayer:cur?!!cur.slayer:false,
     atkUn:cur?!!cur.atkUn:false,
+    machf:cur?!!cur.machf:false,
+    watchFx:cur&&cur.watchFx?cur.watchFx.map(x=>({...x})):[],
     d2:cur?!!cur.d2:false,
     seal:cur&&cur.seal||0,
     pa:cur&&cur.pa||null,
     breaks:cur&&cur.breaks||"1",
     gimmick:cur&&cur.gimmick||"",
+    cost:cur&&cur.cost!=null?cur.cost:null,
+    cost2:cur&&cur.cost2!=null?cur.cost2:null,
+    ctype:cur&&cur.ctype||"",
+    st:cur?!!cur.st:false,
+    sback:cur?!!cur.sback:false,
+    sabaki:cur?!!cur.sabaki:false,
+    monsho:cur?!!cur.monsho:false,
+    wide:cur?!!cur.wide:false,
+    dragonB:cur?!!cur.dragonB:false,
+    auraTapIn:cur?!!cur.auraTapIn:false,
+    auraNote:cur&&cur.auraNote||"",
     watch:cur&&cur.watch?{...cur.watch}:{atkC:false,atkP:false,draw:false,summon:false,spell:false,turnEnd:false},
   };
   renderFxEditor();
   $("fxOlay").classList.add("open");
 }
 function fxBackToSettings(){$("fxOlay").classList.remove("open");openDeckPanel();}
+(function initFxSelects(){
+  const ps=$("fxPowerSel");
+  const o0=document.createElement("option");o0.value="";o0.textContent="選択▼";ps.appendChild(o0);
+  for(let v=0;v<=15000;v+=500){
+    const o=document.createElement("option");o.value=v;o.textContent=v;ps.appendChild(o);
+  }
+  ps.addEventListener("change",()=>{
+    if(ps.value!==""){$("fxPower").value=ps.value;if(FXEDIT)FXEDIT.power=+ps.value;}
+  });
+  $("fxPower").addEventListener("input",()=>{
+    const v=$("fxPower").value;
+    ps.value=[...ps.options].some(o=>o.value===v)?v:"";
+  });
+  for(const id of ["fxCost","fxCost2"]){
+    const cs=$(id);
+    const c0=document.createElement("option");c0.value="";c0.textContent="－";cs.appendChild(c0);
+    for(let v=0;v<=20;v++){
+      const o=document.createElement("option");o.value=v;o.textContent=v;cs.appendChild(o);
+    }
+  }
+})();
 $("fxTwin").addEventListener("change",()=>{FXEDIT.twin=$("fxTwin").checked;renderFxEditor();});
 $("fxAdd0").addEventListener("click",()=>{FXEDIT.faces[0].push({t:"draw",n:1});renderFxEditor();});
+$("fxTrigAdd").addEventListener("click",()=>{if(!FXEDIT)return;FXEDIT.watchFx.push({ev:"turnEnd",t:"draw",n:1});renderFxEditor();});
 $("fxAdd1").addEventListener("click",()=>{FXEDIT.faces[1].push({t:"draw",n:1});renderFxEditor();});
 $("fxCancel").addEventListener("click",fxBackToSettings);
 $("fxSave").addEventListener("click",async ()=>{
@@ -1534,11 +1840,24 @@ $("fxSave").addEventListener("click",async ()=>{
     blocker:$("fxBlocker").checked,
     slayer:$("fxSlayer").checked,
     atkUn:$("fxAtkUn").checked,
+    machf:$("fxMachF").checked,
+    watchFx:FXEDIT.watchFx,
     d2:$("fxD2").checked,
     seal:Math.max(0,parseInt($("fxSeal").value,10)||0),
     pa:$("fxPA").value.trim()===""?null:Math.max(0,+$("fxPA").value||0),
     breaks:$("fxBreaks").value,
     gimmick:$("fxGimmick").value,
+    cost:$("fxCost").value===""?null:+$("fxCost").value,
+    cost2:$("fxCost2").value===""?null:+$("fxCost2").value,
+    ctype:$("fxCType").value,
+    st:$("fxST").checked,
+    sback:$("fxSBack").checked,
+    sabaki:$("fxSabaki").checked,
+    monsho:$("fxMonsho").checked,
+    wide:$("fxWide").checked,
+    dragonB:$("fxDragonB").checked,
+    auraTapIn:$("fxAuraTapIn").checked,
+    auraNote:$("fxAuraNote").value.trim(),
     watch:{
       atkC:$("fxWatchAtkC").checked, atkP:$("fxWatchAtkP").checked,
       draw:$("fxWatchDraw").checked, summon:$("fxWatchSummon").checked,
@@ -1630,6 +1949,17 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.breaks&&v.breaks!=="1")attrs.push(v.breaks==="all"?"ワールドB":`${v.breaks}ブレイク`);
     if(v.gimmick==="dorma")attrs.push("ドルマゲドン型");
     if(v.gimmick==="zeron")attrs.push("零龍型");
+    if(v.cost!=null)attrs.push(`コスト${v.cost}${v.cost2!=null?"/"+v.cost2:""}`);
+    if(v.ctype){const CT={creature:"クリーチャー",spell:"呪文",crossgear:"クロスギア",d2:"D2",psychic:"サイキック",tamaseed:"タマシード",dragheart:"ドラグハート",other:"その他"};attrs.push(CT[v.ctype]||v.ctype);}
+    if(v.st)attrs.push("⚡ST");
+    if(v.sback)attrs.push("Sバック");
+    if(v.sabaki)attrs.push("サバキZ");
+    if(v.monsho)attrs.push("裁きの紋章");
+    if(v.wide)attrs.push("横向き");
+    if(v.dragonB)attrs.push("ドラゴンB");
+    if(v.auraTapIn||v.auraNote)attrs.push("常在");
+    if(v.machf)attrs.push("マッハファイター");
+    if(v.watchFx&&v.watchFx.length)attrs.push(`誘発処理${v.watchFx.length}`);
     nm.textContent=(dispName.get(k)||k)+(v.twin?"（ツインパクト）":"")+(attrs.length?" ["+attrs.join("/")+"]":"");
     const hint=document.createElement("div");hint.className="hint";
     hint.textContent=v.twin?`上面：${fxSummary(v.faces[0])} ／ 下面：${fxSummary(v.faces[1])}`:fxSummary(v.faces[0]);
@@ -1713,7 +2043,14 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
   }
   if(toZone==="battle"){
     const reg=getReg(c);
-    if(reg&&reg.d2)c.rot=90;
+    if(reg&&(reg.d2||reg.wide))c.rot=90;
+    if(S.expert&&S.vs){
+      const foe=pTo===0?1:0;
+      if(zonesOf(foe).battle.some(x=>{const r2=getReg(x);return r2&&r2.auraTapIn;})){
+        c.tapped=true;
+        toast(`常在効果：${faceNameOf(c)} はタップ状態で出た`);
+      }
+    }
     emitEvent(pTo,"summon");
   }
   sfx("move");
@@ -1854,6 +2191,31 @@ function cardEl(pi,zone,c){
   if(c.seals&&c.seals.length){
     const sl=document.createElement("span");sl.className="sealtag";sl.textContent="封"+c.seals.length;
     el.appendChild(sl);
+  }
+  {
+    const regT=getReg(c);
+    if(regT&&(regT.auraTapIn||regT.auraNote)&&zone==="battle"){
+      const at=document.createElement("span");at.className="auratag";at.textContent="常";
+      if(regT.auraNote)at.title=regT.auraNote;
+      el.appendChild(at);
+    }
+  }
+  if(c.buff){
+    const parts=[];
+    if(c.buff.pa)parts.push("PA+"+c.buff.pa);
+    if(c.buff.pm)parts.push((c.buff.pm>0?"+":"")+c.buff.pm);
+    if(c.buff.slayer)parts.push("殺");
+    if(c.buff.blocker)parts.push("盾");
+    if(c.buff.note)parts.push(c.buff.note);
+    if(parts.length){
+      const bt=document.createElement("span");bt.className="bufftag";bt.textContent=parts.join(" ");
+      el.appendChild(bt);
+    }
+  }
+  if(c.gi){
+    const gn=["te","bo","ha","fu"].filter(k=>c.gi[k]).length;
+    const gt=document.createElement("span");gt.className="gitag";gt.textContent=`儀${gn}/4`;
+    el.appendChild(gt);
   }
   const link=LINKS.get(normName(c.name));
   if(showFace&&link&&link.length>1){
@@ -2016,6 +2378,7 @@ function attachPointer(el,ctx){
   el.addEventListener("pointerdown",ev=>{
     if(ev.button&&ev.button!==0)return;
     const sx=ev.clientX,sy=ev.clientY;
+    const t0=Date.now();
     const scroller=el.closest(".cards");
     const startScroll=scroller?scroller.scrollLeft:0;
     let mode=null,ghost=null,lastTgt=null;
@@ -2026,7 +2389,10 @@ function attachPointer(el,ctx){
         if(scroller&&Math.abs(dx)>Math.abs(dy)*1.4)mode="scroll";
         else{
           mode="drag";
-          if(ctx.viewer)$("viewerOlay").classList.remove("open");
+          if(ctx.viewer){
+            const ol=$("viewerOlay");
+            ol.style.opacity="0";ol.style.pointerEvents="none";
+          }
           try{el.setPointerCapture(ev.pointerId);}catch(e){}
           ghost=el.cloneNode(true);
           ghost.classList.remove("tapped","selected","msel","arrive");
@@ -2056,6 +2422,10 @@ function attachPointer(el,ctx){
       if(ghost)ghost.remove();
       el.classList.remove("dragging-src");
       if(lastTgt)lastTgt.el.classList.remove("droptgt");
+      if(ctx.viewer){
+        const ol=$("viewerOlay");
+        ol.style.opacity="";ol.style.pointerEvents="";
+      }
     };
     const up=e2=>{
       const wasMode=mode;
@@ -2068,9 +2438,13 @@ function attachPointer(el,ctx){
           const group=inSel?S.msel.slice():[{p:ctx.p,zone:ctx.zone,id:ctx.id}];
           for(const g2 of group)moveCardX(g2.p,g2.zone,g2.id,tgt.p,tgt.zone);
           if(inSel){endMulti();toast(`${group.length}枚をまとめて移動しました`);}
-          closeSel();renderAll();
+          closeSel();
+          if(ctx.viewer)closeViewer();
+          renderAll();
         }else if(ctx.viewer)renderAll();
-      }else if(!wasMode){if(ctx.tap)ctx.tap();else onCardTap(ctx,e2);}
+      }else if(!wasMode){
+        if(Date.now()-t0<450){if(ctx.tap)ctx.tap();else onCardTap(ctx,e2);}
+      }
     };
     const cancel=()=>finish();
     window.addEventListener("pointermove",move,{passive:false});
@@ -2165,6 +2539,21 @@ function openCardSheet(ctx){
       c.seals=c.seals||[];c.seals.push(sc);
       sfx("flip");toast(`封印を付けた（封${c.seals.length}）`);rerender();
     }));
+    box.appendChild(actBtn("✨ 1ターン付与（パワー±/PA/スレイヤー等）",async ()=>{
+      const pick=await askChoice(`《${faceNameOf(c)}》に付与（このターン中・ターン終了で解除）`,
+        ["パワー ＋（数値入力）","パワー −（数値入力）","パワーアタッカー ＋（数値入力）","スレイヤー","ブロッカー","メモ（自由入力）"]);
+      if(pick===null)return;
+      snap();
+      c.buff=c.buff||{};
+      if(pick===0){const v=await askNumber("パワー＋いくつ？",3000);if(v!=null)c.buff.pm=(c.buff.pm||0)+v;}
+      else if(pick===1){const v=await askNumber("パワー−いくつ？",3000);if(v!=null)c.buff.pm=(c.buff.pm||0)-v;}
+      else if(pick===2){const v=await askNumber("パワーアタッカー＋いくつ？",2222);if(v!=null)c.buff.pa=(c.buff.pa||0)+v;}
+      else if(pick===3)c.buff.slayer=true;
+      else if(pick===4)c.buff.blocker=true;
+      else if(pick===5){const t2=await askText("付与内容（メモ）","");if(t2)c.buff.note=t2;}
+      closeSel();renderAll();
+      toast("付与しました（カード左下に表示・ターン終了で解除）");
+    },"",true));
   }
   if(ctx.zone==="battle"||ctx.zone==="mana"){
     box.appendChild(actBtn(c.tapped?"アンタップ":"タップ",()=>{c.tapped=!c.tapped;rerender();},"primary"));
@@ -2199,6 +2588,9 @@ function openCardSheet(ctx){
   }
   if(reg&&reg.gimmick==="zeron"&&ctx.zone==="battle"){
     c.gi=c.gi||{te:false,bo:false,ha:false,fu:false};
+    box.appendChild(actBtn("🌑 零龍の儀の状況を確認（パネル）",()=>{
+      closeSheet();openZeronPanel(ctx.p,c);
+    },"",true));
     const GI=[
       ["te","手札の儀","自分のターンの終わりに、手札が1枚もないプレイヤーがいれば → GR召喚"],
       ["bo","墓地の儀","カードを自分の墓地に置いた時、墓地が8枚以上 → 相手1体をこのターン-3000"],
@@ -2291,6 +2683,12 @@ function openCardSheet(ctx){
   if(!masked&&ctx.zone!=="shield"){
     box.appendChild(actBtn(c.faceup?"裏向きにする":"表向きにする",()=>{c.faceup=!c.faceup;sfx("flip");rerender();}));
   }
+  if(!masked){
+    box.appendChild(actBtn("⚡ このカードの効果を登録/編集",()=>{
+      closeSheet();closeSel();
+      openFxEditor(faceKeyOf(c));
+    },"",true));
+  }
   if(!masked&&ctx.zone!=="shield"&&ctx.zone!=="deck"){
     box.appendChild(actBtn("既存の盾に表向きで重ねる",async ()=>{
       const Z2=zonesOf(ctx.p);
@@ -2362,7 +2760,37 @@ function openMultiSheet(){
     endMulti();renderAll();closeSheet();
     toast(`ランダム順で破壊：${names.join(" → ")}`);
   },"warn"));
-  box.appendChild(actBtn("選択を重ねる →（無月の門など）",()=>{
+  box.appendChild(actBtn("ランダムな順で山札の下へ",()=>{
+    const list=shuffle(S.msel.slice());
+    const names=[];
+    for(const s2 of list){
+      const f=findCard(s2.p,s2.zone,s2.id);
+      if(f)names.push(faceNameOf(f.card));
+      moveCard(s2.p,s2.zone,s2.id,"deckBottom");
+    }
+    endMulti();renderAll();closeSheet();
+    toast(`ランダム順で山下へ：${names.join(" → ")}`);
+  }));
+  box.appendChild(actBtn("順番を指定して山札の下へ",async ()=>{
+    const rest=S.msel.slice();
+    const order=[];
+    while(rest.length){
+      const labels=rest.map(s2=>{const f=findCard(s2.p,s2.zone,s2.id);return f?faceNameOf(f.card):"?";});
+      const j=rest.length===1?0:await askChoice(`次に山札の下へ置くカード（${order.length+1}枚目）`,labels);
+      if(j===null)return;
+      order.push(rest.splice(j,1)[0]);
+    }
+    snap();
+    const names=[];
+    for(const s2 of order){
+      const f=findCard(s2.p,s2.zone,s2.id);
+      if(f)names.push(faceNameOf(f.card));
+      moveCardX(s2.p,s2.zone,s2.id,s2.p,"deckBottom");
+    }
+    endMulti();renderAll();closeSheet();
+    toast(`指定順で山下へ：${names.join(" → ")}`);
+  },"",true));
+  box.appendChild(actBtn("選択を重ねる →（無月の門：先に門/重ね先のカードを場に出しておく）",()=>{
     PENDING={list:S.msel.slice()};
     S.msel=[];
     closeSheet();
@@ -2693,6 +3121,27 @@ function openShieldViewer(pi){
   if(!Z.shield.length)g.innerHTML="<div class='hint' style='grid-column:1/-1'>シールドはありません</div>";
   $("viewerOlay").classList.add("open");
 }
+function openZeronPanel(pi,c){
+  const names=[["te","手札の儀"],["bo","墓地の儀"],["ha","破壊の儀"],["fu","復活の儀"]];
+  const done=names.filter(([k])=>c.gi&&c.gi[k]).length;
+  $("vTitle").textContent=`🌑 零龍の儀：${done}/4 リンク${done===4?"（卍誕！）":""}`;
+  $("vHint").textContent="コアの画像を「手札の儀」などの名前で登録しておくと、ここに表示されます。リンク操作はカードのメニューから。";
+  $("vSearch").style.display="none";
+  $("vOk").style.display="none";$("vStatus").textContent="";
+  const g=$("vGrid");g.innerHTML="";
+  for(const [k,nm] of names){
+    const wrap=document.createElement("div");
+    const el=vCardEl(nm);
+    if(c.gi&&c.gi[k])el.classList.add("picked");
+    else el.style.opacity=".45";
+    const cap=document.createElement("div");
+    cap.style.cssText="font-size:11px;font-weight:800;text-align:center;margin-top:4px;color:"+(c.gi&&c.gi[k]?"var(--tap)":"var(--muted)");
+    cap.textContent=c.gi&&c.gi[k]?"✅ リンク済":"未リンク";
+    wrap.appendChild(el);wrap.appendChild(cap);
+    g.appendChild(wrap);
+  }
+  $("viewerOlay").classList.add("open");
+}
 function openDeckViewer(pi){
   const Z=zonesOf(pi);
   $("vTitle").textContent=`山札（上から順・${Z.deck.length}枚）`;
@@ -2775,12 +3224,28 @@ function openImageManager(){
         th.appendChild(im);
       }
       el.addEventListener("click",async ()=>{
-        const act=await askChoice(`「${name}」`,["✏️ 名前を変更","🗑 削除"]);
+        const reg0=FXDB.get(k);
+        const act=await askChoice(`「${name}」`,
+          ["✏️ 名前を変更",
+           `↔️ 横向きカード：${reg0&&reg0.wide?"解除する":"登録する"}`,
+           "⚡ 効果を登録/編集",
+           "🗑 削除"]);
         if(act===0){
           await renameImage(k);
           $("vTitle").textContent=`登録画像の管理（${imgURL.size}枚）`;
           render();
         }else if(act===1){
+          if(k==="__back__"){toast("裏面には設定できません");return;}
+          const reg2=FXDB.get(k)||{twin:false,faces:[[],[]],dest:"grave"};
+          reg2.wide=!reg2.wide;
+          FXDB.set(k,reg2);
+          await persistFx();
+          toast(reg2.wide?`「${name}」を横向きカードに設定しました`:`「${name}」の横向き設定を解除しました`);
+        }else if(act===2){
+          if(k==="__back__"){toast("裏面には登録できません");return;}
+          closeViewer();
+          openFxEditor(k);
+        }else if(act===3){
           if(!await ask(`画像「${name}」を削除しますか？`))return;
           await deleteImage(k);
           $("vTitle").textContent=`登録画像の管理（${imgURL.size}枚）`;
@@ -2793,6 +3258,11 @@ function openImageManager(){
     if(!shown)g.innerHTML="<div class='hint' style='grid-column:1/-1'>該当する画像がありません</div>";
   };
   search.oninput=render;
+  $("vCancel").onclick=()=>{
+    closeViewer();
+    $("vCancel").onclick=defaultVCancel;
+    openDeckPanel();
+  };
   render();
   $("viewerOlay").classList.add("open");
 }
@@ -2997,8 +3467,25 @@ window.addEventListener("keydown",e=>{
   if((e.metaKey||e.ctrlKey)&&(e.key==="z"||e.key==="Z")){
     const t=e.target;
     if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.isContentEditable))return;
-    e.preventDefault();undo();
+    e.preventDefault();
+    if(e.shiftKey)redo();else undo();
   }
+});
+let PEEK=null;
+$("askPeek").addEventListener("click",()=>{
+  $("askOlay").classList.remove("open");
+  PEEK="askOlay";
+  $("peekChip").classList.add("show");
+});
+$("bkPeek").addEventListener("click",()=>{
+  $("breakOlay").classList.remove("open");
+  PEEK="breakOlay";
+  $("peekChip").classList.add("show");
+});
+$("peekChip").addEventListener("click",()=>{
+  if(PEEK)$(PEEK).classList.add("open");
+  PEEK=null;
+  $("peekChip").classList.remove("show");
 });
 
 /* ================= settings ================= */
@@ -3147,7 +3634,14 @@ async function renderDeckList(){
       nm.textContent=(item.classList.contains("open")?"▾ ":"▸ ")+label;
     });
     const grid=document.createElement("div");grid.className="dl-grid";
-    const addCards=list=>{for(const e of list){const el=vCardEl(e.name,{cnt:e.count});el.classList.add("picked");grid.appendChild(el);}};
+    const addCards=list=>{for(const e of list){
+      const el=vCardEl(e.name,{cnt:e.count});el.classList.add("picked");
+      el.addEventListener("click",()=>{
+        $("deckListOlay").classList.remove("open");
+        openFxEditor(normName(e.name));
+      });
+      grid.appendChild(el);
+    }};
     const addSection=(title,list)=>{
       const lb=document.createElement("div");
       lb.style.cssText="grid-column:1/-1;font-size:11px;color:var(--muted);letter-spacing:.15em;text-align:center;margin-top:2px";
