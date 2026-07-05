@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>DM Re:Vault v8.0</title>
+<title>DM Re:Vault v8.1</title>
 <style>
 :root{
   --bg:#0c0f16; --panel:#151b28; --panel-2:#1d2536; --line:#2a3550;
@@ -99,7 +99,7 @@ body.vs .pboard{gap:3px}
 .zbtn:active{transform:translateY(1px)}
 .cards{
   display:flex;gap:5px;min-height:var(--card-h);
-  overflow-x:auto;overflow-y:hidden;
+  flex-wrap:wrap;overflow:visible;
   -webkit-overflow-scrolling:touch;
   align-items:flex-start;padding:2px 1px;scrollbar-width:thin;
 }
@@ -199,6 +199,10 @@ body.vs .pboard{gap:3px}
   font-size:12px;font-weight:800;box-shadow:0 6px 18px rgba(0,0,0,.5);
 }
 #evoBar.show{display:flex}
+.pboard{position:relative}
+.pboard>*{position:relative;z-index:1}
+.matbg{position:absolute;inset:0;z-index:0;opacity:.10;background-size:cover;background-position:center;pointer-events:none;border-radius:12px}
+.pboard.opp .matbg{transform:rotate(180deg)}
 .card.gearside{
   width:calc(var(--card-h)*1.4);
   outline:2px solid #8446c9;outline-offset:-2px;
@@ -369,6 +373,7 @@ body.vs .pboard{gap:3px}
   <button class="btn small" id="btnWho" style="display:none">操作:P1</button>
   <button class="btn small" id="btnSeat" style="display:none">視点:P1</button>
   <button class="btn small warn" id="btnResignBar" style="display:none">🏳 投了</button>
+  <button class="btn small" id="btnFreePlay">踏倒:OFF</button>
   <button class="btn primary" id="btnNextTurn">次のターン ▶</button>
 </div>
 
@@ -440,6 +445,9 @@ body.vs .pboard{gap:3px}
       <div class="row">
         <button class="btn small" id="btnSleeve0">P1のスリーブ</button>
         <button class="btn small" id="btnSleeve1">P2のスリーブ</button>
+        <button class="btn small" id="btnMat0">P1のプレイマット</button>
+        <button class="btn small" id="btnMat1">P2のプレイマット</button>
+        <button class="btn small ghost" id="btnMatReset">マット解除</button>
         <button class="btn small ghost" id="btnSleeveReset">リセット</button>
       </div>
       <div class="status" id="sleeveStatus"></div>
@@ -601,6 +609,7 @@ body.vs .pboard{gap:3px}
       <input type="text" id="bSearch" placeholder="絞り込み" style="flex:1;min-width:100px">
       <button class="btn small ghost" id="bReset">クリア</button>
       <button class="btn small" id="bCancel">閉じる</button>
+      <button class="btn small" id="bListView">📋 リスト確認</button>
       <button class="btn primary small" id="bApply">反映</button>
     </div>
     <div class="hint">タップで枚数切替（超GRは2枚まで）。ゲーム外タブはタップで枚数を直接入力（上限なし）。特殊カード（禁断など）はテキスト欄に直接入力してください。</div>
@@ -704,6 +713,7 @@ body.vs .pboard{gap:3px}
           <option value="smaxevo">S-MAX進化</option>
           <option value="onismaxevo">鬼S-MAX進化</option>
           <option value="gneo">G・NEO進化</option>
+          <option value="twinpact">ツインパクト（上：クリーチャー／下：呪文）</option>
           <option value="spell">呪文</option>
           <option value="crossgear">クロスギア</option>
           <option value="d2">D2フィールド</option>
@@ -724,6 +734,16 @@ body.vs .pboard{gap:3px}
         <label><input type="checkbox" id="fxCivF"> 火</label>
         <label><input type="checkbox" id="fxCivN"> 自然</label>
         <label><input type="checkbox" id="fxCivZ"> ゼロ</label>
+      </div>
+      <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:12px;font-weight:700">種族</span>
+        <input type="text" id="fxRace1" list="raceList" placeholder="種族1" style="flex:1;min-width:110px">
+        <input type="text" id="fxRace2" list="raceList" placeholder="種族2" style="flex:1;min-width:110px">
+        <input type="text" id="fxRace3" list="raceList" placeholder="種族3" style="flex:1;min-width:110px">
+        <input type="text" id="fxRace4" list="raceList" placeholder="種族4" style="flex:1;min-width:110px">
+        <datalist id="raceList">
+          <option value="アーマード・ドラゴン"><option value="ボルケーノ・ドラゴン"><option value="アース・ドラゴン"><option value="ゼニス"><option value="コマンド・ドラゴン"><option value="レッド・コマンド・ドラゴン"><option value="ホワイト・コマンド・ドラゴン"><option value="ブルー・コマンド・ドラゴン"><option value="ブラック・コマンド・ドラゴン"><option value="グリーン・コマンド・ドラゴン"><option value="ジュラシック・コマンド・ドラゴン"><option value="ガイア・コマンド"><option value="エンジェル・コマンド"><option value="エンジェル・コマンド・ドラゴン"><option value="デーモン・コマンド"><option value="デーモン・コマンド・ドラゴン"><option value="マジック・コマンド"><option value="ソニック・コマンド"><option value="ヒューマノイド"><option value="ヒューマノイド爆"><option value="ドラゴノイド"><option value="ファイアー・バード"><option value="リキッド・ピープル"><option value="リキッド・ピープル閃"><option value="サイバーロード"><option value="サイバー・ウイルス"><option value="サイバー・コマンド"><option value="グレートメカオー"><option value="マーフォーク"><option value="ムートピア"><option value="トリックス"><option value="ガーディアン"><option value="イニシエート"><option value="ライトブリンガー"><option value="セラフィム"><option value="メカ・デル・ソル"><option value="バーサーカー"><option value="オラクル"><option value="メタリカ"><option value="レインボー・ファントム"><option value="ゴースト"><option value="ダークロード"><option value="ヘドリアン"><option value="パンドラボックス"><option value="デビルマスク"><option value="ファンキー・ナイトメア"><option value="マフィ・ギャング"><option value="デリートロン"><option value="アビスロイヤル"><option value="ビーストフォーク"><option value="ビーストフォーク號"><option value="ジャイアント"><option value="ジャイアント・インセクト"><option value="ホーン・ビースト"><option value="ミステリー・トーテム"><option value="スノーフェアリー"><option value="ツリーフォーク"><option value="ワイルド・ベジーズ"><option value="グランセクト"><option value="チーム切札"><option value="チームボンバー"><option value="チームウェイブ"><option value="チーム銀河"><option value="チーム零"><option value="レクスターズ"><option value="ディスペクター"><option value="ジョーカーズ"><option value="ビートジョッキー"><option value="マスター・ドラゴン"><option value="ドリームメイト"><option value="アーク・セラフィム"><option value="グランド・デビル"><option value="ティラノ・ドレイク"><option value="ロスト・クルセイダー"><option value="アウトレイジ"><option value="オリジン"><option value="エイリアン"><option value="アンノウン"><option value="ハンター"><option value="サムライ"><option value="ナイト"><option value="エグザイル・クリーチャー"><option value="ドラグナー"><option value="ドルスザク"><option value="マジック"><option value="ジャイアント・ドラゴン"><option value="ポセイディア・ドラゴン"><option value="サイバー・ドラゴン"><option value="ドラゴン・ゾンビ"><option value="スピリット・クォーツ"><option value="ワールド・コマンド"><option value="ワールド・ドラゴン">
+        </datalist>
       </div>
       <div class="row" style="gap:12px">
         <label><input type="checkbox" id="fxBlocker"> ブロッカー</label>
@@ -752,7 +772,7 @@ body.vs .pboard{gap:3px}
         <span style="font-size:12px;font-weight:700">破壊置換：</span>
         <label><input type="checkbox" id="fxEscape"> エスケープ</label>
         <label><input type="checkbox" id="fxTrueEscape"> 真・エスケープ（盾なしでも手札へ戻る）</label>
-        <label><input type="checkbox" id="fxStarEvo" style="display:none"></label>
+        <label><input type="checkbox" id="fxStarEvo"> スター進化（離れる時、自身のみ離れ下は重なったまま残る）</label>
         <label><input type="checkbox" id="fxExLife"> EXライフ</label>
         <label><input type="checkbox" id="fxGNeo"> G・NEO進化（破壊時に一番下が離れ上が残る）</label>
         <label><input type="checkbox" id="fxShieldGo"> シールド・ゴー</label>
@@ -1747,6 +1767,7 @@ const FX_TYPES=[
   ["draw","n枚ドロー"],
   ["charge","n枚マナ加速（山上→マナ）"],
   ["mill","山上n枚を墓地へ"],
+  ["millOpp","相手の山札の上からn枚を墓地へ"],
   ["reveal","山上n枚を公開"],
   ["look","山上n枚を見る（非公開）"],
   ["handes","相手の手札をランダムにn枚捨てさせる"],
@@ -1839,6 +1860,10 @@ async function runFxList(pi,list){
     }else if(f.t==="mill"){
       for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;Z.grave.push(c);}
       sfx("grave");
+    }else if(f.t==="millOpp"){
+      for(let i=0;i<n&&OZ.deck.length;i++){const c=OZ.deck.shift();c.faceup=true;OZ.grave.push(c);}
+      sfx("grave");
+      if(S.vs&&!OZ.deck.length)declareWin(pi,`山札破壊：${S.players[op].label} の山札が0枚`);
     }else if(f.t==="reveal"){
       for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;Z.reveal.push(c);}
       renderAll();openRevealPanel(pi,"reveal");
@@ -1959,7 +1984,9 @@ async function destroyWithReplace(pi,c){
     if(r.trueEscape)opts.push(["tescape","🛡 真・エスケープ（このクリーチャーを手札に戻す）"]);
     const exSh=Z.shield.findIndex(x=>x.exFor===c.id);
     if(r.exlife&&(exSh>=0||Z.shield.length))opts.push(["exlife",exSh>=0?"💠 EXライフ（EX盾を墓地に置いて、場に残る）":"💠 EXライフ（盾を1枚墓地に置いて、場に残る）"]);
-    if((r.gneo||r.ctype==="gneo")&&c.under&&c.under.length)opts.push(["star","🔄 G・NEO進化（一番下が離れ、上のカードは場に残る）"]);
+    if((r.starEvo||["starevo","smaxevo","onismaxevo"].includes(r.ctype))&&c.under&&c.under.length)
+      opts.push(["starTop","⭐ スター進化（自身のみ離れ、下は重なったまま場に残る）"]);
+    if((r.gneo||r.ctype==="gneo")&&c.under&&c.under.length)opts.push(["gneoBottom","🔄 G・NEO進化（一番下が離れ、上のカードは場に残る）"]);
     if(r.shieldGo)opts.push(["sgo","🏰 シールド・ゴー（墓地の代わりに表向きの盾になる）"]);
     if(Z.battle.some(x=>x.id!==c.id&&(()=>{const r2=getReg(x);return r2&&r2.seiba;})()))
       opts.push(["seiba","⚔ セイバー（他のクリーチャーを身代わりに破壊）"]);
@@ -1999,7 +2026,21 @@ async function destroyWithReplace(pi,c){
           markArrive(c);
           toast(`🛡 真・エスケープ！ ${faceNameOf(c)} は手札に戻った`);
           sfx("flip");renderAll();return;
-        }else if(kind==="star"){
+        }else if(kind==="starTop"){
+          snap();
+          const arr=Z.battle;
+          const i=arr.findIndex(x=>x.id===c.id);
+          const kids=c.under.splice(0);
+          const newTop=kids.shift();
+          newTop.under=[...kids,...(newTop.under||[])];
+          newTop.tapped=c.tapped;
+          newTop.faceup=true;
+          arr[i]=newTop;
+          c.faceup=true;c.tapped=false;
+          Z.grave.push(c);
+          toast(`⭐ スター進化：${faceNameOf(c)} だけが離れ、${faceNameOf(newTop)}（重なったまま）が場に残った`);
+          sfx("grave");renderAll();return;
+        }else if(kind==="gneoBottom"){
           snap();
           const arr=Z.battle;
           const i=arr.findIndex(x=>x.id===c.id);
@@ -2532,10 +2573,13 @@ const TRIG_EVS=[
 function fxTrigRowEl(i){
   const f=FXEDIT.watchFx[i];
   const row=document.createElement("div");row.className="fxrow";
+  row.style.cssText="display:flex;flex-wrap:wrap;gap:6px;align-items:center";
   const ev=document.createElement("select");
+  ev.style.cssText="flex:1 1 46%;min-width:180px;max-width:100%";
   for(const [v,lb] of TRIG_EVS){const o=document.createElement("option");o.value=v;o.textContent=lb;if(v===f.ev)o.selected=true;ev.appendChild(o);}
   ev.onchange=()=>{f.ev=ev.value;};
   const sel=document.createElement("select");
+  sel.style.cssText="flex:1 1 38%;min-width:150px;max-width:100%";
   for(const [v,lb] of FX_TYPES){const o=document.createElement("option");o.value=v;o.textContent=lb;if(v===f.t)o.selected=true;sel.appendChild(o);}
   fxAddSpecialOptions(sel,f.t);
   const num=document.createElement("select");
@@ -2585,6 +2629,7 @@ function renderFxEditor(){
   $("fxExLife").checked=!!FXEDIT.exlife;
   $("fxStarEvo").checked=!!FXEDIT.starEvo;
   $("fxGNeo").checked=!!FXEDIT.gneo;
+  for(let i=0;i<4;i++)$("fxRace"+(i+1)).value=(FXEDIT.races&&FXEDIT.races[i])||"";
   $("fxShieldGo").checked=!!FXEDIT.shieldGo;
   $("fxSeiba").checked=!!FXEDIT.seiba;
   const tl=$("fxTrigList");tl.innerHTML="";
@@ -2661,6 +2706,7 @@ function openFxEditor(key){
     exlife:cur?!!cur.exlife:false,
     starEvo:cur?!!cur.starEvo:false,
     gneo:cur?!!cur.gneo:false,
+    races:cur&&cur.races||["","","",""],
     shieldGo:cur?!!cur.shieldGo:false,
     seiba:cur?!!cur.seiba:false,
     watchFx:cur&&cur.watchFx?cur.watchFx.map(x=>({...x})):[],
@@ -2743,6 +2789,7 @@ $("fxSave").addEventListener("click",async ()=>{
     exlife:$("fxExLife").checked,
     starEvo:$("fxStarEvo").checked,
     gneo:$("fxGNeo").checked,
+    races:[1,2,3,4].map(i=>$("fxRace"+i).value.trim()).filter(x=>x).concat(["","","",""]).slice(0,4),
     shieldGo:$("fxShieldGo").checked,
     seiba:$("fxSeiba").checked,
     watchFx:FXEDIT.watchFx,
@@ -2895,6 +2942,8 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.kirifuda)attrs.push(`キリフダッシュ${v.kirifuda}`);
     if(v.sInvade)attrs.push("S級侵略");
     if(v.exlife)attrs.push("EXライフ");
+    if(v.races&&v.races.some(x=>x))attrs.push("種族:"+v.races.filter(x=>x).join("/"));
+    if(v.starEvo)attrs.push("スター進化");
     if(v.gneo)attrs.push("G・NEO進化");
     if(v.shieldGo)attrs.push("シールド・ゴー");
     if(v.seiba)attrs.push("セイバー");
@@ -3053,7 +3102,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
     }
     emitEvent(pTo,"summon");
   }
-  if(S.expert&&S.autoTap&&fromZone==="hand"&&(toZone==="battle"||toZone==="resolve")){
+  if(S.expert&&S.autoTap&&!S.freePlay&&fromZone==="hand"&&(toZone==="battle"||toZone==="resolve")){
     autoTapCost(pTo,c);
   }
   sfx("move");
@@ -3079,6 +3128,15 @@ function buildBoards(){
   for(const pi of order){
     const pb=document.createElement("div");
     pb.className="pboard "+(pi===seat?"me":"opp");
+    {
+      const mk="__mat"+pi+"__";
+      if(imgURL.has(mk)){
+        const mb=document.createElement("div");
+        mb.className="matbg";
+        mb.style.backgroundImage=`url(${imgURL.get(mk)})`;
+        pb.appendChild(mb);
+      }
+    }
     pb.dataset.p=pi;
     const selBtn=z=>`<button class="zbtn" data-pi="${pi}" data-act="selall" data-z="${z}">全選択</button>`;
     const handBtns=(S.vs)
@@ -3422,6 +3480,12 @@ function renderAll(){
   $("btnSeat").style.display=S.vs?"":"none";
   $("btnSeat").textContent=`視点:${S.players[S.seat|0].label}`;
   $("btnResignBar").style.display=(S.vs&&S.turn>0)?"":"none";
+  {
+    const fp=$("btnFreePlay");
+    fp.textContent=S.freePlay?"⚡踏倒:ON":"踏倒:OFF";
+    fp.style.color=S.freePlay?"var(--accent)":"";
+    fp.style.display=S.expert&&S.autoTap?"":"none";
+  }
   $("btnVs").classList.toggle("on",S.vs);
   $("btnFlip").style.display=S.vs?"":"none";
   $("btnFlip").classList.toggle("on",S.flip);
@@ -3742,6 +3806,11 @@ $("olDeckSend").addEventListener("click",async ()=>{
 });
 $("olResign").addEventListener("click",doResign);
 $("btnResignBar").addEventListener("click",doResign);
+$("btnFreePlay").addEventListener("click",()=>{
+  S.freePlay=!S.freePlay;
+  renderAll();
+  toast(S.freePlay?"⚡踏み倒しモード：ON（プレイしてもマナを自動タップしません）":"踏み倒しモード：OFF（コスト分を自動タップ）");
+});
 $("olScoreReset").addEventListener("click",async ()=>{
   if(!await ask("戦績（勝敗カウント）をリセットしますか？"))return;
   SCORE[0]=0;SCORE[1]=0;
@@ -4007,6 +4076,26 @@ function openCardSheet(ctx){
   $("sheetDesc").style.display="none";
   const box=$("sheetActions");box.innerHTML="";
   const rerender=()=>{renderAll();openCardSheet(ctx);};
+  {
+    const u=(!masked&&c.faceup)?imgURL.get(faceKeyOf(c)):null;
+    if(u){
+      const pv=document.createElement("img");
+      pv.src=u;pv.draggable=false;
+      pv.style.cssText="width:100%;max-height:26dvh;object-fit:contain;border-radius:10px;margin-bottom:8px;cursor:zoom-in;background:#0d1119";
+      pv.title="タップで拡大表示";
+      pv.addEventListener("click",()=>{
+        const ol=document.createElement("div");
+        ol.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:950;display:flex;align-items:center;justify-content:center;cursor:zoom-out";
+        const big=document.createElement("img");
+        big.src=u;big.draggable=false;
+        big.style.cssText="max-width:94vw;max-height:92dvh;object-fit:contain;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.8)";
+        ol.appendChild(big);
+        ol.addEventListener("click",()=>ol.remove());
+        document.body.appendChild(ol);
+      });
+      box.appendChild(pv);
+    }
+  }
   if(ctx.zone==="battle"){
     box.appendChild(actBtn("⚔ 攻撃する",()=>{startAttack(ctx.p,ctx.id);},"primary",true));
     box.appendChild(actBtn("封印を付ける（自分の山上から）",()=>{
@@ -4084,6 +4173,24 @@ function openCardSheet(ctx){
       sfx("move");closeSel();renderAll();
       toast(`リンク解除：${parts.map(x=>faceNameOf(x)).join("、")}`);
     },"warn"));
+  }
+  if(ctx.zone==="grave"){
+    box.appendChild(actBtn("🌑 バトルゾーンに出して無月の門（墓地/場から下に敷く）",async ()=>{
+      snap();
+      const f2=findCard(ctx.p,"grave",ctx.id);
+      if(!f2)return;
+      f2.arr.splice(f2.idx,1);
+      const cc=f2.card;
+      cc.faceup=true;cc.tapped=false;
+      zonesOf(ctx.p).battle.push(cc);
+      markArrive(cc);
+      emitEvent(ctx.p,"summon");
+      enqueueFx(ctx.p,cc);
+      closeSheet();closeSel();closeViewer();
+      renderAll();
+      toast(`${faceNameOf(cc)} をバトルゾーンへ（墓地から）`);
+      await mugetsuGate(ctx.p,cc.id);
+    },"",true));
   }
   const isAura=reg&&reg.ctype==="aura";
   if(ctx.zone==="hyper"||(isAura&&(ctx.zone==="hand"||ctx.zone==="grave"))){
@@ -4258,6 +4365,10 @@ function openCardSheet(ctx){
     box.appendChild(actBtn(c.faceup?"裏向きにする":"表向きにする",()=>{c.faceup=!c.faceup;sfx("flip");rerender();}));
   }
   if(!masked&&["hand","mana","grave","deck"].includes(ctx.zone)){
+    box.appendChild(actBtn("🌑 無月の門（墓地/場から選んで下に敷く）",()=>{
+      closeSheet();closeSel();
+      mugetsuGate(ctx.p,ctx.id);
+    },"",true));
     box.appendChild(actBtn("⤴ 進化する（盤面のカードに乗せる）",()=>{
       EVO={p:ctx.p,zone:ctx.zone,id:ctx.id,deckN:0};
       S.msel=[];S.multi=false;
@@ -4678,6 +4789,66 @@ function stackDragAttach(el,u){
     window.addEventListener("pointercancel",cancel);
   });
 }
+async function mugetsuGate(pi,hostId){
+  const Z=zonesOf(pi);
+  const host=Z.battle.find(x=>x.id===hostId);
+  if(!host){toast("カードが見つかりません");return;}
+  const pool=[
+    ...Z.battle.filter(x=>x.id!==hostId).map(c=>({c,src:"battle",tag:"場"})),
+    ...Z.grave.map(c=>({c,src:"grave",tag:"墓"})),
+  ];
+  if(!pool.length){toast("下に敷けるカードがありません");return;}
+  $("vTitle").textContent=`🌑 無月の門：${faceNameOf(host)} の下に敷くカードを選択`;
+  $("vHint").textContent="タップで選択/解除（墓地とバトルゾーンから同時に選べます）→「決定」";
+  $("vSearch").style.display="none";
+  $("vStatus").textContent="";
+  const sel=new Set();
+  const g=$("vGrid");g.innerHTML="";
+  for(const {c,src,tag} of pool){
+    const el=vCardEl(faceNameOf(c));
+    const badge=document.createElement("span");
+    badge.style.cssText=`position:absolute;top:2px;left:2px;background:${src==="battle"?"#3b82f6":"#8b5cf6"};color:#fff;font-size:10px;font-weight:900;padding:1px 5px;border-radius:5px;z-index:5`;
+    badge.textContent=tag;
+    el.style.position="relative";
+    el.appendChild(badge);
+    el.addEventListener("click",()=>{
+      if(sel.has(c.id))sel.delete(c.id);else sel.add(c.id);
+      el.classList.toggle("picked",sel.has(c.id));
+      $("vOk").textContent=`🌑 決定（${sel.size}枚を下に敷く）`;
+    });
+    g.appendChild(el);
+  }
+  const ok=$("vOk");
+  ok.style.display="";
+  ok.textContent="🌑 決定（0枚を下に敷く）";
+  ok.onclick=()=>{
+    if(!sel.size){toast("カードを選択してください");return;}
+    snap();
+    const names=[];
+    for(const id of sel){
+      let f=Z.battle.findIndex(x=>x.id===id);
+      let cc=null;
+      if(f>=0){
+        cc=Z.battle.splice(f,1)[0];
+        if(cc.gear&&cc.gear.length){const gs=cc.gear.splice(0);gs.forEach(g2=>{g2.face=0;g2.rot=0;g2.tapped=false;Z.hyper.push(g2);});}
+        if(cc.under&&cc.under.length){host.under=host.under||[];host.under.push(...cc.under.splice(0));}
+      }else{
+        f=Z.grave.findIndex(x=>x.id===id);
+        if(f<0)continue;
+        cc=Z.grave.splice(f,1)[0];
+      }
+      cc.tapped=false;cc.faceup=true;cc.rot=0;cc.buff=null;
+      host.under=host.under||[];
+      host.under.push(cc);
+      names.push(faceNameOf(cc));
+    }
+    ok.onclick=null;ok.style.display="none";
+    closeViewer();
+    sfx("ok");renderAll();
+    toast(`🌑 無月の門！ ${faceNameOf(host)} の下に${names.length}枚：${names.join("、")}`);
+  };
+  $("viewerOlay").classList.add("open");
+}
 function openStackPanel(p,zone,id){
   stCtx={p,zone,id};stSel=new Set();
   renderStackPanel();
@@ -5062,7 +5233,7 @@ function openImageManager(){
   const render=()=>{
     g.innerHTML="";
     const q=normName(search.value);
-    const keys=Array.from(imgURL.keys()).sort((a,b)=>{
+    const keys=Array.from(imgURL.keys()).filter(k=>!k.startsWith("__mat")).sort((a,b)=>{
       if(a==="__back__")return -1;if(b==="__back__")return 1;
       return (dispName.get(a)||a).localeCompare(dispName.get(b)||b,"ja");
     });
@@ -5220,6 +5391,55 @@ function openSleevePicker(pi){
   render();
   $("viewerOlay").classList.add("open");
 }
+function openMatPicker(pi){
+  if(!imgURL.size){toast("先に画像を登録してください");return;}
+  $("deckOlay").classList.remove("open");
+  $("vTitle").textContent=`${S.players[pi].label}のプレイマットを選ぶ`;
+  $("vHint").textContent="タップした画像が盤面の背景（うっすら表示）になります。相手側は180°回転して表示されます。";
+  $("vOk").style.display="none";$("vStatus").textContent="";
+  const search=$("vSearch");search.style.display="";search.value="";
+  const g=$("vGrid");
+  const render=()=>{
+    g.innerHTML="";
+    const q=normName(search.value);
+    for(const k of Array.from(imgURL.keys()).sort()){
+      if(k.startsWith("__mat"))continue;
+      const name=k==="__back__"?"（登録済み裏面）":(dispName.get(k)||k);
+      if(q&&!k.includes(q))continue;
+      const el=vCardEl(name);
+      const th=el.querySelector(".thumb");th.innerHTML="";
+      const im=document.createElement("img");im.src=imgURL.get(k);im.draggable=false;
+      im.style.cssText="width:100%;height:100%;object-fit:cover";
+      th.appendChild(im);
+      el.addEventListener("click",async ()=>{
+        const blob=db?await idbGet("images",k):memImages.get(k);
+        if(blob){
+          const mk="__mat"+pi+"__";
+          if(db)await idbPut("images",mk,blob);else memImages.set(mk,blob);
+          if(imgURL.has(mk))URL.revokeObjectURL(imgURL.get(mk));
+          imgURL.set(mk,URL.createObjectURL(blob));
+        }
+        closeViewer();buildBoards();renderAll();
+        toast(`${S.players[pi].label}のプレイマットを設定しました`);
+      });
+      g.appendChild(el);
+    }
+  };
+  search.oninput=render;
+  render();
+  $("viewerOlay").classList.add("open");
+}
+$("btnMat0").addEventListener("click",()=>openMatPicker(0));
+$("btnMat1").addEventListener("click",()=>openMatPicker(1));
+$("btnMatReset").addEventListener("click",async ()=>{
+  for(const pi of [0,1]){
+    const mk="__mat"+pi+"__";
+    if(db)await idbDel("images",mk);else memImages.delete(mk);
+    if(imgURL.has(mk)){URL.revokeObjectURL(imgURL.get(mk));imgURL.delete(mk);}
+  }
+  buildBoards();renderAll();
+  toast("プレイマットを解除しました");
+});
 $("btnSleeve0").addEventListener("click",()=>openSleevePicker(0));
 $("btnSleeve1").addEventListener("click",()=>openSleevePicker(1));
 $("btnSleeveReset").addEventListener("click",async ()=>{
@@ -5761,12 +5981,19 @@ function bSeed(){
   for(const e of parseList($("hyText").value)){const k=normName(e.name);if(dispName.has(k))B.counts.hy.set(k,Math.min(e.count,4));}
   for(const e of parseList($("exText").value)){const k=normName(e.name);if(dispName.has(k))B.counts.ex.set(k,e.count);}
 }
+function raceMatch(reg,word){
+  if(!reg||!reg.races||!word)return false;
+  return reg.races.some(r=>r&&r.includes(word));
+}
 function typeMatch(k,tf){
   if(!tf)return true;
   const r=FXDB.get(k);
   if(!r)return false;
-  if(tf==="creatureAll")return ["creature","evo","neoevo","starevo","smaxevo","onismaxevo"].includes(r.ctype);
-  return r.ctype===tf;
+  const ct=r.ctype;
+  if(tf==="creatureAll")return ["creature","evo","neoevo","starevo","smaxevo","onismaxevo","gneo","twinpact"].includes(ct)||!!r.twin;
+  if(tf==="creature")return ct==="creature"||ct==="twinpact"||!!r.twin;
+  if(tf==="spell")return ct==="spell"||ct==="twinpact"||!!r.twin;
+  return ct===tf;
 }
 function bRender(){
   const g=$("bGrid");g.innerHTML="";
@@ -5816,6 +6043,12 @@ $("bTabGR").addEventListener("click",()=>bSetMode("gr"));
 $("bTabHy").addEventListener("click",()=>bSetMode("hy"));
 $("bTabEx").addEventListener("click",()=>bSetMode("ex"));
 $("bTypeFilter").addEventListener("change",bRender);
+$("bListView").addEventListener("click",async ()=>{
+  const fmt=(m)=>Array.from(m.entries()).map(([k,n])=>`${n}×${dispName.get(k)||k}`).join("\n")||"（なし）";
+  const t=(m)=>Array.from(m.values()).reduce((a,b)=>a+b,0);
+  const txt=`【メイン ${t(B.counts.main)}枚】\n${fmt(B.counts.main)}\n\n【超GR ${t(B.counts.gr)}枚】\n${fmt(B.counts.gr)}\n\n【超次元 ${t(B.counts.hy)}枚】\n${fmt(B.counts.hy)}\n\n【ゲーム外 ${t(B.counts.ex)}枚】\n${fmt(B.counts.ex)}`;
+  await ask(txt);
+});
 $("bSearch").addEventListener("input",bRender);
 $("bReset").addEventListener("click",()=>{B.counts[B.mode].clear();bRender();});
 $("bCancel").addEventListener("click",()=>$("builderOlay").classList.remove("open"));
