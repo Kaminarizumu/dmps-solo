@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>DM Re:Vault v7.5</title>
+<title>DM Re:Vault v7.6</title>
 <style>
 :root{
   --bg:#0c0f16; --panel:#151b28; --panel-2:#1d2536; --line:#2a3550;
@@ -210,6 +210,7 @@ body.vs .pboard{gap:3px}
 .card .gearpeek .gname{flex:1;font-size:8px;color:#e6d9ff;font-weight:800;overflow:hidden;padding:1px 2px}
 .card .frztag{position:absolute;left:0;top:18px;background:#38bdf8;color:#04263a;font-size:10px;font-weight:900;padding:0 5px;border-bottom-right-radius:6px;z-index:2}
 .card .jdtag{position:absolute;right:0;bottom:16px;background:#22d3ee;color:#052a30;font-size:9px;font-weight:900;padding:0 4px;border-top-left-radius:6px;z-index:2}
+.card .extag{position:absolute;left:0;bottom:0;background:#06b6d4;color:#032830;font-size:10px;font-weight:900;padding:0 5px;border-top-right-radius:6px;z-index:2}
 @media (max-width:560px){
   .btn.small{padding:5px 7px;font-size:10px}
   .btn{font-size:11px}
@@ -1838,7 +1839,8 @@ async function destroyWithReplace(pi,c){
   if(S.expert&&r){
     const opts=[];
     if(r.escape&&Z.shield.length)opts.push(["escape","🛡 エスケープ（盾を1枚手札に加えて、場に残る）"]);
-    if(r.exlife&&Z.shield.length)opts.push(["exlife","💠 EXライフ（盾を1枚墓地に置いて、場に残る）"]);
+    const exSh=Z.shield.findIndex(x=>x.exFor===c.id);
+    if(r.exlife&&(exSh>=0||Z.shield.length))opts.push(["exlife",exSh>=0?"💠 EXライフ（EX盾を墓地に置いて、場に残る）":"💠 EXライフ（盾を1枚墓地に置いて、場に残る）"]);
     if(r.starEvo&&c.under&&c.under.length)opts.push(["star","⭐ スター進化（自身だけ離れ、下のカードは場に残る）"]);
     if(r.shieldGo)opts.push(["sgo","🏰 シールド・ゴー（墓地の代わりに表向きの盾になる）"]);
     if(Z.battle.some(x=>x.id!==c.id&&(()=>{const r2=getReg(x);return r2&&r2.seiba;})()))
@@ -1848,8 +1850,11 @@ async function destroyWithReplace(pi,c){
       if(j!==null&&j<opts.length){
         const kind=opts[j][0];
         if(kind==="escape"||kind==="exlife"){
-          const si=Z.shield.length===1?0:await askChoice(kind==="escape"?"手札に加える盾を選択":"墓地に置く盾を選択",
-            Z.shield.map((x,k)=>`盾${k+1}${x.faceup?`（${x.name}）`:""}${x.under&&x.under.length?` +${x.under.length}`:""}`));
+          let si;
+          const exIdx=Z.shield.findIndex(x=>x.exFor===c.id);
+          if(kind==="exlife"&&exIdx>=0)si=exIdx;
+          else si=Z.shield.length===1?0:await askChoice(kind==="escape"?"手札に加える盾を選択":"墓地に置く盾を選択",
+            Z.shield.map((x,k)=>`盾${k+1}${x.faceup?`（${x.name}）`:""}${x.under&&x.under.length?` +${x.under.length}`:""}${x.exFor!=null?"【EX盾】":""}`));
           if(si!==null){
             snap();
             const sh=Z.shield.splice(si,1)[0];
@@ -2791,6 +2796,17 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
       toast(`多色：${faceNameOf(c)} はタップしてマナゾーンへ`);
     }
   }
+  if(fromZone==="battle"&&toZone!=="battle"){
+    const ZF=zonesOf(pFrom);
+    const exIdx=ZF.shield.findIndex(x=>x.exFor===c.id);
+    if(exIdx>=0){
+      const sh=ZF.shield.splice(exIdx,1)[0];
+      const stack=[sh,...(sh.under?sh.under.splice(0):[])];
+      stack.forEach(x=>{x.faceup=true;x.exFor=null;ZF.grave.push(x);});
+      toast(`💠 EX盾を墓地に置きました（本来は「離れる代わりに」の置換が可能。残す場合は⌘Zで戻して破壊置換から）`);
+      sfx("grave");
+    }
+  }
   if(toZone!=="battle"){
     if(c.gear&&c.gear.length){
       const gs=c.gear.splice(0);
@@ -2822,6 +2838,18 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
         c.tapped=true;
         toast(`常在効果：${faceNameOf(c)} はタップ状態で出た`);
       }
+    }
+    if(S.expert&&reg&&reg.exlife){
+      if(Z.deck.length){
+        const ns=Z.deck.shift();
+        ns.faceup=false;
+        ns.mark=S.turn>0;
+        ns.exFor=c.id;
+        ns.under=ns.under||[];
+        Z.shield.push(ns);
+        toast(`💠 EXライフ：山札の上から1枚を専用シールドに追加（EX盾）`);
+        sfx("flip");
+      }else toast("💠 EXライフ：山札がないため盾を追加できません");
     }
     emitEvent(pTo,"summon");
   }
@@ -3027,6 +3055,13 @@ function cardEl(pi,zone,c){
     const gn=["te","bo","ha","fu"].filter(k=>c.gi[k]).length;
     const gt=document.createElement("span");gt.className="gitag";gt.textContent=`儀${gn}/4`;
     el.appendChild(gt);
+  }
+  if(c.exFor!=null&&zone==="shield"){
+    const ex=document.createElement("span");
+    ex.className="extag";
+    ex.textContent="EX盾";
+    ex.title="EXライフの専用シールド";
+    el.appendChild(ex);
   }
   if(c.frozen){
     const ft=document.createElement("span");ft.className="frztag";ft.textContent="❄凍結";
@@ -4056,6 +4091,17 @@ function openCardSheet(ctx){
   for(const [tz,label] of MOVE_TARGETS){
     if(tz===ctx.zone)continue;
     if(ctx.zone==="shield"&&(tz==="hand"||tz==="shieldUp"))continue;
+    if(tz==="grave"&&ctx.zone==="battle"){
+      box.appendChild(actBtn("墓地へ（破壊・置換確認あり）",async ()=>{
+        const f2=findCard(ctx.p,"battle",ctx.id);
+        if(!f2)return;
+        snap();
+        closeSel();closeSheet();
+        await destroyWithReplace(ctx.p,f2.card);
+        renderAll();
+      }));
+      continue;
+    }
     box.appendChild(actBtn(label,()=>{moveCard(ctx.p,ctx.zone,ctx.id,tz);closeSel();renderAll();}));
   }
   if(S.vs){
@@ -4093,13 +4139,13 @@ function openMultiSheet(){
     endMulti();renderAll();closeSheet();
     toast(`ランダム順で手札へ：${names.join(" → ")}`);
   }));
-  box.appendChild(actBtn("ランダムな順で破壊",()=>{
+  box.appendChild(actBtn("ランダムな順で破壊",async ()=>{
     const list=shuffle(S.msel.slice());
     const names=[];
     for(const s of list){
       const f=findCard(s.p,s.zone,s.id);if(!f)continue;
       names.push(faceNameOf(f.card));
-      if(s.zone==="battle")destroyCreature(s.p,f.card);
+      if(s.zone==="battle")await destroyWithReplace(s.p,f.card);
       else moveCard(s.p,s.zone,s.id,"grave");
     }
     endMulti();renderAll();closeSheet();
