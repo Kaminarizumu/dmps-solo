@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>DM Re:Vault v8.8</title>
+<title>DM Re:Vault v8.9</title>
 <style>
 :root{
   --bg:#0c0f16; --panel:#151b28; --panel-2:#1d2536; --line:#2a3550;
@@ -494,7 +494,16 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <select id="setLayout" style="flex:1">
           <option value="stack">縦積み（標準・iPad向け）</option>
           <option value="cols">2カラム（横長モニター向け・相手が左/自分が右）</option>
-          <option value="wide">ワイド段組み（マナと手札を横並びで段数圧縮）</option>
+          <option value="wide">ワイド段組み（2ゾーンを横並びで段数圧縮）</option>
+        </select>
+      </div>
+      <div class="row" style="align-items:center;gap:8px" id="widePairRow">
+        <span style="font-size:12px;font-weight:700">ワイド時の横並び</span>
+        <select id="setWidePair" style="flex:1">
+          <option value="sys,hand">山札/盾（左）＋ 手札（右）</option>
+          <option value="mana,hand">マナ（左）＋ 手札（右）</option>
+          <option value="sys,mana">山札/盾（左）＋ マナ（右）</option>
+          <option value="hand,mana">手札（左）＋ マナ（右）</option>
         </select>
       </div>
       <div class="row" style="flex-direction:column;align-items:stretch;gap:4px">
@@ -786,7 +795,7 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <input type="text" id="fxRace4" list="raceList" placeholder="種族4" style="flex:1;min-width:110px">
         <input type="text" id="fxRace5" list="raceList" placeholder="種族5" style="flex:1;min-width:110px">
         <datalist id="raceList">
-          <option value="アポロニア・ドラゴン"><option value="アース・ドラゴン"><option value="アーマード・ドラゴン"><option value="エンジェル・コマンド・ドラゴン"><option value="ガイア・コマンド・ドラゴン"><option value="クリスタル・コマンド・ドラゴン"><option value="グリーン・コマンド・ドラゴン"><option value="コマンド・ドラゴン"><option value="サイバー・ドラゴン"><option value="ジャイアント・ドラゴン"><option value="ジュラシック・コマンド・ドラゴン"><option value="デーモン・コマンド・ドラゴン"><option value="ドラゴン"><option value="ドラゴンギルド"><option value="ドラゴン・ゾンビ"><option value="ブラック・コマンド・ドラゴン"><option value="ブルー・コマンド・ドラゴン"><option value="ホワイト・コマンド・ドラゴン"><option value="ボルケーノ・ドラゴン"><option value="ポセイディア・ドラゴン"><option value="マジック・コマンド・ドラゴン"><option value="マスター・ドラゴン"><option value="メガ・コマンド・ドラゴン"><option value="レッド・コマンド・ドラゴン"><option value="ワールド・ドラゴン"><option value="アウトレイジ・コマンドMAX"><option value="エンジェル・コマンド"><option value="ガイア・コマンド"><option value="サイバー・コマンド"><option value="ソニック・コマンド"><option value="デーモン・コマンド"><option value="マジック・コマンド"><option value="メカ・エンジェル・コマンド"><option value="ワールド・コマンド"><option value="S級侵略者"><option value="アウトレイジ"><option value="アウトレイジMAX"><option value="アビスロイヤル"><option value="アンノウン"><option value="アーク・セラフィム"><option value="アーマロイド"><option value="イニシエート"><option value="イニシャルズ"><option value="イニシャルズX"><option value="エイリアン"><option value="エクストリーマー"><option value="エグザイル・クリーチャー"><option value="エレメンタル"><option value="オラクル"><option value="オリジン"><option value="ガーゴイル"><option value="ガーディアン"><option value="キマイラ"><option value="グラディエーター"><option value="グランセクト"><option value="グランド・デビル"><option value="グレートメカオー"><option value="コスモ・ウォーカー"><option value="ゴッド"><option value="ゴッド・ノヴァ"><option value="ゴッド・ノヴァOMG"><option value="ゴースト"><option value="サイバーロード"><option value="サイバー・ウイルス"><option value="サイバー・ムーン"><option value="サムライ"><option value="シノビ"><option value="ジャイアント"><option value="ジャイアント・インセクト"><option value="ジャイアント・スノーフェアリー"><option value="ジョーカーズ"><option value="スチーム・ナイト"><option value="スノーフェアリー"><option value="スピリット・クォーツ"><option value="スプラッシュ・クイーン"><option value="スペシャルズ"><option value="セラフィム"><option value="ゼニス"><option value="ダークロード"><option value="チームウェイブ"><option value="チームボンバー"><option value="チーム切札"><option value="チーム銀河"><option value="チーム零"><option value="ツリーフォーク"><option value="ティラノ・ドレイク"><option value="テクノ・サムライ"><option value="ディスペクター"><option value="デスパペット"><option value="デビルマスク"><option value="デモニオ"><option value="デリートロン"><option value="トリックス"><option value="ドラグナー"><option value="ドラゴノイド"><option value="ドラゴノイド爆"><option value="ドリームメイト"><option value="ドルスザク"><option value="ナイト"><option value="ハムカツ団"><option value="ハンター"><option value="バーサーカー"><option value="パンドラボックス"><option value="ヒューマノイド"><option value="ヒューマノイド爆"><option value="ビーストフォーク"><option value="ビーストフォーク號"><option value="ビートジョッキー"><option value="ファイアー・バード"><option value="ファンキー・ナイトメア"><option value="フィッシュ"><option value="フュージョナー"><option value="ヘドリアン"><option value="ホーン・ビースト"><option value="マシン・イーター"><option value="マジック"><option value="マジック・アウトレイジMAX"><option value="マフィ・ギャング"><option value="マーフォーク"><option value="ミステリー・トーテム"><option value="ミルクボーイ"><option value="ムートピア"><option value="メカサンダー"><option value="メカ・デル・ソル"><option value="メカ・デル・ディネロ"><option value="メタリカ"><option value="ライトブリンガー"><option value="リキッド・ピープル"><option value="リキッド・ピープル閃"><option value="レインボー・ファントム"><option value="レクスターズ"><option value="ロスト・クルセイダー"><option value="ロック・ビースト"><option value="ワイルド・ベジーズ"><option value="侵略者"><option value="超化獣"><option value="超竜"><option value="革命軍"><option value="鬼レクスターズ"><option value="魔導具">
+          <option value="アポロニア・ドラゴン"><option value="アース・ドラゴン"><option value="アーマード・ドラゴン"><option value="エンジェル・コマンド・ドラゴン"><option value="ガイア・コマンド・ドラゴン"><option value="クリスタル・コマンド・ドラゴン"><option value="グリーン・コマンド・ドラゴン"><option value="コマンド・ドラゴン"><option value="サイバー・ドラゴン"><option value="ジャイアント・ドラゴン"><option value="ジュラシック・コマンド・ドラゴン"><option value="ジョーカーズ・ドラゴン"><option value="デーモン・コマンド・ドラゴン"><option value="ドラゴン"><option value="ドラゴンギルド"><option value="ドラゴン・ゾンビ"><option value="ブラック・コマンド・ドラゴン"><option value="ブルー・コマンド・ドラゴン"><option value="ホワイト・コマンド・ドラゴン"><option value="ボルケーノ・ドラゴン"><option value="ポセイディア・ドラゴン"><option value="マジック・コマンド・ドラゴン"><option value="マスター・ドラゴン"><option value="メガ・コマンド・ドラゴン"><option value="レッド・コマンド・ドラゴン"><option value="ワールド・ドラゴン"><option value="アウトレイジ・コマンドMAX"><option value="エンジェル・コマンド"><option value="ガイア・コマンド"><option value="サイバー・コマンド"><option value="ソニック・コマンド"><option value="デーモン・コマンド"><option value="フレイム・コマンド"><option value="マジック・コマンド"><option value="メカ・エンジェル・コマンド"><option value="ワールド・コマンド"><option value="S級侵略者"><option value="アウトレイジ"><option value="アウトレイジMAX"><option value="アビスロイヤル"><option value="アンノイズ"><option value="アンノウン"><option value="アーク・セラフィム"><option value="アースイーター"><option value="アーマロイド"><option value="アーマード・ワイバーン"><option value="イニシエート"><option value="イニシャルズ"><option value="イニシャルズX"><option value="エイリアン"><option value="エクストリーマー"><option value="エグザイル・クリーチャー"><option value="エレメンタル"><option value="オラクル"><option value="オリジン"><option value="ガーゴイル"><option value="ガーディアン"><option value="キマイラ"><option value="ギャング・ビート"><option value="グラディエーター"><option value="グランセクト"><option value="グランド・デビル"><option value="グレートメカオー"><option value="ゲル・フィッシュ"><option value="コスモ・ウォーカー"><option value="コロニー・ビートル"><option value="ゴッド"><option value="ゴッド・ノヴァ"><option value="ゴッド・ノヴァOMG"><option value="ゴースト"><option value="サイバーロード"><option value="サイバー・ウイルス"><option value="サイバー・ムーン"><option value="サムライ"><option value="シノビ"><option value="ジャイアント"><option value="ジャイアント・インセクト"><option value="ジャイアント・スノーフェアリー"><option value="ジャスティス・ウイング"><option value="ジョーカーズ"><option value="スターライト・ツリー"><option value="スチーム・ナイト"><option value="スノーフェアリー"><option value="スピリット・クォーツ"><option value="スプラッシュ・クイーン"><option value="スペシャルズ"><option value="スペース・サーパント"><option value="セラフィム"><option value="ゼニス"><option value="ゼノパーツ"><option value="ソルトルーパー"><option value="ダークロード"><option value="チームACE"><option value="チームウェイブ"><option value="チームボンバー"><option value="チーム切札"><option value="チーム銀河"><option value="チーム零"><option value="ツリーフォーク"><option value="ティラノ・ドレイク"><option value="テクノ・サムライ"><option value="ディスタス"><option value="ディスペクター"><option value="デスパペット"><option value="デビルマスク"><option value="デモニオ"><option value="デリートロン"><option value="トリックス"><option value="ドラグナー"><option value="ドラゴノイド"><option value="ドラゴノイド号"><option value="ドラゴノイド爆"><option value="ドリームメイト"><option value="ドルスザク"><option value="ナイト"><option value="ハムカツ団"><option value="ハンター"><option value="バルーン・マッシュルーム"><option value="バーサーカー"><option value="パラサイトワーム"><option value="パンドラボックス"><option value="ヒューマノイド"><option value="ヒューマノイド爆"><option value="ビックリーノ"><option value="ビーストフォーク"><option value="ビーストフォーク號"><option value="ビートジョッキー"><option value="ファイアー・バード"><option value="ファンキー・ナイトメア"><option value="ファントム・ビースト"><option value="フィッシュ"><option value="フュージョナー"><option value="ブレイブ・スピリット"><option value="ヘドリアン"><option value="ホーン・ビースト"><option value="マイナー・スピリット"><option value="マシン・イーター"><option value="マジック"><option value="マジック・アウトレイジMAX"><option value="マフィ・ギャング"><option value="マーフォーク"><option value="ミステリー・トーテム"><option value="ミルクボーイ"><option value="ムートピア"><option value="メカサンダー"><option value="メカ・デル・ソル"><option value="メカ・デル・ディネロ"><option value="メタリカ"><option value="メルト・ウォリアー"><option value="ライトブリンガー"><option value="リキッド・ピープル"><option value="リキッド・ピープル閃"><option value="リヴァイアサン"><option value="レインボー・ファントム"><option value="レクスターズ"><option value="ロスト・クルセイダー"><option value="ロック・ビースト"><option value="ワイルド・ベジーズ"><option value="ワーム"><option value="侵略者"><option value="暴拳王国"><option value="最終禁断"><option value="月光王国"><option value="禁断"><option value="超化獣"><option value="超竜"><option value="革命軍"><option value="鬼レクスターズ"><option value="魔導具">
         </datalist>
       </div>
       <div class="row" style="gap:12px">
@@ -844,6 +853,7 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <label><input type="checkbox" id="fxZRush"> Zラッシュ（いずれかの盾が離れるとHM解放）</label>
         <label><input type="checkbox" id="fxInvadeZero"> 侵略ZERO（相手がクリーチャーを出した時、手札/墓地/マナから自分のクリーチャーに重ねる）</label>
         <label><input type="checkbox" id="fxRev0"> 革命0トリガー（自分の盾0で相手の攻撃時、手札から無料使用）</label>
+        <label><input type="checkbox" id="fxSilent"> サイレントスキル（アンタップの代わりに効果発動）</label>
         <input type="text" id="fxHyperNote" placeholder="HM時の能力メモ（パワー+○○等）" style="flex:1;min-width:140px">
         <span style="font-size:12px;font-weight:700">キリフダッシュ</span>
         <select id="fxKirifuda" style="width:auto;flex:0 0 80px">
@@ -1042,6 +1052,12 @@ function toast(m){
   const t=$("toast");t.textContent=m;t.classList.add("show");
   clearTimeout(t._tm);
   t._tm=setTimeout(()=>t.classList.remove("show"),4200);
+  const d=new Date();
+  GAMELOG.push(`[${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}] ${m}`);
+  if(GAMELOG.length>400)GAMELOG.shift();
+}
+const ZLOG={hand:"手札",mana:"マナ",battle:"バトル",grave:"墓地",deck:"山札",shield:"盾",hyper:"超次元",gr:"超GR",exile:"ゲーム外",resolve:"解決中",deckTop:"山札の上",deckBottom:"山札の下",shieldUp:"盾(表)"};
+function logOnly(m){
   const d=new Date();
   GAMELOG.push(`[${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}] ${m}`);
   if(GAMELOG.length>400)GAMELOG.shift();
@@ -1481,6 +1497,37 @@ function nextTurn(){
       const isMine=pi2===cur2;
       runWatchFxCond(pi2,(ev)=>ev==="turnEndBoth"||(isMine&&ev==="turnEndMine")||(!isMine&&ev==="turnEndOpp"));
     }
+    // 侵略ZERO：ターン終了時、相手（非ターンプレイヤー）の手札から
+    if(S.vs){
+      const def=cur2===0?1:0;
+      const DZ=zonesOf(def);
+      const izCands=DZ.hand.filter(h=>{const r=getReg(h);return r&&r.invadeZero;});
+      if(izCands.length&&DZ.battle.length){
+        (async()=>{
+          const j=await askChoice(`⚡0 ターン終了時：${S.players[def].label}の侵略ZERO発動？\n（条件：このターン、相手がコストを支払わずにクリーチャーを出した場合。判断はプレイヤー）`,
+            [...izCands.map(h=>faceNameOf(h)),"発動しない"]);
+          if(j===null||j>=izCands.length)return;
+          const h=izCands[j];
+          const k=DZ.battle.length===1?0:await askChoice("重ねる自分のクリーチャーを選択",DZ.battle.map(x=>faceNameOf(x)));
+          if(k===null)return;
+          snap();
+          const hi=DZ.hand.findIndex(x=>x.id===h.id);
+          DZ.hand.splice(hi,1);
+          const host=DZ.battle[k];
+          h.faceup=true;h.tapped=host.tapped;
+          h.under=[host,...(host.under?host.under.splice(0):[])];
+          if(host.gear&&host.gear.length){h.gear=host.gear.splice(0);}
+          const bi=DZ.battle.findIndex(x=>x.id===host.id);
+          DZ.battle[bi]=h;
+          markArrive(h);
+          emitEvent(def,"summon");
+          enqueueFx(def,h);
+          sfx("ok");renderAll();
+          toast(`⚡0 侵略ZERO！ ${faceNameOf(h)}（手札から）`);
+          await waitFxIdle();renderAll();
+        })();
+      }
+    }
   }
   for(const P of S.players)P.zones.battle.forEach(c=>c.buff=null);
   let extra=false;
@@ -1492,10 +1539,23 @@ function nextTurn(){
   const pi=S.vs?S.who:0;
   const Z=S.players[pi].zones;
   const frz=[];
+  const silentCands=Z.battle.filter(c=>c.tapped&&!c.frozen&&(()=>{const r=getReg(c);return r&&r.silent;})());
   Z.battle.forEach(c=>{
     if(c.frozen){c.frozen=false;frz.push(faceNameOf(c));}
     else c.tapped=false;
   });
+  if(S.expert&&silentCands.length){
+    (async()=>{
+      for(const sc of silentCands){
+        const yes=await ask(`🤫 サイレントスキル\n《${faceNameOf(sc)}》をアンタップする代わりに、効果を発動しますか？（タップしたまま）`);
+        if(yes){
+          sc.tapped=true;
+          renderAll();
+          toast(`🤫 サイレントスキル発動：${faceNameOf(sc)}（タップしたまま）`);
+        }
+      }
+    })();
+  }
   if(frz.length)toast(`❄ フリーズ：${frz.join("、")} はアンタップしない`);
   if(S.noUntapMana)toast("（設定：マナは自動アンタップしません）");
   else Z.mana.forEach(c=>c.tapped=false);
@@ -1606,39 +1666,6 @@ function emitEvent(actor,type){
   if(type==="summon"&&S.vs){
     const def=actor===0?1:0;
     const DZ=zonesOf(def);
-    (async()=>{
-      const izCands=[];
-      for(const zn of ["hand","grave","mana"]){
-        for(const h of DZ[zn]){
-          const r=getReg(h);
-          if(r&&r.invadeZero)izCands.push({h,zn});
-        }
-      }
-      if(!izCands.length||!DZ.battle.length)return;
-      const zLb={hand:"手札",grave:"墓地",mana:"マナ"};
-      const j=await askChoice(`⚡0 ${S.players[def].label}：侵略ZERO発動？（条件はプレイヤー判断）`,
-        [...izCands.map(({h,zn})=>`${faceNameOf(h)}（${zLb[zn]}）`),"発動しない"]);
-      if(j===null||j>=izCands.length)return;
-      const {h,zn}=izCands[j];
-      const k=DZ.battle.length===1?0:await askChoice("重ねる自分のクリーチャーを選択",DZ.battle.map(x=>faceNameOf(x)));
-      if(k===null)return;
-      snap();
-      const arr0=DZ[zn];
-      const hi=arr0.findIndex(x=>x.id===h.id);
-      arr0.splice(hi,1);
-      const host=DZ.battle[k];
-      h.faceup=true;h.tapped=host.tapped;
-      h.under=[host,...(host.under?host.under.splice(0):[])];
-      if(host.gear&&host.gear.length){h.gear=host.gear.splice(0);}
-      const bi=DZ.battle.findIndex(x=>x.id===host.id);
-      DZ.battle[bi]=h;
-      markArrive(h);
-      emitEvent(def,"summon");
-      enqueueFx(def,h);
-      sfx("ok");renderAll();
-      toast(`⚡0 侵略ZERO！ ${faceNameOf(h)}（${zLb[zn]}から）`);
-      await waitFxIdle();renderAll();
-    })();
     const un=DZ.hand.filter(h=>{
       const r=getReg(h);
       if(!r)return false;
@@ -1976,7 +2003,7 @@ async function autoTapCost(pi,c){
   const r=getReg(c);
   if(!r||(r.cost==null&&r.cost2==null))return;
   let cost=r.cost;
-  if(r.twin&&r.cost2!=null){
+  if((r.twin||r.ctype==="twinpact")&&r.cost2!=null){
     const j=await askChoice(`《${faceNameOf(c)}》どちらの面のコストを支払う？`,
       [`上面：コスト${r.cost!=null?r.cost:"未設定"}`,`下面：コスト${r.cost2}`,"支払わない"]);
     if(j===null||j===2)return;
@@ -2930,6 +2957,7 @@ function renderFxEditor(){
   $("fxHyper").checked=!!FXEDIT.hyper;
   $("fxInvadeZero").checked=!!FXEDIT.invadeZero;
   $("fxRev0").checked=!!FXEDIT.rev0;
+  $("fxSilent").checked=!!FXEDIT.silent;
   $("fxZRush").checked=!!FXEDIT.zrush;
   $("fxHyperNote").value=FXEDIT.hyperNote||"";
   $("fxSInvade").value=FXEDIT.sInvade||"";
@@ -3021,6 +3049,7 @@ function openFxEditor(key){
     hyper:cur?!!cur.hyper:false,
     invadeZero:cur?!!cur.invadeZero:false,
     rev0:cur?!!cur.rev0:false,
+    silent:cur?!!cur.silent:false,
     zrush:cur?!!cur.zrush:false,
     hyperNote:cur&&cur.hyperNote||"",
     sInvade:cur&&cur.sInvade||"",
@@ -3118,6 +3147,7 @@ $("fxSave").addEventListener("click",async ()=>{
     hyper:$("fxHyper").checked,
     invadeZero:$("fxInvadeZero").checked,
     rev0:$("fxRev0").checked,
+    silent:$("fxSilent").checked,
     zrush:$("fxZRush").checked,
     hyperNote:$("fxHyperNote").value.trim(),
     sInvade:$("fxSInvade").value||"",
@@ -3284,6 +3314,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.hyper)attrs.push("ハイパー化");
     if(v.invadeZero)attrs.push("侵略ZERO");
     if(v.rev0)attrs.push("革命0");
+    if(v.silent)attrs.push("サイレントスキル");
     if(v.zrush)attrs.push("Zラッシュ");
     if(v.sInvade)attrs.push("S級侵略");
     if(v.sympathy)attrs.push(`シンパシー(${v.sympathy})`);
@@ -3463,6 +3494,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
     autoTapCost(pTo,c);
   }
   sfx("move");
+  logOnly(`${S.players[pTo].label}：${faceNameOf(c)} ${ZLOG[fromZone]||fromZone}→${ZLOG[toZone]||toZone}`);
   if(toZone==="battle"||toZone==="resolve")enqueueFx(pTo,c);
 }
 function moveCard(pi,fromZone,id,toZone){moveCardX(pi,fromZone,id,pi,toZone);}
@@ -3483,11 +3515,12 @@ function renderZoneOrderEditor(){
   const box=$("zoneOrderList");if(!box)return;
   box.innerHTML="";
   const tgt=$("zoneOrderTarget")?$("zoneOrderTarget").value:"me";
-  const key=tgt==="opp"?"zoneOrderOpp":"zoneOrder";
-  const fallback=tgt==="opp"
-    ?([...((S.zoneOrder&&S.zoneOrder.length===4)?S.zoneOrder:["battle","sys","mana","hand"])].reverse())
-    :["battle","sys","mana","hand"];
-  const ord=(S[key]&&S[key].length===4)?S[key]:fallback;
+  const lay=S.layout||"stack";
+  S.zoneOrders=S.zoneOrders||{};
+  const lo=S.zoneOrders[lay]=S.zoneOrders[lay]||{};
+  const meOrd=(lo.me&&lo.me.length===4)?lo.me:(S.zoneOrder&&S.zoneOrder.length===4?S.zoneOrder:["battle","sys","mana","hand"]);
+  const fallback=tgt==="opp"?[...meOrd].reverse():meOrd;
+  const ord=(lo[tgt]&&lo[tgt].length===4)?lo[tgt]:fallback;
   ord.forEach((k,i)=>{
     const row=document.createElement("div");
     row.style.cssText="display:flex;align-items:center;gap:6px;background:#0d1119;border:1px solid var(--line);border-radius:7px;padding:4px 8px";
@@ -3497,8 +3530,8 @@ function renderZoneOrderEditor(){
     const mv=async d=>{
       const a=ord.slice();
       [a[i],a[i+d]]=[a[i+d],a[i]];
-      S[key]=a;
-      if(db)await idbPut("misc",key,JSON.stringify(a));
+      lo[tgt]=a;
+      if(db)await idbPut("misc","zoneOrders",JSON.stringify(S.zoneOrders));
       renderZoneOrderEditor();buildBoards();renderAll();
     };
     up.onclick=()=>mv(-1);dn.onclick=()=>mv(1);
@@ -3604,25 +3637,26 @@ function buildBoards(){
         <div class="cards" id="zHand-${pi}"></div>
       </div>`
     };
-    const own=(S.zoneOrder&&S.zoneOrder.length===4)?S.zoneOrder:null;
+    const lo=(S.zoneOrders&&S.zoneOrders[lay])||{};
+    const own=(lo.me&&lo.me.length===4)?lo.me:((S.zoneOrder&&S.zoneOrder.length===4)?S.zoneOrder:null);
     let seq;
     if(!S.vs)seq=own||["sys","battle","mana","hand"];
     else if(pi!==seat){
       const base=own||["battle","sys","mana","hand"];
-      seq=S.flip?base:[...base].reverse();
+      seq=(lo.opp&&lo.opp.length===4)?lo.opp:(S.flip?base:[...base].reverse());
     }
     else seq=own||["battle","sys","mana","hand"];
-    if(S.vs&&pi!==seat&&S.zoneOrderOpp&&S.zoneOrderOpp.length===4)seq=S.zoneOrderOpp;
     pb.innerHTML=seq.map(k=>rows[k]).join("");
     if(lay==="wide"){
-      const sz=pb.querySelector('[data-zone="sys"]');
-      const mz=pb.querySelector('[data-zone="mana"]');
-      if(sz&&mz){
-        const first=(Array.prototype.indexOf.call(pb.children,sz)<Array.prototype.indexOf.call(pb.children,mz))?sz:mz;
+      const pair=(S.widePair||"sys,hand").split(",");
+      const a=pb.querySelector(`[data-zone="${pair[0]}"]`);
+      const b=pb.querySelector(`[data-zone="${pair[1]}"]`);
+      if(a&&b){
+        const first=(Array.prototype.indexOf.call(pb.children,a)<Array.prototype.indexOf.call(pb.children,b))?a:b;
         const wrap=document.createElement("div");
         wrap.className="zpair";
         pb.insertBefore(wrap,first);
-        wrap.appendChild(sz);wrap.appendChild(mz);
+        wrap.appendChild(a);wrap.appendChild(b);
       }
     }
     board.appendChild(pb);
@@ -3707,9 +3741,6 @@ function cardEl(pi,zone,c){
     if(c.rot%180===90&&zone==="battle"){
       el.style.marginLeft=el.style.marginRight="calc((var(--card-h) - var(--card-w))/2 + 4px)";
     }
-    el.querySelectorAll(".stacktag,.sealtag,.frztag").forEach(sp=>{
-      sp.style.transform=`rotate(${-c.rot}deg)`;
-    });
   }
   if(c.under&&c.under.length){
     const st=document.createElement("span");st.className="stacktag";st.textContent="+"+c.under.length;
@@ -3787,6 +3818,11 @@ function cardEl(pi,zone,c){
   if(showFace&&link&&link.length>1){
     const ft=document.createElement("span");ft.className="facetag";ft.textContent=`${(c.face||0)+1}/${link.length}`;
     el.appendChild(ft);
+  }
+  if(c.rot){
+    el.querySelectorAll(".stacktag,.sealtag,.frztag,.facetag").forEach(sp=>{
+      sp.style.transform=`rotate(${-c.rot}deg)`;
+    });
   }
   attachPointer(el,{p:pi,zone,id:c.id,hidden});
   return el;
@@ -4756,15 +4792,15 @@ function openCardSheet(ctx){
       toast(`⚙ クロス！ ${faceNameOf(c)} → ${faceNameOf(host)}（付け替えもコスト支払いで可能）`);
     },"primary",true));
   }
-  if(ctx.zone==="hyper"||(isAura&&(ctx.zone==="hand"||ctx.zone==="grave"))){
+  if(ctx.zone==="hyper"||(isAura&&["hand","grave","battle"].includes(ctx.zone))){
     box.appendChild(actBtn(isAura?"⚙ クリーチャーに装備（オレガオーラ）":"⚙ クリーチャーに装備（ドラグハート）",async ()=>{
-      const arr=zonesOf(ctx.p).battle;
+      const arr=zonesOf(ctx.p).battle.filter(x=>x.id!==ctx.id);
       if(!arr.length){toast("自分のバトルゾーンにクリーチャーがいません");return;}
-      const j=await askChoice("装備するクリーチャーを選択",arr.map(x=>faceNameOf(x)));
+      const j=arr.length===1?0:await askChoice("装備するクリーチャーを選択",arr.map(x=>faceNameOf(x)));
       if(j===null)return;
       snap();
-      const f=findCard(ctx.p,"hyper",ctx.id);
-      if(!f)return;
+      const f=findCard(ctx.p,ctx.zone,ctx.id);
+      if(!f){toast("カードが見つかりません");return;}
       f.arr.splice(f.idx,1);
       const g=f.card;
       g.faceup=true;g.tapped=false;g.face=g.face||0;
@@ -6276,6 +6312,7 @@ function openSettings(){
   $("setMode").value=S.gameMode||"dmps";
   $("setAutoTap").checked=!!S.autoTap;
   $("setLayout").value=S.layout||"stack";
+  $("setWidePair").value=S.widePair||"sys,hand";
   renderZoneOrderEditor();
   renderZoneScaleEditor();
   $("setCardScale").value=String(S.cardScale||100);
@@ -6300,9 +6337,15 @@ $("setMode").addEventListener("change",async ()=>{
   toast(S.gameMode==="tcg"?"TCGモード（上限警告なし）":"デュエプレモード（上限警告あり）");
 });
 $("zoneOrderTarget").addEventListener("change",renderZoneOrderEditor);
+$("setWidePair").addEventListener("change",async ()=>{
+  S.widePair=$("setWidePair").value;
+  if(db)await idbPut("misc","widePair",S.widePair);
+  buildBoards();renderAll();
+});
 $("setLayout").addEventListener("change",async ()=>{
   S.layout=$("setLayout").value;
   if(db)await idbPut("misc","layout",S.layout);
+  renderZoneOrderEditor();
   buildBoards();fitBoard();renderAll();
   toast(`レイアウト：${{stack:"縦積み",cols:"2カラム",wide:"ワイド段組み"}[S.layout]}`);
 });
@@ -6796,8 +6839,10 @@ $("bApply").addEventListener("click",()=>{
   if(ly)S.layout=ly;
   const zo=db?await idbGet("misc","zoneOrder"):null;
   if(zo){try{const a=JSON.parse(zo);if(Array.isArray(a)&&a.length===4)S.zoneOrder=a;}catch(e){}}
-  const zo2=db?await idbGet("misc","zoneOrderOpp"):null;
-  if(zo2){try{const a=JSON.parse(zo2);if(Array.isArray(a)&&a.length===4)S.zoneOrderOpp=a;}catch(e){}}
+  const zos=db?await idbGet("misc","zoneOrders"):null;
+  if(zos){try{S.zoneOrders=JSON.parse(zos);}catch(e){}}
+  const wp=db?await idbGet("misc","widePair"):null;
+  if(wp)S.widePair=wp;
   const zsc=db?await idbGet("misc","zoneScale"):null;
   if(zsc){try{S.zoneScale=JSON.parse(zsc);}catch(e){}}
   const nu=db?await idbGet("misc","noUntapMana"):null;
