@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>DM Re:Vault v8.6</title>
+<title>DM Re:Vault v8.7</title>
 <style>
 :root{
   --bg:#0c0f16; --panel:#151b28; --panel-2:#1d2536; --line:#2a3550;
@@ -204,6 +204,10 @@ body.vs .pboard{gap:3px}
 }
 #evoBar.show{display:flex}
 .pboard{position:relative}
+body.lay-cols #board{display:flex;flex-direction:row;gap:8px;align-items:flex-start}
+body.lay-cols .pboard{flex:1 1 0;min-width:0}
+.zpair{display:flex;gap:6px}
+.zpair .zone{flex:1 1 0;min-width:0}
 .pboard>*{position:relative;z-index:1}
 .matbg{position:absolute;inset:0;z-index:0;opacity:.5;background-size:cover;background-position:center;pointer-events:none;border-radius:12px;filter:saturate(1.1)}
 .pboard.hasmat .zone{background:rgba(13,17,25,.42)!important}
@@ -483,6 +487,19 @@ body.vs .pboard{gap:3px}
           <option value="dmps">デュエプレ（手札11/盤面7/盾10超えで警告）</option>
           <option value="tcg">TCG（上限警告なし）</option>
         </select>
+      </div>
+      <div class="row" style="align-items:center;gap:8px">
+        <span style="font-size:12px;font-weight:700">レイアウト</span>
+        <select id="setLayout" style="flex:1">
+          <option value="stack">縦積み（標準・iPad向け）</option>
+          <option value="cols">2カラム（横長モニター向け・相手が左/自分が右）</option>
+          <option value="wide">ワイド段組み（マナと手札を横並びで段数圧縮）</option>
+        </select>
+      </div>
+      <div class="row" style="flex-direction:column;align-items:stretch;gap:4px">
+        <span style="font-size:12px;font-weight:700">ゾーンの並び順（自分側・上から）</span>
+        <div id="zoneOrderList" style="display:flex;flex-direction:column;gap:3px"></div>
+        <div class="hint">相手側は自動でミラー配置になります（反転ボタン併用可）</div>
       </div>
       <div class="row" style="align-items:center;gap:8px">
         <span style="font-size:12px;font-weight:700">カードサイズ</span>
@@ -3382,8 +3399,34 @@ function insertSideways(pi,fromZone,id){
 }
 
 /* ================= board DOM ================= */
+const ZONE_LB={battle:"バトルゾーン",sys:"山札/墓地/盾",mana:"マナ",hand:"手札"};
+function renderZoneOrderEditor(){
+  const box=$("zoneOrderList");if(!box)return;
+  box.innerHTML="";
+  const ord=(S.zoneOrder&&S.zoneOrder.length===4)?S.zoneOrder:["battle","sys","mana","hand"];
+  ord.forEach((k,i)=>{
+    const row=document.createElement("div");
+    row.style.cssText="display:flex;align-items:center;gap:6px;background:#0d1119;border:1px solid var(--line);border-radius:7px;padding:4px 8px";
+    const lb=document.createElement("span");lb.style.cssText="flex:1;font-size:12.5px";lb.textContent=`${i+1}. ${ZONE_LB[k]}`;
+    const up=document.createElement("button");up.className="btn small ghost";up.textContent="↑";up.disabled=i===0;
+    const dn=document.createElement("button");dn.className="btn small ghost";dn.textContent="↓";dn.disabled=i===3;
+    const mv=async d=>{
+      const a=ord.slice();
+      [a[i],a[i+d]]=[a[i+d],a[i]];
+      S.zoneOrder=a;
+      if(db)await idbPut("misc","zoneOrder",JSON.stringify(a));
+      renderZoneOrderEditor();buildBoards();renderAll();
+    };
+    up.onclick=()=>mv(-1);dn.onclick=()=>mv(1);
+    row.appendChild(lb);row.appendChild(up);row.appendChild(dn);
+    box.appendChild(row);
+  });
+}
 function buildBoards(){
   const board=$("board");board.innerHTML="";
+  const lay=S.layout||"stack";
+  document.body.classList.toggle("lay-cols",lay==="cols"&&S.vs);
+  document.body.classList.toggle("lay-wide",lay==="wide");
   const seat=S.vs?(S.seat|0):0;
   const order=S.vs?[seat===1?0:1,seat]:[0];
   for(const pi of order){
@@ -3448,11 +3491,26 @@ function buildBoards(){
         <div class="cards" id="zHand-${pi}"></div>
       </div>`
     };
+    const own=(S.zoneOrder&&S.zoneOrder.length===4)?S.zoneOrder:null;
     let seq;
-    if(!S.vs)seq=["sys","battle","mana","hand"];
-    else if(pi!==seat)seq=S.flip?["battle","sys","mana","hand"]:["hand","mana","sys","battle"];
-    else seq=["battle","sys","mana","hand"];
+    if(!S.vs)seq=own||["sys","battle","mana","hand"];
+    else if(pi!==seat){
+      const base=own||["battle","sys","mana","hand"];
+      seq=S.flip?base:[...base].reverse();
+    }
+    else seq=own||["battle","sys","mana","hand"];
     pb.innerHTML=seq.map(k=>rows[k]).join("");
+    if(lay==="wide"){
+      const mz=pb.querySelector('[data-zone="mana"]');
+      const hz=pb.querySelector('[data-zone="hand"]');
+      if(mz&&hz){
+        const first=(Array.prototype.indexOf.call(pb.children,mz)<Array.prototype.indexOf.call(pb.children,hz))?mz:hz;
+        const wrap=document.createElement("div");
+        wrap.className="zpair";
+        pb.insertBefore(wrap,first);
+        wrap.appendChild(mz);wrap.appendChild(hz);
+      }
+    }
     board.appendChild(pb);
   }
   board.querySelectorAll(".zbtn[data-act]").forEach(b=>{
@@ -3798,7 +3856,11 @@ function renderAll(){
 let fitRaf=null;
 function baseCardH(){
   const H=window.innerHeight;
-  const b=S.vs
+  const lay=S.layout||"stack";
+  let b;
+  if(S.vs&&lay==="cols")b=Math.min(205,Math.max(56,(H-215)/4.5));
+  else if(lay==="wide")b=S.vs?Math.min(190,Math.max(56,(H-230)/5.2)):Math.min(200,Math.max(66,(H-170)/2.8));
+  else b=S.vs
     ? Math.min(175,Math.max(56,(H-230)/6.6))
     : Math.min(185,Math.max(66,(H-170)/3.5));
   return b*((S.cardScale||100)/100);
@@ -6095,6 +6157,8 @@ $("peekChip").addEventListener("click",()=>{
 function openSettings(){
   $("setMode").value=S.gameMode||"dmps";
   $("setAutoTap").checked=!!S.autoTap;
+  $("setLayout").value=S.layout||"stack";
+  renderZoneOrderEditor();
   $("setCardScale").value=String(S.cardScale||100);
   $("cardScaleVal").textContent=(S.cardScale||100)+"%";
   $("setNoUntapMana").checked=!!S.noUntapMana;
@@ -6115,6 +6179,12 @@ $("setMode").addEventListener("change",async ()=>{
   S.gameMode=$("setMode").value;
   if(db)await idbPut("misc","gameMode",S.gameMode);
   toast(S.gameMode==="tcg"?"TCGモード（上限警告なし）":"デュエプレモード（上限警告あり）");
+});
+$("setLayout").addEventListener("change",async ()=>{
+  S.layout=$("setLayout").value;
+  if(db)await idbPut("misc","layout",S.layout);
+  buildBoards();fitBoard();renderAll();
+  toast(`レイアウト：${{stack:"縦積み",cols:"2カラム",wide:"ワイド段組み"}[S.layout]}`);
 });
 $("setCardScale").addEventListener("input",async ()=>{
   S.cardScale=+$("setCardScale").value||100;
@@ -6602,6 +6672,10 @@ $("bApply").addEventListener("click",()=>{
   if(at!==null&&at!==undefined)S.autoTap=!!at;
   const cs=db?await idbGet("misc","cardScale"):null;
   if(cs)S.cardScale=+cs||100;
+  const ly=db?await idbGet("misc","layout"):null;
+  if(ly)S.layout=ly;
+  const zo=db?await idbGet("misc","zoneOrder"):null;
+  if(zo){try{const a=JSON.parse(zo);if(Array.isArray(a)&&a.length===4)S.zoneOrder=a;}catch(e){}}
   const nu=db?await idbGet("misc","noUntapMana"):null;
   if(nu!==null&&nu!==undefined)S.noUntapMana=!!nu;
   const tm=db?await idbGet("misc","tapMultiMana"):null;
