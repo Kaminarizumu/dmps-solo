@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>DM Re:Vault v9.1</title>
+<title>DM Re:Vault v9.2</title>
 <style>
 :root{
   --bg:#0c0f16; --panel:#151b28; --panel-2:#1d2536; --line:#2a3550;
@@ -533,6 +533,11 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <span style="font-size:12px;font-weight:700">ゾーンの縦幅（カードの大きさ）比率</span>
         <div id="zoneScaleList" style="display:flex;flex-direction:column;gap:3px"></div>
       </div>
+      <div class="row" style="flex-direction:column;align-items:stretch;gap:4px">
+        <label><input type="checkbox" id="setKeysOn"> ⌨️ ショートカットキーを有効にする</label>
+        <div id="hotkeyList" style="display:flex;flex-direction:column;gap:3px"></div>
+        <div class="hint">操作対象は「操作」中のプレイヤー。入力欄にフォーカス中やパネル表示中は無効。1文字（A-Z/0-9）で設定。</div>
+      </div>
       <div class="row" style="align-items:center;gap:8px">
         <span style="font-size:12px;font-weight:700">カード間隔</span>
         <input type="range" id="setCardGap" min="2" max="18" step="1" value="5" style="flex:1">
@@ -900,6 +905,16 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <select id="fxMugen" style="width:auto;flex:0 0 70px">
           <option value="0">なし</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
         </select>
+      </div>
+      <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:12px;font-weight:700">侵略/チェンジ条件（攻撃側が満たす時のみ確認）</span>
+        <select id="fxInvCiv" style="width:auto;flex:0 0 90px">
+          <option value="">文明不問</option>
+          <option value="light">光</option><option value="water">水</option><option value="dark">闇</option><option value="fire">火</option><option value="nature">自然</option>
+        </select>
+        <input type="text" id="fxInvRace" list="raceList" placeholder="種族（例：コマンド/ドラゴン）" style="flex:1;min-width:120px">
+        <input type="number" id="fxInvCost" placeholder="コスト以上" style="width:86px">
+        <input type="number" id="fxInvPow" placeholder="パワー以上" style="width:96px">
       </div>
       <div class="row" style="gap:12px;flex-wrap:wrap">
         <span style="font-size:12px;font-weight:700">S級侵略：</span>
@@ -1467,6 +1482,7 @@ function dealPlayer(pi,pick){
   }
 }
 function startGame(picks){
+  GAMELOG.length=0;
   if(!S.players[0].mainList.length){openDeckPanel();toast("先にデッキを登録してください");return;}
   snap();
   dealPlayer(0,picks&&picks[0]||null);
@@ -1530,33 +1546,7 @@ function nextTurn(){
     // 侵略ZERO：ターン終了時、相手（非ターンプレイヤー）の手札から
     if(S.vs){
       const def=cur2===0?1:0;
-      const DZ=zonesOf(def);
-      const izCands=DZ.hand.filter(h=>{const r=getReg(h);return r&&r.invadeZero;});
-      if(izCands.length&&DZ.battle.length){
-        (async()=>{
-          const j=await askChoice(`⚡0 ターン終了時：${S.players[def].label}の侵略ZERO発動？\n（判断ポイント：このターン相手が踏み倒しでクリーチャーを出したか？　例：踏倒:ONでのプレイ／超次元・GRゾーンから出た／侵略・NS等）`,
-            [...izCands.map(h=>faceNameOf(h)),"発動しない"]);
-          if(j===null||j>=izCands.length)return;
-          const h=izCands[j];
-          const k=DZ.battle.length===1?0:await askChoice("重ねる自分のクリーチャーを選択",DZ.battle.map(x=>faceNameOf(x)));
-          if(k===null)return;
-          snap();
-          const hi=DZ.hand.findIndex(x=>x.id===h.id);
-          DZ.hand.splice(hi,1);
-          const host=DZ.battle[k];
-          h.faceup=true;h.tapped=host.tapped;
-          h.under=[host,...(host.under?host.under.splice(0):[])];
-          if(host.gear&&host.gear.length){h.gear=host.gear.splice(0);}
-          const bi=DZ.battle.findIndex(x=>x.id===host.id);
-          DZ.battle[bi]=h;
-          markArrive(h);
-          emitEvent(def,"summon");
-          enqueueFx(def,h);
-          sfx("ok");renderAll();
-          toast(`⚡0 侵略ZERO！ ${faceNameOf(h)}（手札から）`);
-          await waitFxIdle();renderAll();
-        })();
-      }
+      offerInvadeZeroPrompt(def);
     }
   }
   for(const P of S.players)P.zones.battle.forEach(c=>c.buff=null);
@@ -1599,6 +1589,12 @@ function nextTurn(){
   Z.battle.forEach(c=>{c.sick=false;});
   if(jdN.length)toast(`🌀 ジャストダイバー終了：${jdN.join("、")}`);
   draw(pi,1);
+  if(S.skipTurn>0){
+    S.skipTurn--;
+    toast(`⏭ ターンスキップ！ ${S.players[pi].label} のターンは飛ばされた`);
+    setTimeout(()=>nextTurn(),400);
+    return;
+  }
   toast(`ターン ${S.turn}：${S.players[pi].label} のターン${extra?"（⚡エクストラターン！）":""}（アンタップ＆ドロー）`);
   if(S.expert){
     const Zc=zonesOf(pi);
@@ -1724,6 +1720,7 @@ function emitEvent(actor,type){
         toast(`🥷裏 裏ニンジャ・ストライク！ ${faceNameOf(h)}`);
         await waitFxIdle();
         renderAll();
+        toast(`🥷裏 処理中：効果を盤面で解決してから続行してください`);
       })();
     }
   }
@@ -1886,6 +1883,14 @@ const EFFECTS=[
      const j=await askChoice("🏆 特殊勝利！ 勝者は？",[S.players[0].label,S.players[1].label]);
      if(j===null)return;
      declareWin(j,"⭐ 特殊勝利（エクストラウィン）",false);
+   }},
+  {name:"ターンを飛ばす（次のターンをスキップ）",
+   desc:"次に来るターンを1回スキップします（エクストラターンの逆）",
+   async run(){
+     closeSheet();
+     S.skipTurn=(S.skipTurn|0)+1;
+     sfx("flip");
+     toast(`⏭ 次のターンをスキップします（予約${S.skipTurn}回）`);
    }},
   {name:"相手の山札を上から墓地に置く（山札破壊）",
    desc:"枚数を指定して、相手（対面）の山札の上から墓地へ置く",
@@ -2174,6 +2179,7 @@ async function runFxList(pi,list){
 const fxQueue=[];let fxRunning=false;
 function enqueueFx(pi,c){
   if(!S.expert)return;
+  if([0,1].some(p=>zonesOf(p).battle.some(b=>b.gear&&b.gear.includes(c))))return;
   const reg=getReg(c);
   const hasFx=reg&&(reg.faces[0].length||(reg.twin&&reg.faces[1].length)||(reg.modeN|0)>0);
   if(!hasFx)return;
@@ -2182,6 +2188,7 @@ function enqueueFx(pi,c){
 }
 async function pumpFx(){
   if(fxRunning)return;fxRunning=true;
+  try{await MOVE_TAP_CHAIN;}catch(e){}
   while(fxQueue.length){
     const {pi,c,reg}=fxQueue.shift();
     snap();
@@ -2211,6 +2218,32 @@ async function pumpFx(){
     }
   }
   fxRunning=false;
+}
+async function offerInvadeZeroPrompt(def){
+  const DZ=zonesOf(def);
+  const izCands=DZ.hand.filter(h=>{const r=getReg(h);return r&&r.invadeZero;});
+  if(!izCands.length||!DZ.battle.length)return;
+  const j=await askChoice(`⚡0 ${S.players[def].label}の侵略ZERO発動？\n（判断ポイント：相手が踏み倒しでクリーチャーを出したか？　例：踏倒:ONでのプレイ／超次元・GR／侵略・革命チェンジ・NS等）`,
+    [...izCands.map(h=>faceNameOf(h)),"発動しない"]);
+  if(j===null||j>=izCands.length)return;
+  const h=izCands[j];
+  const k=DZ.battle.length===1?0:await askChoice("重ねる自分のクリーチャーを選択",DZ.battle.map(x=>faceNameOf(x)));
+  if(k===null)return;
+  snap();
+  const hi=DZ.hand.findIndex(x=>x.id===h.id);
+  DZ.hand.splice(hi,1);
+  const host=DZ.battle[k];
+  h.faceup=true;h.tapped=host.tapped;
+  h.under=[host,...(host.under?host.under.splice(0):[])];
+  if(host.gear&&host.gear.length){h.gear=host.gear.splice(0);}
+  const bi=DZ.battle.findIndex(x=>x.id===host.id);
+  DZ.battle[bi]=h;
+  markArrive(h);
+  emitEvent(def,"summon");
+  enqueueFx(def,h);
+  sfx("ok");renderAll();
+  toast(`⚡0 侵略ZERO！ ${faceNameOf(h)}（手札から）`);
+  await waitFxIdle();renderAll();
 }
 async function waitFxIdle(){
   let guard=0;
@@ -2411,7 +2444,7 @@ function processBroken(op,stack,label){
         emitEvent(op,"spell");enqueueFx(op,c);
       }else if(zone==="battle"){
         c.faceup=true;Z.battle.push(c);markArrive(c);sfx("move");
-        const r=getReg(c);if(r&&(r.d2||r.wide))c.rot=90;
+        const r=getReg(c);if(r&&(r.d2||r.wide))c.rot=270;
         emitEvent(op,"summon");enqueueFx(op,c);
       }else{c.faceup=true;Z[zone].push(c);markArrive(c);sfx("move");}
       sel=null;renderAll();render();
@@ -2556,6 +2589,35 @@ async function breakShields(op,count,attacker){
   sfx("flip");
   renderAll();
   $("bkDone").textContent="残りをすべて手札へ（完了）";
+  // ドラゴン・ブレイカー：ブレイク実行前に処理（盾追加＝通常の裏向き／重ねる＝表向きで既存盾の上に）
+  {
+    const aregD=attacker?getReg(attacker):null;
+    if(S.expert&&aregD&&aregD.dragonB&&shs.length){
+      const pi2=op===0?1:0;
+      const Z2=zonesOf(pi2);
+      for(let i=0;i<shs.length;i++){
+        if(!Z2.deck.length){toast("山札がないため、ドラゴン・ブレイカーは終了");break;}
+        const pick=await askChoice(`🐲 ドラゴン・ブレイカー（${i+1}/${shs.length}枚目）\n山札の上のカードを：`,
+          ["新しい盾として追加（通常どおり裏向き）","既存の盾に表向きで重ねる","追加しない（終了）"]);
+        if(pick===null||pick===2)break;
+        const c2=Z2.deck.shift();
+        if(pick===1&&Z2.shield.length){
+          const j=await askChoice("どの盾の上に重ねる？",Z2.shield.map((x,k)=>`盾${k+1}${x.faceup?`（表：${x.name}）`:""}${x.under&&x.under.length?` +${x.under.length}`:""}`));
+          if(j===null){Z2.deck.unshift(c2);break;}
+          const old=Z2.shield[j];
+          c2.faceup=true;c2.mark=true;
+          c2.under=[old,...(old.under?old.under.splice(0):[])];
+          Z2.shield[j]=c2;
+          toast(`盾${j+1}の上に表向きで重ねた：${c2.name}`);
+        }else{
+          c2.faceup=false;c2.mark=true;
+          Z2.shield.push(c2);
+          toast(`新しい盾を追加（裏向き）`);
+        }
+        renderAll();
+      }
+    }
+  }
   const stackIds=new Set(stack.map(x=>x.id));
   await processBroken(op,stack,`🛡 ${shs.length>1?"同時ブレイク":"ブレイク"}：${S.players[op].label}のシールド（計${stack.length}枚）`);
   // G・ストライク：手札に加わったGS持ちを確認
@@ -2588,26 +2650,6 @@ async function breakShields(op,count,attacker){
     }
   }
   await offerKirifudash(op);
-  const areg=attacker?getReg(attacker):null;
-  if(areg&&areg.dragonB&&shs.length){
-    const pi2=op===0?1:0;
-    const Z2=zonesOf(pi2);
-    for(let i=0;i<shs.length;i++){
-      if(!Z2.deck.length){toast("山札がないため、ドラゴン・ブレイカーは終了");break;}
-      const top=Z2.deck[0];
-      const pick=await askChoice(`🐲 ドラゴン・ブレイカー（${i+1}/${shs.length}枚目）\n山札の上：${top.name} を表向きでシールドへ`,
-        ["新しい盾として置く","既存の盾に重ねる","追加しない（終了）"]);
-      if(pick===null||pick===2)break;
-      const c2=Z2.deck.shift();c2.faceup=true;c2.mark=true;
-      if(pick===1&&Z2.shield.length){
-        const j=await askChoice("どの盾に重ねる？",Z2.shield.map((x,k)=>`盾${k+1}${x.faceup?`（表：${x.name}）`:""}${x.under&&x.under.length?` +${x.under.length}`:""}`));
-        if(j===null){c2.mark=false;Z2.deck.unshift(c2);break;}
-        const t=Z2.shield[j];t.under=t.under||[];t.under.push(c2);
-        toast(`盾${j+1}に重ねた：${c2.name}`);
-      }else{Z2.shield.push(c2);toast(`新しい盾：${c2.name}`);}
-      renderAll();
-    }
-  }
 }
 /* ドルマゲドン型：封印を外した時の効果選択 */
 async function dormaChoice(pi,c){
@@ -2724,8 +2766,9 @@ async function execAttack(pi,id,tg){
       }
     }
   }
-  // 侵略・革命チェンジ・S級侵略（ゾーン横断）
-  if(S.expert){
+  // 侵略・革命チェンジ・S級侵略（ゾーン横断・複数回可・重ねた順に処理）
+  let invadedOnce=false;
+  if(S.expert)while(true){
     const sZones=v=>{
       if(v==="primal"||v==="deck")return ["hand","mana"];
       if(v==="undead"||v==="grave")return ["hand","grave"];
@@ -2735,6 +2778,16 @@ async function execAttack(pi,id,tg){
       return ["hand"];
     };
     const zLb={hand:"手札",mana:"マナ",grave:"墓地",battle:"場"};
+    const aRegNow=getReg(c);
+    const condOk=r=>{
+      if(!r.invCiv&&!r.invRace&&!r.invCost&&!r.invPow)return true;
+      if(!aRegNow)return false;
+      if(r.invCiv&&!(aRegNow.civs&&aRegNow.civs.includes(r.invCiv)))return false;
+      if(r.invRace&&!raceMatch(aRegNow,r.invRace))return false;
+      if(r.invCost&&!(aRegNow.cost!=null&&aRegNow.cost>=r.invCost))return false;
+      if(r.invPow&&!(aRegNow.power!=null&&+aRegNow.power>=r.invPow))return false;
+      return true;
+    };
     const cands=[];
     for(const zn of ["hand","mana","grave","battle"]){
       for(const h of Z[zn]){
@@ -2742,15 +2795,14 @@ async function execAttack(pi,id,tg){
         const r=getReg(h);
         if(!r)continue;
         const inv=r.invade||r.kakumei,sv=r.sInvade;
-        if(zn==="hand"){
-          if(inv||sv)cands.push({h,zn});
-        }else if(sv&&sZones(sv).includes(zn)){
-          cands.push({h,zn});
-        }
+        if(!(zn==="hand"?(inv||sv):(sv&&sZones(sv).includes(zn))))continue;
+        if(!condOk(r))continue;
+        cands.push({h,zn});
       }
     }
-    if(cands.length){
-      const j=await askChoice(`⚔ 攻撃時：侵略／革命チェンジしますか？\n（条件の適否はプレイヤー判断）`,
+    if(!cands.length)break;
+    {
+      const j=await askChoice(`⚔ ${invadedOnce?"さらに":"攻撃時："}侵略／革命チェンジしますか？\n（侵略が先→革命チェンジの順。重ねた順に効果処理）`,
         [...cands.map(({h,zn})=>{const r=getReg(h);return (r.sInvade?(r.sInvade==="sss"||r.sInvade==="tensai"?"🌠SSS級侵略：":"🌟S級侵略："):r.invade?"⚡侵略：":"♻革命チェンジ：")+faceNameOf(h)+`（${zLb[zn]}）`;}),"しない"]);
       if(j!==null&&j<cands.length){
         const {h:hcard,zn:srcZone}=cands[j];
@@ -2784,8 +2836,14 @@ async function execAttack(pi,id,tg){
         c=hcard;
         id=hcard.id;
         renderAll();
+        invadedOnce=true;
+        continue;
       }
     }
+    break;
+  }
+  if(invadedOnce&&S.vs){
+    await offerInvadeZeroPrompt(op);
   }
   // D・D・D（攻撃側：手札/墓地/マナから、条件を満たしていれば発動確認）
   if(S.expert){
@@ -2815,17 +2873,30 @@ async function execAttack(pi,id,tg){
         arr0.splice(hi,1);
         const r2=getReg(h);
         h.faceup=true;h.tapped=false;
+        const isEvo=r2&&["evo","neoevo","starevo","smaxevo","onismaxevo","gneo","twinpact"].includes(r2.ctype)&&r2.ctype!=="twinpact";
         if(r2&&r2.ctype==="spell"){
           if(Z.resolve.length){const olds=Z.resolve.splice(0);olds.forEach(o=>resolveOut(Z,o));}
           Z.resolve.push(h);
+        }else if(isEvo&&Z.battle.length){
+          const k=Z.battle.length===1?0:await askChoice(`進化元を選択（攻撃中のクリーチャーにも進化できます）`,Z.battle.map(x=>faceNameOf(x)+(x.id===c.id?"（攻撃中）":"")));
+          if(k===null){arr0.splice(hi,0,h);renderAll();return;}
+          const host=Z.battle[k];
+          h.tapped=host.tapped;
+          h.under=[host,...(host.under?host.under.splice(0):[]),...(h.under||[])];
+          if(host.gear&&host.gear.length){h.gear=host.gear.splice(0);}
+          const bi=Z.battle.findIndex(x=>x.id===host.id);
+          Z.battle[bi]=h;
+          if(host.id===c.id){c=h;id=h.id;}
+          emitEvent(pi,"summon");
         }else{
           Z.battle.push(h);
           emitEvent(pi,"summon");
         }
         markArrive(h);
+        await autoTapCost(pi,h);
         enqueueFx(pi,h);
         sfx("ok");renderAll();
-        toast(`🌀 D・D・D 発動！ ${faceNameOf(h)}（${zLbD[zn]}から・コスト踏み倒し）`);
+        toast(`🌀 D・D・D 発動！ ${faceNameOf(h)}（${zLbD[zn]}から・コストを支払って使用）`);
         await waitFxIdle();renderAll();
       }
     }
@@ -2888,6 +2959,8 @@ async function execAttack(pi,id,tg){
       toast(`🥷 ニンジャ・ストライク！ ${faceNameOf(h)}`);
       await waitFxIdle();
       renderAll();
+      toast(`🥷 ニンジャ・ストライクの処理中：効果を盤面で解決してください。攻撃を続ける場合は、もう一度「攻撃する」からやり直してください`);
+      return;
     }
   }
   const aregNB=getReg(c);
@@ -3088,6 +3161,10 @@ function renderFxEditor(){
   $("fxSInvade").value=FXEDIT.sInvade||"";
   $("fxSympathy").value=FXEDIT.sympathy||"";
   $("fxGalaxy").value=String(FXEDIT.galaxy||0);
+  $("fxInvCiv").value=FXEDIT.invCiv||"";
+  $("fxInvRace").value=FXEDIT.invRace||"";
+  $("fxInvCost").value=FXEDIT.invCost||"";
+  $("fxInvPow").value=FXEDIT.invPow||"";
   $("fxGZero").value=FXEDIT.gzero||"";
   $("fxManaArm").value=String(FXEDIT.manaArm||0);
   $("fxManaArmCiv").value=FXEDIT.manaArmCiv||"";
@@ -3142,6 +3219,30 @@ function renderFxEditor(){
   el.style.pointerEvents="none";
   th.appendChild(el);
   $("fxTitle").textContent=`効果を登録：${FXEDIT.name}`;
+  {
+    let pv=$("fxPreview");
+    if(!pv){
+      pv=document.createElement("img");
+      pv.id="fxPreview";
+      pv.style.cssText="width:84px;height:84px;object-fit:cover;object-position:50% 22%;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;float:right;margin:0 0 6px 8px";
+      $("fxTitle").after(pv);
+      pv.addEventListener("click",()=>{
+        const u=pv.dataset.full;
+        if(!u)return;
+        const ol=document.createElement("div");
+        ol.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:990;display:flex;align-items:center;justify-content:center;cursor:zoom-out";
+        const big=document.createElement("img");
+        big.src=u;big.draggable=false;
+        big.style.cssText="max-width:94vw;max-height:92dvh;object-fit:contain;border-radius:12px";
+        ol.appendChild(big);
+        ol.addEventListener("click",()=>ol.remove());
+        document.body.appendChild(ol);
+      });
+    }
+    const u=imgURL.get(FXEDIT.key);
+    if(u){pv.src=u;pv.dataset.full=u;pv.style.display="";}
+    else pv.style.display="none";
+  }
 }
 function openFxEditor(key){
   const cur=FXDB.get(key);
@@ -3184,6 +3285,10 @@ function openFxEditor(key){
     sInvade:cur&&cur.sInvade||"",
     sympathy:cur&&cur.sympathy||"",
     galaxy:cur&&(+cur.galaxy||0)||0,
+    invCiv:cur&&cur.invCiv||"",
+    invRace:cur&&cur.invRace||"",
+    invCost:cur&&(+cur.invCost||0)||0,
+    invPow:cur&&(+cur.invPow||0)||0,
     gzero:cur&&cur.gzero||"",
     manaArm:cur&&(+cur.manaArm||0)||0,
     manaArmCiv:cur&&cur.manaArmCiv||"",
@@ -3286,6 +3391,10 @@ $("fxSave").addEventListener("click",async ()=>{
     sInvade:$("fxSInvade").value||"",
     sympathy:$("fxSympathy").value.trim(),
     galaxy:+$("fxGalaxy").value||0,
+    invCiv:$("fxInvCiv").value||"",
+    invRace:$("fxInvRace").value.trim(),
+    invCost:+$("fxInvCost").value||0,
+    invPow:+$("fxInvPow").value||0,
     gzero:$("fxGZero").value.trim(),
     manaArm:+$("fxManaArm").value||0,
     manaArmCiv:$("fxManaArmCiv").value||"",
@@ -3599,7 +3708,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
   }
   if(toZone==="battle"){
     const reg=getReg(c);
-    if(reg&&(reg.d2||reg.wide))c.rot=90;
+    if(reg&&(reg.d2||reg.wide))c.rot=270;
     if(S.expert&&S.vs){
       const foe=pTo===0?1:0;
       if(zonesOf(foe).battle.some(x=>{const r2=getReg(x);return r2&&r2.auraTapIn;})){
@@ -3633,11 +3742,100 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
     if(c.sick==null)c.sick=!evoS&&!(rS&&rS.sa);
   }
   if(S.expert&&S.autoTap&&!S.freePlay&&fromZone==="hand"&&(toZone==="battle"||toZone==="resolve")){
-    autoTapCost(pTo,c);
+    MOVE_TAP_CHAIN=MOVE_TAP_CHAIN.then(()=>autoTapCost(pTo,c)).catch(()=>{});
   }
   sfx("move");
   logOnly(`${S.players[pTo].label}：${faceNameOf(c)} ${ZLOG[fromZone]||fromZone}→${ZLOG[toZone]||toZone}`);
   if(toZone==="battle"||toZone==="resolve")enqueueFx(pTo,c);
+}
+let MOVE_TAP_CHAIN=Promise.resolve();
+const HOTKEY_ACTS=[
+  ["draw","ドロー（山札→手札）","D"],
+  ["boost","ブースト（山上→マナ）","B"],
+  ["shield","盾追加（山上→盾・裏向き）","T"],
+  ["gr","GR召喚","G"],
+  ["mill","山上1枚を墓地へ","V"],
+  ["handes","ランダムハンデス（相手の手札から見ないで1枚）","R"],
+  ["turn","次のターン","N"],
+  ["log","ゲームログを開く","L"],
+];
+function hotkeyMap(){
+  const def={};HOTKEY_ACTS.forEach(([k,_,d])=>def[k]=d);
+  return Object.assign(def,S.hotkeys||{});
+}
+function runHotkey(act){
+  const pi=S.vs?S.who:0;
+  const Z=zonesOf(pi);
+  const op=pi===0?1:0;
+  if(act==="draw"){
+    if(!Z.deck.length){toast("山札がありません");return;}
+    snap();const c=Z.deck.shift();c.faceup=true;Z.hand.push(c);markArrive(c);
+    sfx("move");renderAll();toast(`ドロー：${S.players[pi].label}`);
+  }else if(act==="boost"){
+    if(!Z.deck.length){toast("山札がありません");return;}
+    snap();const c=Z.deck.shift();c.faceup=true;c.tapped=false;Z.mana.push(c);markArrive(c);
+    sfx("move");renderAll();toast(`ブースト：${faceNameOf(c)} をマナへ`);
+  }else if(act==="shield"){
+    if(!Z.deck.length){toast("山札がありません");return;}
+    snap();const c=Z.deck.shift();c.faceup=false;Z.shield.push(c);
+    sfx("move");renderAll();toast(`盾追加：${S.players[pi].label}（裏向き）`);
+  }else if(act==="gr"){
+    if(!Z.gr||!Z.gr.length){toast("超GRゾーンがありません/空です");return;}
+    snap();const c=Z.gr.shift();c.faceup=true;c.tapped=false;Z.battle.push(c);
+    markArrive(c);emitEvent(pi,"summon");enqueueFx(pi,c);
+    sfx("ok");renderAll();toast(`GR召喚：${faceNameOf(c)}`);
+  }else if(act==="mill"){
+    if(!Z.deck.length){toast("山札がありません");return;}
+    snap();const c=Z.deck.shift();c.faceup=true;Z.grave.push(c);
+    sfx("grave");renderAll();toast(`山上→墓地：${faceNameOf(c)}`);
+  }else if(act==="handes"){
+    const OZ=zonesOf(op);
+    if(!OZ.hand.length){toast("相手の手札がありません");return;}
+    snap();
+    const i=Math.floor(Math.random()*OZ.hand.length);
+    const c=OZ.hand.splice(i,1)[0];
+    c.faceup=true;OZ.grave.push(c);
+    sfx("grave");renderAll();toast(`ランダムハンデス：${S.players[op].label} の《${faceNameOf(c)}》が墓地へ`);
+  }else if(act==="turn"){
+    nextTurn();
+  }else if(act==="log"){
+    openGameLog();
+  }
+}
+document.addEventListener("keydown",e=>{
+  if(!S.keysOn)return;
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
+  const t=e.target;
+  if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT"||t.isContentEditable))return;
+  if(document.querySelector(".olay.open,#sheet.open,.sheet.open"))return;
+  if(S.turn===0)return;
+  const k=e.key.toUpperCase();
+  const map=hotkeyMap();
+  for(const [act] of HOTKEY_ACTS){
+    if(map[act]===k){e.preventDefault();runHotkey(act);return;}
+  }
+});
+function renderHotkeyEditor(){
+  const box=$("hotkeyList");if(!box)return;
+  box.innerHTML="";
+  const map=hotkeyMap();
+  for(const [act,label] of HOTKEY_ACTS){
+    const row=document.createElement("div");
+    row.style.cssText="display:flex;align-items:center;gap:8px";
+    const lb=document.createElement("span");lb.style.cssText="flex:1;font-size:12px";lb.textContent=label;
+    const inp=document.createElement("input");
+    inp.type="text";inp.maxLength=1;inp.value=map[act]||"";
+    inp.style.cssText="width:44px;text-align:center;text-transform:uppercase";
+    inp.addEventListener("input",async ()=>{
+      const v=inp.value.toUpperCase().replace(/[^A-Z0-9]/g,"");
+      inp.value=v;
+      S.hotkeys=S.hotkeys||{};
+      S.hotkeys[act]=v;
+      if(db)await idbPut("misc","hotkeys",JSON.stringify(S.hotkeys));
+    });
+    row.appendChild(lb);row.appendChild(inp);
+    box.appendChild(row);
+  }
 }
 function moveCard(pi,fromZone,id,toZone){moveCardX(pi,fromZone,id,pi,toZone);}
 function insertSideways(pi,fromZone,id){
@@ -4650,6 +4848,9 @@ async function confirmEvo(){
   markArrive(evc);
   sfx("ok");
   emitEvent(p0,"summon");
+  if(S.expert&&S.autoTap&&!S.freePlay){
+    MOVE_TAP_CHAIN=MOVE_TAP_CHAIN.then(()=>autoTapCost(p0,evc)).catch(()=>{});
+  }
   enqueueFx(p0,evc);
   renderAll();closeSheet();
   toast(`⤴ 進化！ ${faceNameOf(evc)}（下に${under0.length}枚${deckNames.length?`・デッキ進化：${deckNames.join("、")}`:""}）`);
@@ -5175,7 +5376,7 @@ function openCardSheet(ctx){
     box.appendChild(actBtn("このカードを重ねる →",()=>{
       PENDING={list:[{p:ctx.p,zone:ctx.zone,id:ctx.id}]};
       closeSheet();
-      toast("重ね先のカードをタップしてください（同じカードでキャンセル）");
+      toast("重ね先のカードをタップしてください（同じカードでキャンセル）※進化時はコストを自動タップします");
     },"",true));
   }
   if(c.under&&c.under.length){
@@ -5232,7 +5433,39 @@ function openCardSheet(ctx){
       closeSheet();closeSel();
       mugetsuGate(ctx.p,ctx.id);
     },"",true));
-    box.appendChild(actBtn("⤴ 進化する（盤面のカードに乗せる）",()=>{
+    box.appendChild(actBtn("⤴ 進化する（盤面/墓地/マナ/手札の進化元を選ぶ）",async ()=>{
+      const src=await askChoice("進化元をどこから選ぶ？",["バトルゾーン（通常進化・重ね先をタップ）","墓地（墓地進化）","マナ（マナ進化）","手札（手札進化）"]);
+      if(src===null)return;
+      if(src>0){
+        closeSheet();closeSel();closeViewer();
+        const zn=["","grave","mana","hand"][src];
+        const Z2=zonesOf(ctx.p);
+        const pool=Z2[zn].filter(x=>x.id!==ctx.id);
+        if(!pool.length){toast("進化元にできるカードがありません");return;}
+        const j=pool.length===1?0:await askChoice(`進化元を選択（${["","墓地","マナ","手札"][src]}）`,pool.map(x=>faceNameOf(x)));
+        if(j===null)return;
+        snap();
+        const base=pool[j];
+        const bi=Z2[zn].findIndex(x=>x.id===base.id);
+        Z2[zn].splice(bi,1);
+        base.tapped=false;base.faceup=true;
+        const f2=findCard(ctx.p,ctx.zone,ctx.id);
+        if(!f2){Z2[zn].splice(bi,0,base);return;}
+        f2.arr.splice(f2.idx,1);
+        const evc=f2.card;
+        evc.faceup=true;evc.tapped=false;
+        evc.under=[base,...(evc.under||[])];
+        Z2.battle.push(evc);
+        markArrive(evc);
+        emitEvent(ctx.p,"summon");
+        if(S.expert&&S.autoTap&&!S.freePlay){
+          MOVE_TAP_CHAIN=MOVE_TAP_CHAIN.then(()=>autoTapCost(ctx.p,evc)).catch(()=>{});
+        }
+        enqueueFx(ctx.p,evc);
+        sfx("ok");renderAll();
+        toast(`⤴ ${["","墓地","マナ","手札"][src]}進化！ ${faceNameOf(evc)}（下に《${faceNameOf(base)}》）`);
+        return;
+      }
       EVO={p:ctx.p,zone:ctx.zone,id:ctx.id,deckN:0};
       S.msel=[];S.multi=false;
       closeSheet();closeSel();closeViewer();
@@ -6304,6 +6537,11 @@ async function saveMatView(){
   }
   buildBoards();renderAll();
 }
+$("setKeysOn").addEventListener("change",async ()=>{
+  S.keysOn=$("setKeysOn").checked;
+  if(db)await idbPut("misc","keysOn",S.keysOn);
+  toast(S.keysOn?"⌨️ ショートカットキー：ON":"ショートカットキー：OFF");
+});
 $("setMatFit").addEventListener("change",()=>{S.matFit=$("setMatFit").value;saveMatView();});
 $("setMatX").addEventListener("input",()=>{S.matPosX=+$("setMatX").value;saveMatView();});
 $("setMatY").addEventListener("input",()=>{S.matPosY=+$("setMatY").value;saveMatView();});
@@ -6534,6 +6772,8 @@ function openSettings(){
   $("setWidePair").value=S.widePair||"sys,hand";
   renderZoneOrderEditor();
   renderZoneScaleEditor();
+  $("setKeysOn").checked=!!S.keysOn;
+  renderHotkeyEditor();
   $("setMatFit").value=S.matFit||"cover";
   $("setMatX").value=String(S.matPosX!=null?S.matPosX:50);
   $("setMatY").value=String(S.matPosY!=null?S.matPosY:50);
@@ -7068,6 +7308,8 @@ $("bApply").addEventListener("click",()=>{
   const cg=db?await idbGet("misc","cardGap"):null;
   if(cg){S.cardGap=+cg||5;document.documentElement.style.setProperty("--cardgap",S.cardGap+"px");}
   const mf=db?await idbGet("misc","matFit"):null;if(mf)S.matFit=mf;
+  const ko=db?await idbGet("misc","keysOn"):null;if(ko!=null&&ko!==undefined)S.keysOn=!!ko;
+  const hk=db?await idbGet("misc","hotkeys"):null;if(hk){try{S.hotkeys=JSON.parse(hk);}catch(e){}}
   const mx=db?await idbGet("misc","matPosX"):null;if(mx!=null&&mx!==undefined)S.matPosX=+mx;
   const my=db?await idbGet("misc","matPosY"):null;if(my!=null&&my!==undefined)S.matPosY=+my;
   const ly=db?await idbGet("misc","layout"):null;
