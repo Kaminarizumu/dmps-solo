@@ -4861,25 +4861,35 @@ function renderPlayer(pi){
     if(j===0)openShieldViewer(pi);
     else{
       $("vTitle").textContent=`🛡 表向きの盾（${S.players[pi].label}）`;
-      $("vHint").textContent="タップで操作メニュー";
+      $("vHint").textContent="表向きの盾と、その上に表向きで重なっているカードのみ表示します。タップで操作メニュー。";
       $("vSearch").style.display="none";$("vOk").style.display="none";$("vStatus").textContent="";
       const g=$("vGrid");g.innerHTML="";
-      Z.shield.forEach(c=>{
-        if(!c.faceup)return;
-        const el=vCardEl(faceNameOf(c));
-        if(c.under&&c.under.length){
+      let shown=0;
+      Z.shield.forEach((sh,i)=>{
+        if(!sh.faceup)return;
+        shown++;
+        const el=vCardEl(sh.name,{idx:i+1});
+        if(sh.mark)el.style.outline="2px solid #ff9f43";
+        if(sh.under&&sh.under.length){
           const st=document.createElement("span");
           st.style.cssText="position:absolute;bottom:2px;right:2px;background:#333;color:#fff;font-size:10px;padding:1px 5px;border-radius:5px;z-index:5";
-          st.textContent="+"+c.under.length;
+          st.textContent="+"+sh.under.length;
           el.style.position="relative";el.appendChild(st);
         }
-        attachPointer(el,{p:pi,zone:"shield",id:c.id,viewer:true,tap:()=>{
+        el.addEventListener("click",()=>{
           closeViewer();
-          S.sel={p:pi,zone:"shield",id:c.id};renderAll();
-          openCardSheet({p:pi,zone:"shield",id:c.id});
-        }});
+          S.sel={p:pi,zone:"shield",id:sh.id};renderAll();
+          openCardSheet({p:pi,zone:"shield",id:sh.id});
+        });
         g.appendChild(el);
+        if(sh.under)sh.under.forEach((u,j)=>{
+          if(!u.faceup)return;
+          const ue=vCardEl(u.name,{idx:`${i+1}-${j+1}`});
+          ue.style.opacity=".85";
+          g.appendChild(ue);
+        });
       });
+      if(!shown)g.innerHTML="<div class='hint'>表向きの盾はありません</div>";
       $("viewerOlay").classList.add("open");
     }
   });
