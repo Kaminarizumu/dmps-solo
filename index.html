@@ -999,6 +999,12 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <label><input type="checkbox" id="fxJD"> ジャストダイバー（出た時にアナウンスのみ・付与はメニューから手動）</label>
         <label><input type="checkbox" id="fxBAD"> B・A・D（コスト2軽減で召喚できる。そうしたらターンの終わりに破壊）</label>
         <label><input type="checkbox" id="fxBadBrand"> マスターB・A・D（−2＋このターン召喚した他の火のクリーチャー×−2。使ったらターンの終わりに自分のクリーチャー1体破壊・コスト0以下にならない）</label>
+        <span style="font-size:12px;font-weight:700">2回攻撃</span>
+        <select id="fxTwice" style="width:auto;flex:0 0 230px">
+          <option value="">なし</option>
+          <option value="onAtk">攻撃時にアンタップ（宣言直後・そのターン初攻撃のみ・ゴルドーザ/紫電型）</option>
+          <option value="afterAtk">攻撃の後にアンタップ（処理終了後・そのターン初攻撃のみ）</option>
+        </select>
         <span style="font-size:12px;font-weight:700">キズナ</span>
         <select id="fxKizuna" style="width:auto;flex:0 0 200px">
           <option value="">なし</option>
@@ -1048,6 +1054,21 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <label><input type="checkbox" id="fxStAllSA"> 自分のクリーチャー全てスピードアタッカー</label>
         <label><input type="checkbox" id="fxStUnblock"> 自分のクリーチャー全てブロックされない（攻撃時アナウンス）</label>
         <label><input type="checkbox" id="fxStOriotis"> オリオティス（相手のマナ枚数よりコストが大きい相手クリーチャーが出たら山札の下へ）</label>
+        <div style="flex:1 1 100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:700">置換ロック</span>
+          <select id="fxRepIn" style="width:auto;flex:0 0 190px">
+            <option value="">なし</option>
+            <option value="deckBottom">相手クリーチャーは出るかわりに山札の下へ（マバユキ型）</option>
+            <option value="grave">相手クリーチャーは出るかわりに墓地へ（キング・アルカディアス型）</option>
+          </select>
+          <input type="text" id="fxRepInF" list="raceList" placeholder="対象条件（単色/多色/文明/種族/名前・「／」区切り・空欄＝全て）" style="flex:1;min-width:170px">
+        </div>
+        <span style="font-size:12px;font-weight:700">マッドネス</span>
+        <select id="fxMadness" style="width:auto;flex:0 0 220px">
+          <option value="">なし</option>
+          <option value="baiken">バイケン型（相手ターン中に捨てられたら出せる・自分の効果でもOK・ロック貫通）</option>
+          <option value="eternal">永遠龍型（相手のハンデスのみ・どちらのターンでも・ロック貫通しない）</option>
+        </select>
         <span style="font-size:12px;font-weight:700">自分の召喚コスト −</span>
         <input type="number" id="fxStCostM" style="width:70px" placeholder="0" min="0">
         <input type="text" id="fxStCostF" list="raceList" placeholder="対象（種族/文明/名前・「／」区切り・空欄＝全て）" style="flex:1;min-width:170px">
@@ -1055,7 +1076,8 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <label><input type="checkbox" id="fxSST"> スーパー・S・トリガー（盾0でトリガー時に追加能力）</label>
         <label><input type="checkbox" id="fxSTPlus"> S・トリガー・プラス（相手ターンに2枚以上ブレイクされていれば追加能力）</label>
         <label><input type="checkbox" id="fxLaby"> ラビリンス（自分の盾が相手より多ければ有効）</label>
-        <label><input type="checkbox" id="fxLabyMagic"> ラビリンス・マジック（ターン終了時に条件を満たせばI→II→IIIを順に使用）</label>
+        <label><input type="checkbox" id="fxLabyMagic"> ラビリンス・マジック（ターン終了時に条件を満たせばI→II→IIIを順に使用。効果は誘発条件の「ラビリンス・マジックI/II/III」欄に登録）</label>
+        <label><input type="checkbox" id="fxTapIn"> タップして出る（真悠など）</label>
         <span style="font-size:12px;font-weight:700">フィールド種</span>
         <select id="fxFieldKind" style="width:auto;flex:0 0 140px">
           <option value="">－</option>
@@ -1701,9 +1723,11 @@ function nextTurn(){
   S.manaX2={};
   S.tauntUsed={};
   S.playedTurn={};
+  S.oriotisTurn={};
   for(const p2 of [0,1]){
     zonesOf(p2).battle.forEach(b=>{
       if(b.buff){b.buff.noLeave=false;b.buff.noDestroy=false;}
+      b._twiceUsed=false;
     });
   }
   snap();
@@ -1752,6 +1776,13 @@ function nextTurn(){
             lc.labyStep=step+1;
             sfx("flip");
             toast(`🌀 ラビリンス・マジック「${["I","II","III"][step]}」を使用！（${lc.labyStep}/3）`);
+            {
+              const rL=getReg(lc);
+              const ev=["labyI","labyII","labyIII"][step];
+              const fx=rL&&rL.watchFx?rL.watchFx.filter(w=>w.ev===ev):[];
+              if(fx.length)await runFxList(cur2,fx,lc);
+              else toast(`（${["I","II","III"][step]}の効果は手動で処理してください）`);
+            }
             if(lc.labyStep>=3){
               const lk=LINKS.get(normName(lc.name));
               if(lk&&lk.length>1&&(lc.face||0)===0){
@@ -2007,7 +2038,7 @@ function emitEvent(actor,type){
     for(const nc of news0)offerPhoenixStore(actor,nc);
     if(S.expert&&S.vs){
       const defO=actor===0?1:0;
-      if(zonesOf(defO).battle.some(b=>{const rb=getReg(b);return rb&&rb.stOriotis;})){
+      if(zonesOf(defO).battle.some(b=>{const rb=getReg(b);return rb&&rb.stOriotis;})||(S.oriotisTurn&&S.oriotisTurn[defO])){
         const manaN=AZ0.mana.length;
         const hits=AZ0.battle.filter(x=>arrived.has(x.id)&&!x._oriChk&&(()=>{const rx=getReg(x);return rx&&rx.cost!=null&&rx.cost>manaN;})());
         for(const hc of hits){
@@ -2547,9 +2578,11 @@ const FX_TYPES=[
   ["tutorDMPS","山札から条件に合うカードをn枚 手札へ（デュエプレ式・候補のみ表示／無ければ不発）"],
   ["battleAsk","相手のクリーチャーとバトルする（対象選択・確認つき）"],
   ["hold","⏸ 処理中にする（攻撃を保留して手動で解決。もう一度攻撃で続行）"],
+  ["oriotis1","このターン（次の相手ターン）オリオティス効果を得る（真悠I）"],
+  ["drawTapped","自分のタップしているクリーチャー1体につき1ドロー（真悠II）"],
 ];
 const FX_LABEL=new Proxy(Object.fromEntries(FX_TYPES),{get:(t,k)=>(k in t)?t[k]:(typeof k==="string"&&k.startsWith("sp:")?"特殊："+k.slice(3):k)});
-const FX_NO_N=new Set(["peek","battleAsk","hold"]);
+const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped"]);
 const fxNoN=t=>FX_NO_N.has(t)||(typeof t==="string"&&t.startsWith("sp:"));
 function fxSummary(list){
   if(!list||!list.length)return "（効果なし）";
@@ -2660,10 +2693,11 @@ async function autoTapCost(pi,c){
       toast(`👑💢 マスターB・A・D：−${maxDec}（残り${cost}）／ターンの終わりに自分の1体を破壊`);
     }
   }
-  // G・G・G（コスト0型）：手札が1枚以下（＝このカードを出して手札0）
+  // G・G・G（コスト0型）：手札が1枚以下（＝このカードを出して手札0）→自動適用
   if(r.ggg==="cost0"&&Z.hand.length<=0&&cost>0){
-    const yes=await ask(`🎸 G・G・G！ 手札が0枚。コスト0で召喚しますか？`);
-    if(yes){cost=0;toast(`🎸 G・G・G：コスト0で召喚！`);}
+    cost=0;
+    sfx("ok");
+    toast(`🎸 G・G・G！ 手札0枚 → コスト0で召喚！`);
   }
   // 文明による下限（単色1・ゼロ0・多色は文明数）
   {
@@ -2810,6 +2844,10 @@ async function runFxList(pi,list,srcCard){
   for(const f of list){
     const Z=zonesOf(pi), OZ=zonesOf(op);
     const n=Math.max(1,f.n|0);
+    if(f.cond&&!zoneCondOk(f.cond,pi)){
+      toast(`条件未達（${f.cond}）：効果をスキップ`);
+      continue;
+    }
     if(f.t&&f.t.startsWith("sp:")){
       const nm=f.t.slice(3);
       const ef=(typeof EFFECTS!=="undefined")&&EFFECTS.find(e=>e.name===nm);
@@ -2878,6 +2916,19 @@ async function runFxList(pi,list,srcCard){
       Z.deck.sort(()=>Math.random()-.5);
       toast("山札をシャッフルした");
       sfx("draw");
+    }else if(f.t==="oriotis1"){
+      S.oriotisTurn=S.oriotisTurn||{};
+      S.oriotisTurn[pi]=true;
+      toast(`🌀 オリオティス効果を得た（次の相手ターン、相手のマナ枚数を超えるコストの相手クリーチャーが出たら山札の下へ）`);
+    }else if(f.t==="drawTapped"){
+      const tn=Z.battle.filter(x=>x.tapped).length;
+      if(!tn){toast("タップしているクリーチャーがいないためドローなし");continue;}
+      for(let i=0;i<tn&&Z.deck.length;i++){
+        const top=Z.deck.shift();
+        top.faceup=true;Z.hand.push(top);
+      }
+      sfx("draw");renderAll();
+      toast(`🃏 タップ中${tn}体 → ${tn}枚ドロー`);
     }else if(f.t==="hold"){
       const yes=await ask(`⏸ ${srcCard?faceNameOf(srcCard):"このカード"} の効果を手動で処理しますか？\n（例：メテオバーン＝下のカードを墓地へ、シールド焼却など）\n「はい」で攻撃を保留し、解決後に「▶ 攻撃を再開」ボタンで続行できます`);
       if(yes){
@@ -3658,6 +3709,16 @@ async function execAttack(pi,id,tg){
     }
   }
   const op=pi===0?1:0, OZ=zonesOf(op);
+  if(S.expert){
+    const rTw=getReg(c);
+    if(rTw&&rTw.twice==="onAtk"&&!c._twiceUsed){
+      c._twiceUsed=true;
+      c.tapped=false;
+      sfx("ok");
+      toast(`⚡⚡ 2回攻撃：${faceNameOf(c)} は攻撃時にアンタップ！（このターン初めての攻撃）`);
+      renderAll();
+    }
+  }
   if(S.expert&&!c._atkFxDone){
     const aw=getReg(c);
     if(aw&&aw.watchFx&&aw.watchFx.length){
@@ -4052,6 +4113,16 @@ async function execAttack(pi,id,tg){
       }
     }
     await doBattle(pi,c,op,d);
+    if(S.expert){
+      const rT2=getReg(c);
+      if(rT2&&rT2.twice==="afterAtk"&&!c._twiceUsed&&Z.battle.find(x=>x.id===c.id)){
+        c._twiceUsed=true;
+        c.tapped=false;
+        sfx("ok");
+        toast(`⚡⚡ 2回攻撃：${faceNameOf(c)} は攻撃の後アンタップ！`);
+        renderAll();
+      }
+    }
   }
   else if(tg.kind==="shield"){
     const reg=getReg(c);
@@ -4067,6 +4138,16 @@ async function execAttack(pi,id,tg){
     else n=parseInt(bk,10)||1;
     const brokeN=(n==="all")?OZ.shield.length:Math.min(n,OZ.shield.length);
     await breakShields(op,n,c);
+    if(S.expert){
+      const rT2=getReg(c);
+      if(rT2&&rT2.twice==="afterAtk"&&!c._twiceUsed&&Z.battle.find(x=>x.id===c.id)){
+        c._twiceUsed=true;
+        c.tapped=false;
+        sfx("ok");
+        toast(`⚡⚡ 2回攻撃：${faceNameOf(c)} は攻撃の後アンタップ！`);
+        renderAll();
+      }
+    }
     if(bk==="masterw"&&S.expert&&c.bornTurn===S.turn&&brokeN>0){
       for(let i=0;i<brokeN;i++){
         if(!OZ.battle.length)break;
@@ -4134,10 +4215,15 @@ function fxRowEl(faceIdx,i){
   num.style.display=fxNoN(f.t)?"none":"";
   sel.onchange=()=>{f.t=sel.value;num.style.display=fxNoN(f.t)?"none":"";};
   num.onchange=()=>{f.n=Math.max(1,parseInt(num.value,10)||1);};
+  const cnd=document.createElement("input");
+  cnd.type="text";cnd.placeholder="条件（例：マナ:ドラゴン>=3・空欄=常時）";
+  cnd.style.cssText="flex:1 1 100%;min-width:0;font-size:12px";
+  cnd.value=f.cond||"";
+  cnd.onchange=()=>{f.cond=cnd.value.trim();};
   const del=document.createElement("button");
   del.className="btn small warn del";del.textContent="✕";
   del.onclick=()=>{FXEDIT.faces[faceIdx].splice(i,1);renderFxEditor();};
-  row.appendChild(sel);row.appendChild(num);row.appendChild(del);
+  row.appendChild(sel);row.appendChild(num);row.appendChild(del);row.appendChild(cnd);
   return row;
 }
 const CIVS=[["fxCivL","light","光"],["fxCivW","water","水"],["fxCivD","dark","闇"],["fxCivF","fire","火"],["fxCivN","nature","自然"],["fxCivZ","zero","ゼロ"]];
@@ -4162,6 +4248,9 @@ const TRIG_EVS=[
   ["oppSummon","相手のクリーチャーがバトルゾーンに出た時"],
   ["oppSummonTapped","相手のクリーチャーが出た時（このクリーチャーがタップ中のみ・カツドン型）"],
   ["kizuna","キズナ能力（キズナ持ちの攻撃時に使われる効果をここに登録）"],
+  ["labyI","ラビリンス・マジック I の効果"],
+  ["labyII","ラビリンス・マジック II の効果"],
+  ["labyIII","ラビリンス・マジック III の効果"],
 ];
 function fxTrigRowEl(i){
   const f=FXEDIT.watchFx[i];
@@ -4181,10 +4270,15 @@ function fxTrigRowEl(i){
   num.style.display=fxNoN(f.t)?"none":"";
   sel.onchange=()=>{f.t=sel.value;num.style.display=fxNoN(f.t)?"none":"";};
   num.onchange=()=>{f.n=Math.max(1,parseInt(num.value,10)||1);};
+  const cnd=document.createElement("input");
+  cnd.type="text";cnd.placeholder="条件（例：墓地>=4・空欄=常時）";
+  cnd.style.cssText="flex:1 1 100%;min-width:0;font-size:12px";
+  cnd.value=f.cond||"";
+  cnd.onchange=()=>{f.cond=cnd.value.trim();};
   const del=document.createElement("button");
   del.className="btn small warn del";del.textContent="✕";
   del.onclick=()=>{FXEDIT.watchFx.splice(i,1);renderFxEditor();};
-  row.appendChild(ev);row.appendChild(sel);row.appendChild(num);row.appendChild(del);
+  row.appendChild(ev);row.appendChild(sel);row.appendChild(num);row.appendChild(del);row.appendChild(cnd);
   return row;
 }
 function renderFxEditor(){
@@ -4254,6 +4348,7 @@ function renderFxEditor(){
   $("fxSTPlus").checked=!!FXEDIT.stplus;
   $("fxLaby").checked=!!FXEDIT.laby;
   $("fxLabyMagic").checked=!!FXEDIT.labyMagic;
+  $("fxTapIn").checked=!!FXEDIT.tapIn;
   $("fxDronGo").value=FXEDIT.dronGo||"";
   $("fxJD").checked=!!FXEDIT.jdiver;
   $("fxTaunt").value=FXEDIT.taunt||"";
@@ -4264,6 +4359,7 @@ function renderFxEditor(){
   $("fxBadBrand").checked=!!FXEDIT.badBrand;
   $("fxGGG").value=FXEDIT.ggg||"";
   $("fxKizuna").value=FXEDIT.kizuna||"";
+  $("fxTwice").value=FXEDIT.twice||"";
   $("fxUSaber").value=FXEDIT.usaber||"";
   $("fxNoLose").checked=!!FXEDIT.noLose;
   $("fxSoulShift").checked=!!FXEDIT.soulshift;
@@ -4279,6 +4375,9 @@ function renderFxEditor(){
   $("fxStAllSA").checked=!!FXEDIT.stAllSA;
   $("fxStUnblock").checked=!!FXEDIT.stUnblock;
   $("fxStOriotis").checked=!!FXEDIT.stOriotis;
+  $("fxRepIn").value=FXEDIT.repIn||"";
+  $("fxRepInF").value=FXEDIT.repInF||"";
+  $("fxMadness").value=FXEDIT.madness||"";
   $("fxStCostM").value=FXEDIT.stCostM||"";
   $("fxStCostF").value=FXEDIT.stCostF||"";
   $("fxInvRace").value=FXEDIT.invRace||"";
@@ -4420,6 +4519,7 @@ function openFxEditor(key){
     stplus:cur?!!cur.stplus:false,
     laby:cur?!!cur.laby:false,
     labyMagic:cur?!!cur.labyMagic:false,
+    tapIn:cur?!!cur.tapIn:false,
     dronGo:cur&&cur.dronGo||"",
     jdiver:cur?!!cur.jdiver:false,
     taunt:cur&&cur.taunt||"",
@@ -4430,6 +4530,7 @@ function openFxEditor(key){
     badBrand:cur?!!cur.badBrand:false,
     ggg:cur&&cur.ggg||"",
     kizuna:cur&&cur.kizuna||"",
+    twice:cur&&cur.twice||"",
     usaber:cur&&cur.usaber||"",
     noLose:cur?!!cur.noLose:false,
     soulshift:cur?!!cur.soulshift:false,
@@ -4445,6 +4546,9 @@ function openFxEditor(key){
     stAllSA:cur?!!cur.stAllSA:false,
     stUnblock:cur?!!cur.stUnblock:false,
     stOriotis:cur?!!cur.stOriotis:false,
+    repIn:cur&&cur.repIn||"",
+    repInF:cur&&cur.repInF||"",
+    madness:cur&&cur.madness||"",
     stCostM:cur&&cur.stCostM||0,
     stCostF:cur&&cur.stCostF||"",
     invRace:cur&&cur.invRace||"",
@@ -4585,6 +4689,7 @@ $("fxSave").addEventListener("click",async ()=>{
     stplus:$("fxSTPlus").checked,
     laby:$("fxLaby").checked,
     labyMagic:$("fxLabyMagic").checked,
+    tapIn:$("fxTapIn").checked,
     dronGo:$("fxDronGo").value||"",
     jdiver:$("fxJD").checked,
     taunt:$("fxTaunt").value||"",
@@ -4595,6 +4700,7 @@ $("fxSave").addEventListener("click",async ()=>{
     badBrand:$("fxBadBrand").checked,
     ggg:$("fxGGG").value||"",
     kizuna:$("fxKizuna").value||"",
+    twice:$("fxTwice").value||"",
     usaber:$("fxUSaber").value.trim(),
     noLose:$("fxNoLose").checked,
     soulshift:$("fxSoulShift").checked,
@@ -4610,6 +4716,9 @@ $("fxSave").addEventListener("click",async ()=>{
     stAllSA:$("fxStAllSA").checked,
     stUnblock:$("fxStUnblock").checked,
     stOriotis:$("fxStOriotis").checked,
+    repIn:$("fxRepIn").value||"",
+    repInF:$("fxRepInF").value.trim(),
+    madness:$("fxMadness").value||"",
     stCostM:+$("fxStCostM").value||0,
     stCostF:$("fxStCostF").value.trim(),
     invRace:$("fxInvRace").value.trim(),
@@ -4804,6 +4913,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.stplus)attrs.push("STプラス");
     if(v.laby)attrs.push("ラビリンス");
     if(v.labyMagic)attrs.push("ラビリンス・マジック");
+    if(v.tapIn)attrs.push("タップイン");
     if(v.dronGo)attrs.push(`P'Sドロンゴー${v.dronGo==="V"?"V":""}`);
     if(v.jdiver)attrs.push("ジャストダイバー");
     if(v.taunt)attrs.push(v.taunt==="always"?"攻撃誘導（永続）":"攻撃誘導（最初の1回）");
@@ -4813,6 +4923,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.badBrand)attrs.push("マスターB・A・D");
     if(v.ggg)attrs.push(v.ggg==="cost0"?"GGG：コスト0":"GGG：破壊されない");
     if(v.kizuna)attrs.push({k:"キズナ",plus:"キズナプラス",comp:"キズナコンプ"}[v.kizuna]);
+    if(v.twice)attrs.push(v.twice==="onAtk"?"2回攻撃（攻撃時アンタップ）":"2回攻撃（攻撃後アンタップ）");
     if(v.usaber)attrs.push(`ウルトラ・セイバー：${v.usaber}`);
     if(v.noLose)attrs.push("ゲームに負けない");
     if(v.soulshift)attrs.push("ソウルシフト");
@@ -4826,6 +4937,8 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.stAllSA)attrs.push("常在：全員SA");
     if(v.stUnblock)attrs.push("常在：ブロックされない");
     if(v.stOriotis)attrs.push("常在：オリオティス");
+    if(v.repIn)attrs.push(`常在：置換ロック（${v.repInF||"相手全て"}→${v.repIn==="grave"?"墓地":"山下"}）`);
+    if(v.madness)attrs.push(v.madness==="baiken"?"マッドネス（バイケン型）":"マッドネス（永遠型）");
     if(v.stCostM)attrs.push(`常在：${v.stCostF?v.stCostF+"の":""}召喚コスト−${v.stCostM}`);
     if(v.gimmick==="complex")attrs.push("COMPLEX型");
     if(v.gimmick==="phoenixfield")attrs.push("フェニックス・フィールド");
@@ -4971,9 +5084,45 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
     }
   }
   if(toZone==="battle"){
+    if(S.expert&&!c._viaMadness){
+      const foeR=pTo===0?1:0;
+      const rIn=getReg(c);
+      const civMapR={"光":"light","水":"water","闇":"dark","火":"fire","自然":"nature","ゼロ":"zero"};
+      const matchR=(filt)=>{
+        if(!filt)return true;
+        const toksR=String(filt).split(/[／\/、,]/).map(x=>x.trim()).filter(Boolean);
+        return toksR.some(tk=>{
+          if(tk==="多色")return rIn&&rIn.civs&&rIn.civs.length>=2;
+          if(tk==="単色")return rIn&&rIn.civs&&rIn.civs.length===1&&rIn.civs[0]!=="zero";
+          if(civMapR[tk])return rIn&&rIn.civs&&rIn.civs.includes(civMapR[tk]);
+          return (rIn&&raceMatch(rIn,tk))||String(c.name).includes(tk);
+        });
+      };
+      const locker=zonesOf(foeR).battle.find(x=>{
+        const rx=getReg(x);
+        return rx&&rx.repIn&&matchR(rx.repInF);
+      });
+      if(locker){
+        const rL=getReg(locker);
+        const bi=Z.battle.findIndex(x=>x.id===c.id);
+        if(bi>=0){
+          Z.battle.splice(bi,1);
+          c.tapped=false;
+          if(rL.repIn==="grave"){
+            c.faceup=true;Z.grave.push(c);
+          }else{
+            c.faceup=false;Z.deck.push(c);
+          }
+          sfx("grave");renderAll();
+          toast(`🔒 置換ロック（${faceNameOf(locker)}）：${c.name} はバトルゾーンに出るかわりに${rL.repIn==="grave"?"墓地":"山札の一番下"}へ！\n（バトルゾーンを経由しないため、出た時効果は発動しません）`);
+          return;
+        }
+      }
+    }
     const reg=getReg(c);
     if(reg&&(reg.d2||reg.wide))c.rot=(pTo===S.seat)?270:90;
     if(S.expert&&reg&&reg.gimmick==="complex"){c.tapped=true;c.under=c.under||[];toast(`⬛ ${c.name} はタップして出る（下に8枚でアンタップ）`);}
+    if(S.expert&&reg&&reg.tapIn&&(!reg.gimmick||reg.gimmick!=="complex")){c.tapped=true;toast(`⤵ ${c.name} はタップして出る`);}
     if(S.expert&&reg&&reg.jdiver){
       toast(`🌀 ジャストダイバー持ち：${faceNameOf(c)}（付与はメニューのバフから手動で・処理順は任意）`);
     }
@@ -5220,6 +5369,71 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
     if(zonesOf(foeM).battle.some(b=>{const rb=getReg(b);return rb&&rb.stManaTap;})){
       c.tapped=true;
       toast(`⚙ 常在効果：マナはタップして置かれる`);
+    }
+  }
+  if(S.expert&&fromZone==="hand"&&toZone==="grave"){
+    const rM=getReg(c);
+    if(rM&&rM.madness){
+      const goBattle=(pierce)=>{
+        const ZT4=zonesOf(pTo);
+        const arr4=ZT4.grave;
+        if(arr4){const ix4=arr4.findIndex(x=>x.id===c.id);if(ix4>=0)arr4.splice(ix4,1);}
+        c.faceup=true;c.tapped=false;
+        c._viaMadness=!!pierce;
+        zonesOf(pFrom).battle.push(c);
+        markArrive(c);
+        emitEvent(pFrom,"summon");
+        enqueueFx(pFrom,c);
+        sfx("ok");renderAll();
+        toast(`😈 マッドネス！ ${faceNameOf(c)} はバトルゾーンに出た${pierce?"（置換ロックも貫通）":"（置換ロックがあれば適用されます）"}`);
+        if(!pierce){
+          const foeR=pFrom===0?1:0;
+          const rIn=getReg(c);
+          const civMapR={"光":"light","水":"water","闇":"dark","火":"fire","自然":"nature","ゼロ":"zero"};
+          const matchR=(filt)=>{
+            if(!filt)return true;
+            const toksR=String(filt).split(/[／\/、,]/).map(x=>x.trim()).filter(Boolean);
+            return toksR.some(tk=>{
+              if(tk==="多色")return rIn&&rIn.civs&&rIn.civs.length>=2;
+              if(tk==="単色")return rIn&&rIn.civs&&rIn.civs.length===1&&rIn.civs[0]!=="zero";
+              if(civMapR[tk])return rIn&&rIn.civs&&rIn.civs.includes(civMapR[tk]);
+              return (rIn&&raceMatch(rIn,tk))||String(c.name).includes(tk);
+            });
+          };
+          const locker=zonesOf(foeR).battle.find(x=>{
+            const rx=getReg(x);
+            return rx&&rx.repIn&&matchR(rx.repInF);
+          });
+          if(locker){
+            const rL=getReg(locker);
+            const ZB4=zonesOf(pFrom).battle;
+            const bi4=ZB4.findIndex(x=>x.id===c.id);
+            if(bi4>=0){
+              ZB4.splice(bi4,1);
+              c.tapped=false;
+              if(rL.repIn==="grave"){c.faceup=true;zonesOf(pFrom).grave.push(c);}
+              else{c.faceup=false;zonesOf(pFrom).deck.push(c);}
+              sfx("grave");renderAll();
+              toast(`🔒 置換ロック（${faceNameOf(locker)}）：永遠龍型マッドネスは貫通できず、${rL.repIn==="grave"?"墓地":"山札の一番下"}へ！（出た時効果は発動しません）`);
+            }
+          }
+        }
+      };
+      if(rM.madness==="baiken"&&S.who!==pFrom){
+        (async()=>{
+          const yes=await ask(`😈 マッドネス・バイケン型（${faceNameOf(c)}）\n相手のターン中に手札から捨てられました（自分の効果でもOK）。\nかわりにバトルゾーンに出しますか？（置換ロック貫通）`);
+          if(!yes)return;
+          snap();
+          goBattle(true);
+        })();
+      }else if(rM.madness==="eternal"){
+        (async()=>{
+          const yes=await ask(`😈 マッドネス・永遠龍型（${faceNameOf(c)}）\n【相手のカードの効果による手札破壊】の場合、かわりにバトルゾーンに出せます（任意）。\n出しますか？（自分で捨てた場合は「いいえ」。置換ロックは貫通しません）`);
+          if(!yes)return;
+          snap();
+          goBattle(false);
+        })();
+      }
     }
   }
   if(S.expert&&(fromZone==="shield"||fromZone==="shieldUp")){
