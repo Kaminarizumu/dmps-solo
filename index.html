@@ -5,7 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>DM Re:Vault v9.8</title>
+<title>DM Re:Vault v9.9</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DM Re:Vault">
+<link rel="manifest" href='data:application/manifest+json,{"name":"DM Re:Vault","short_name":"Re:Vault","display":"standalone","orientation":"any","background_color":"%230b0f17","theme_color":"%230b0f17","start_url":"./","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Crect width=%27100%27 height=%27100%27 rx=%2722%27 fill=%27%230b0f17%27/%3E%3Ctext x=%2750%27 y=%2766%27 font-size=%2748%27 text-anchor=%27middle%27%3E%E2%9A%94%EF%B8%8F%3C/text%3E%3C/svg%3E","sizes":"any","type":"image/svg+xml"}]}'>
 <style>
 :root{
   --bg:#0c0f16; --panel:#151b28; --panel-2:#1d2536; --line:#2a3550;
@@ -291,6 +296,10 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 }
 #sheet.open{transform:translateY(0)}
 #sheet .btn,#sheetActions .btn,.ask .btn,#askBox .btn{white-space:normal;word-break:break-word;line-height:1.45;text-align:left}
+#fxOlay .row{flex-wrap:wrap}
+#fxOlay .row>*{min-width:0;max-width:100%}
+#fxOlay select,#fxOlay input[type="text"],#fxOlay input[type="number"]{max-width:100%;box-sizing:border-box}
+#fxOlay .fxrow select{min-width:0}
 @media(min-width:900px){
   body:not(.sheet-bottom) #sheet{
     left:auto;right:0;top:52px;bottom:0;width:min(460px,46vw);
@@ -812,6 +821,8 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
       <div class="row">
         <span style="font-size:12px;font-weight:700">パワーアタッカー ＋</span>
         <input type="number" id="fxPA" style="width:100px" placeholder="0" min="0">
+        <span style="font-size:12px;font-weight:700">バトル中 ＋</span>
+        <input type="number" id="fxPB" style="width:100px" placeholder="0" min="0">
         <span style="font-size:12px;font-weight:700">ブレイク数</span>
         <select id="fxBreaks" style="width:auto;flex:1;min-width:120px">
           <option value="1">1（通常）</option>
@@ -2386,6 +2397,7 @@ async function autoTapCost(pi,c){
     const w=r.sympathy;
     const toks=String(w).split(/[／\/、,]/).map(x=>x.trim()).filter(Boolean);
     const cnt=Z.battle.filter(b=>{
+      if(b.id===c.id)return false;
       const rb=getReg(b);
       return toks.some(tk=>{
         const mPow=tk.match(/^(?:パワー)?(\d+)以上$/);
@@ -2606,9 +2618,10 @@ async function runFxList(pi,list,srcCard){
           return String(x.name).includes(w)||raceMatch(r2,w);
         });
         if(!cands.length)break;
-        const j=cands.length===1?0:await askChoice(`🤖 候補（${cands.length}枚・他のカードは見えません）から選択（${i+1}/${n}）`,cands.map(x=>x.name));
+        const uniq=[...new Set(cands.map(x=>x.name))];
+        const j=uniq.length===1?0:await askChoice(`🤖 該当カードから選択（${i+1}/${n}・枚数と他のカードは見えません）`,uniq);
         if(j===null)break;
-        const cc=cands[j];
+        const cc=cands.find(x=>x.name===uniq[j]);
         const di=Z.deck.findIndex(x=>x.id===cc.id);
         Z.deck.splice(di,1);
         cc.faceup=true;Z.hand.push(cc);markArrive(cc);
@@ -2701,6 +2714,13 @@ function gearOut(Z,g){
 async function offerPhoenixStore(pi,newCard){
   if(!S.expert)return;
   const Z=zonesOf(pi);
+  const fld0=Z.battle.find(x=>x.id!==newCard.id&&(()=>{const rf=getReg(x);return rf&&rf.gimmick==="phoenixfield";})());
+  if(!fld0)return;
+  if(newCard._pfAsked)return;
+  newCard._pfAsked=true;
+  try{await waitFxIdle();}catch(e){}
+  await new Promise(r=>setTimeout(r,80));
+  if(!Z.battle.find(x=>x.id===newCard.id)){newCard._pfAsked=false;return;}
   const fld=Z.battle.find(x=>x.id!==newCard.id&&(()=>{const rf=getReg(x);return rf&&rf.gimmick==="phoenixfield";})());
   if(!fld)return;
   const reg=getReg(newCard);
@@ -2712,8 +2732,6 @@ async function offerPhoenixStore(pi,newCard){
     }
     return;
   }
-  if(newCard._pfAsked)return;
-  newCard._pfAsked=true;
   fld.under=fld.under||[];
   while(true){
     const pool=Z.battle.filter(x=>x.id!==fld.id&&(()=>{const rx=getReg(x);return rx&&raceMatch(rx,"ドラゴン");})());
@@ -2780,7 +2798,7 @@ async function waitFxIdle(){
 }
 
 /* ================= 攻撃・バトル ================= */
-async function effPower(c,attacking){
+async function effPower(c,attacking,inBattle){
   const r=getReg(c);
   let p;
   if(r&&r.power!==""&&r.power!=null&&!isNaN(+r.power))p=+r.power;
@@ -2797,6 +2815,7 @@ async function effPower(c,attacking){
     }
   }
   if(attacking&&r&&r.pa)p+=(+r.pa||0);
+  if(inBattle&&r&&r.pb)p+=(+r.pb||0);
   if(c.buff)p+=(c.buff.pa||0)+(c.buff.pm||0);
   return p;
 }
@@ -2932,7 +2951,7 @@ function resolveOut(Z,o){
 }
 function hasSlayer(c){const r=getReg(c);return !!((r&&r.slayer)||(c.buff&&c.buff.slayer));}
 async function doBattle(pa,a,pd,d){
-  const Pa=await effPower(a,true), Pd=await effPower(d,false);
+  const Pa=await effPower(a,true,true), Pd=await effPower(d,false,true);
   sfx("atk");
   toast(`⚔ バトル：${faceNameOf(a)}(${Pa}) vs ${faceNameOf(d)}(${Pd})`);
   await new Promise(r=>setTimeout(r,350));
@@ -3115,12 +3134,14 @@ function pickShieldIdxs(op,count){
     $("breakOlay").classList.add("open");
   });
 }
-async function breakShields(op,count,attacker){
+async function breakShields(op,count,attacker,forceIdx){
   const OZ=zonesOf(op);
   const total=count==="all"?OZ.shield.length:Math.min(count,OZ.shield.length);
   if(!total){toast("シールドがありません");return;}
   let idxs;
-  if(OZ.shield.length<=total){
+  if(forceIdx!=null&&total===1){
+    idxs=[forceIdx];
+  }else if(OZ.shield.length<=total){
     idxs=OZ.shield.map((_,i)=>i);
   }else if(total===1){
     const pick=await askChoice(`${S.players[op].label}のどのシールドをブレイク？`,
@@ -3908,6 +3929,7 @@ function renderFxEditor(){
   $("fxWatchTurnEndOpp").checked=!!FXEDIT.watch.turnEndOpp;
   $("fxWatchTurnEndBoth").checked=!!FXEDIT.watch.turnEndBoth;
   $("fxPA").value=FXEDIT.pa||"";
+  $("fxPB").value=FXEDIT.pb||"";
   $("fxBreaks").value=FXEDIT.breaks||"1";
   $("fxGimmick").value=FXEDIT.gimmick||"";
   $("fxPowerSel").value=(FXEDIT.power!=null&&[...$("fxPowerSel").options].some(o=>o.value===String(FXEDIT.power)))?String(FXEDIT.power):"";
@@ -4041,6 +4063,7 @@ function openFxEditor(key){
     d2:cur?!!cur.d2:false,
     seal:cur&&cur.seal||0,
     pa:cur&&cur.pa||null,
+    pb:cur&&cur.pb||null,
     breaks:cur&&cur.breaks||"1",
     gimmick:cur&&cur.gimmick||"",
     cost:cur&&cur.cost!=null?cur.cost:null,
@@ -4188,6 +4211,7 @@ $("fxSave").addEventListener("click",async ()=>{
     d2:$("fxD2").checked,
     seal:Math.max(0,parseInt($("fxSeal").value,10)||0),
     pa:$("fxPA").value.trim()===""?null:Math.max(0,+$("fxPA").value||0),
+    pb:$("fxPB").value.trim()===""?null:Math.max(0,+$("fxPB").value||0),
     breaks:$("fxBreaks").value,
     gimmick:$("fxGimmick").value,
     cost:$("fxCost").value===""?null:+$("fxCost").value,
@@ -4305,6 +4329,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.d2)attrs.push("D2");
     if(v.seal)attrs.push(`封印${v.seal}`);
     if(v.pa)attrs.push(v.pa>=999999999?"PA+∞":v.pa>=1000000?`PA+${Math.floor(v.pa/10000)}万`:`PA+${v.pa}`);
+    if(v.pb)attrs.push(`バトル中+${v.pb}`);
     if(v.breaks&&v.breaks!=="1")attrs.push(v.breaks==="all"?"ワールドB":`${v.breaks}ブレイク`);
     if(v.gimmick==="dorma")attrs.push("ドルマゲドン型");
     if(v.gimmick==="zeron")attrs.push("零龍型");
@@ -6484,7 +6509,16 @@ function openCardSheet(ctx){
   }
   if(ctx.zone==="shield"){
     box.appendChild(actBtn(c.faceup?"裏に戻す":"確認（表にする）",()=>{c.faceup=!c.faceup;sfx("flip");rerender();}));
-    box.appendChild(actBtn("ブレイク（手札へ）",()=>{moveCard(ctx.p,ctx.zone,ctx.id,"hand");closeSel();renderAll();},"primary"));
+    box.appendChild(actBtn("⚡ ブレイクする（Sトリガー等の一連処理つき）",async ()=>{
+      closeSheet();closeSel();
+      const Z2=zonesOf(ctx.p);
+      const idx=Z2.shield.findIndex(x=>x.id===ctx.id);
+      if(idx<0)return;
+      snap();
+      await breakShields(ctx.p,1,null,idx);
+      renderAll();
+    },"primary",true));
+    box.appendChild(actBtn("ブレイク（手札へ・処理なし）",()=>{moveCard(ctx.p,ctx.zone,ctx.id,"hand");closeSel();renderAll();}));
   }
   if(ctx.zone==="hand"){
     box.appendChild(actBtn("唱える（解決中へ）",()=>{moveCard(ctx.p,ctx.zone,ctx.id,"resolve");closeSel();renderAll();},"primary"));
@@ -8604,6 +8638,13 @@ $("bApply").addEventListener("click",()=>{
 });
 
 /* ================= init ================= */
+if("serviceWorker" in navigator&&location.protocol==="https:"){
+  window.addEventListener("load",()=>{
+    navigator.serviceWorker.register("./sw.js").then(()=>{
+      console.log("SW registered: offline ready");
+    }).catch(e=>console.warn("SW register failed",e));
+  });
+}
 (async function init(){
   db=await openDB();
   const nm=db?await idbGet("misc","nameMap"):null;
