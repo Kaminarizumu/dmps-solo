@@ -309,6 +309,11 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 .an-deal{animation:anDeal .3s ease-out}
 .an-pop{animation:anPop .25s ease-out}
 #fxOlay .row{flex-wrap:wrap}
+#fxOlay .pair{display:inline-flex;gap:6px;align-items:center;flex-wrap:nowrap;background:#0d1322;border:1px solid var(--line);border-radius:8px;padding:3px 8px}
+#fxOlay .pair>span{white-space:nowrap}
+#fxOlay details{width:100%;border:1px solid var(--line);border-radius:10px;padding:6px 10px;margin-top:6px;background:#0b101c}
+#fxOlay details>summary{cursor:pointer;font-size:13px;font-weight:900;color:var(--accent);padding:4px 0;user-select:none}
+#fxOlay details .row{margin-top:4px}
 #fxOlay .row>*{min-width:0;max-width:100%}
 #fxOlay select,#fxOlay input[type="text"],#fxOlay input[type="number"]{max-width:100%;box-sizing:border-box}
 #fxOlay .fxrow select{min-width:0}
@@ -929,13 +934,14 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <label><input type="checkbox" id="fxGS"> G・ストライク</label>
         <label><input type="checkbox" id="fxCharger"> チャージャー（呪文使用後マナへ／ツインパクト下面も可）</label>
       </div>
+      <details open>
+        <summary>⚔ 攻撃・侵略・防御キーワード</summary>
       <div class="row" style="gap:12px;flex-wrap:wrap">
-        <label><input type="checkbox" id="fxInvade"> 侵略（攻撃時、手札から重ねて進化）</label>
-        <label><input type="checkbox" id="fxKakumei"> 革命チェンジ（攻撃時、手札と入れ替え）</label>
-        <span style="font-size:12px;font-weight:700">ニンジャ・ストライク</span>
+        <span class="pair"><label><input type="checkbox" id="fxInvade"> 侵略</label><label><input type="checkbox" id="fxKakumei"> 革命チェンジ</label><span style="font-size:11px;color:var(--muted)">→条件は下の「侵略/チェンジ条件」欄</span></span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">ニンジャ・ストライク</span>
         <select id="fxNinja" style="width:auto;flex:0 0 90px">
           <option value="0">なし</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option>
-        </select>
+        </select></span>
       </div>
       <div class="row" style="gap:12px;flex-wrap:wrap">
         <span style="font-size:12px;font-weight:700">破壊置換：</span>
@@ -957,10 +963,10 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
           <option value="">文明指定なし</option>
           <option value="light">光</option><option value="water">水</option><option value="dark">闇</option><option value="fire">火</option><option value="nature">自然</option>
         </select>
-        <span style="font-size:12px;font-weight:700">裏ニンジャ・ストライク</span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">裏ニンジャ・ストライク</span>
         <select id="fxUraNinja" style="width:auto;flex:0 0 76px">
           <option value="0">なし</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option>
-        </select>
+        </select></span>
         <select id="fxUraCiv" style="width:auto;flex:0 0 110px">
           <option value="">文明指定なし</option>
           <option value="light">光</option><option value="water">水</option><option value="dark">闇</option><option value="fire">火</option><option value="nature">自然</option>
@@ -975,26 +981,26 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <label><input type="checkbox" id="fxMach"> マッハファイター（出たターン、クリーチャーを攻撃できる）</label>
         <label><input type="checkbox" id="fxHEnergy"> ハイパーエナジー（自分のクリーチャーをタップして1体につきコスト2軽減）</label>
         <input type="text" id="fxHyperNote" placeholder="HM時の能力メモ（パワー+○○等）" style="flex:1;min-width:140px">
-        <span style="font-size:12px;font-weight:700">キリフダッシュ</span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">キリフダッシュ</span>
         <select id="fxKirifuda" style="width:auto;flex:0 0 80px">
           <option value="0">なし</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
-        </select>
+        </select></span>
       </div>
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
-        <span style="font-size:12px;font-weight:700">シンパシー</span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">シンパシー</span>
         <input type="text" id="fxSympathy" list="raceList" placeholder="種族/名前／12000以上／コスト5以上（「／」区切り複数OK）" style="flex:1;min-width:130px">
         <select id="fxSymX" style="width:auto;flex:0 0 96px">
           <option value="1">×1軽減</option>
           <option value="2">×2（ダブル）</option>
-        </select>
-        <span style="font-size:12px;font-weight:700">G・ゼロ</span>
+        </select></span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">G・ゼロ</span>
         <input type="text" id="fxGZero" placeholder="条件（メモ）空欄=なし" style="flex:1;min-width:130px">
       </div>
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
-        <span style="font-size:12px;font-weight:700">マナ武装</span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">マナ武装</span>
         <select id="fxManaArm" style="width:auto;flex:0 0 70px">
           <option value="0">なし</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
-        </select>
+        </select></span></span>
         <select id="fxManaArmCiv" style="width:auto;flex:0 0 100px">
           <option value="">文明</option>
           <option value="light">光</option><option value="water">水</option><option value="dark">闇</option><option value="fire">火</option><option value="nature">自然</option>
@@ -1005,7 +1011,7 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         </select>
       </div>
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
-        <span style="font-size:12px;font-weight:700">侵略/チェンジ条件（攻撃側が満たす時のみ確認）</span>
+        <span style="font-size:12px;font-weight:900;color:var(--accent)">▶ 侵略/チェンジ条件（攻撃側が満たす時のみ確認）</span>
         <select id="fxInvCiv" style="width:auto;flex:0 0 90px">
           <option value="">文明不問</option>
           <option value="light">光</option><option value="water">水</option><option value="dark">闇</option><option value="fire">火</option><option value="nature">自然</option>
@@ -1030,26 +1036,26 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <label><input type="checkbox" id="fxBAD"> B・A・D（コスト2軽減で召喚できる。そうしたらターンの終わりに破壊）</label>
         <label><input type="checkbox" id="fxBadBrand"> マスターB・A・D（−2＋このターン召喚した他の火のクリーチャー×−2。使ったらターンの終わりに自分のクリーチャー1体破壊・コスト0以下にならない）</label>
         <input type="text" id="fxAtkChance" list="raceList" placeholder="アタック・チャンス対象（種族/名前・呪文に登録・空欄=なし）" style="flex:1;min-width:170px">
-        <span style="font-size:12px;font-weight:700">2回攻撃</span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">2回攻撃</span>
         <select id="fxTwice" style="width:auto;flex:0 0 230px">
           <option value="">なし</option>
           <option value="onAtk">攻撃時にアンタップ（宣言直後・そのターン初攻撃のみ・ゴルドーザ/紫電型）</option>
           <option value="afterAtk">攻撃の後にアンタップ（処理終了後・そのターン初攻撃のみ）</option>
-        </select>
-        <span style="font-size:12px;font-weight:700">キズナ</span>
+        </select></span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">キズナ</span>
         <select id="fxKizuna" style="width:auto;flex:0 0 200px">
           <option value="">なし</option>
           <option value="k">キズナ（攻撃時、自分の他の1体のキズナ能力を使う）</option>
           <option value="plus">キズナプラス（攻撃時、自身→他の1体の順にキズナ能力）</option>
           <option value="comp">キズナコンプ（攻撃時、好きな数のキズナ能力）</option>
-        </select>
+        </select></span>
         <input type="text" id="fxUSaber" list="raceList" placeholder="ウルトラ・セイバー対象（種族/名前・空欄=なし）" style="flex:1;min-width:170px">
-        <span style="font-size:12px;font-weight:700">G・G・G（手札1枚以下）</span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">G・G・G（手札1枚以下）</span>
         <select id="fxGGG" style="width:auto;flex:0 0 180px">
           <option value="">なし</option>
           <option value="cost0">コスト0で召喚できる（轟轟轟型）</option>
           <option value="noDestroy">破壊されない（レイド型）</option>
-        </select>
+        </select></span>
         <label><input type="checkbox" id="fxNoLose"> ゲームに負けない（このカードが場にある間、敗北確定時に警告）</label>
         <label><input type="checkbox" id="fxSoulShift"> ソウルシフト（進化時、進化元のコスト分軽減）</label>
         <label><input type="checkbox" id="fxGaiash"> 相手のターンの終わりに手札から出せる（ガイアッシュ型・条件はプレイヤー判断）</label>
@@ -1065,7 +1071,7 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
             <option value="unblock">ブロックされない（攻撃時表示）</option>
           </select>
         </div>
-        <span style="font-size:12px;font-weight:700">└ SF有効中</span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">└ SF有効中</span>
         <select id="fxSForceFx" style="width:auto;flex:0 0 220px">
           <option value="">アナウンスのみ（効果は手動）</option>
           <option value="noLeave">バトルゾーンを離れない（P・ギャラクシー型）</option>
@@ -1073,17 +1079,19 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
           <option value="pw">パワー＋n</option>
           <option value="break">ブレイク数＋n</option>
         </select>
-        <input type="number" id="fxSForceN" style="width:80px" placeholder="n" min="0">
-        <span style="font-size:12px;font-weight:700">シールド・プラス</span>
+        <input type="number" id="fxSForceN" style="width:80px" placeholder="n" min="0"></span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">シールド・プラス</span>
         <select id="fxSPlus" style="width:auto;flex:0 0 170px">
           <option value="0">なし</option>
           <option value="1">＋1枚（シールド・プラス）</option>
           <option value="2">＋2枚（スーパー・シールド・プラス）</option>
           <option value="3">＋3枚（ウルトラ・シールド・プラス）</option>
-        </select>
+        </select></span>
         <label><input type="checkbox" id="fxJBig1"> ジョラゴン・ビッグ1（攻撃時、手札のジョーカーズを捨てて出た時能力を使う）</label>
         <label><input type="checkbox" id="fxGrantDS"> 場にある間、手札の自分のクリーチャー全てに自身のシンパシーを付与（ゲイル・ヴェスパー型・複数で重複）</label>
-        <div style="flex:1 1 100%;font-size:12px;font-weight:900;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:2px;margin-top:6px">常在効果（場にある間）</div>
+      </details>
+      <details>
+        <summary>⚙ 常在効果・ロック・特殊（マイナーキーワード含む）</summary>
         <label><input type="checkbox" id="fxStManaTap"> 相手のマナはタップして置かれる</label>
         <label><input type="checkbox" id="fxStAllSA"> 自分のクリーチャー全てスピードアタッカー</label>
         <label><input type="checkbox" id="fxStUnblock"> 自分のクリーチャー全てブロックされない（攻撃時アナウンス）</label>
@@ -1107,15 +1115,15 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
           </select>
           <input type="number" id="fxIgnoreN" style="width:70px" placeholder="n" min="0">
         </div>
-        <span style="font-size:12px;font-weight:700">マッドネス</span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">マッドネス</span>
         <select id="fxMadness" style="width:auto;flex:0 0 220px">
           <option value="">なし</option>
           <option value="baiken">バイケン型（相手ターン中に捨てられたら出せる・自分の効果でもOK・ロック貫通）</option>
           <option value="eternal">永遠龍型（相手のハンデスのみ・どちらのターンでも・ロック貫通しない）</option>
-        </select>
-        <span style="font-size:12px;font-weight:700">自分の召喚コスト −</span>
+        </select></span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">自分の召喚コスト −</span>
         <input type="number" id="fxStCostM" style="width:70px" placeholder="0" min="0">
-        <input type="text" id="fxStCostF" list="raceList" placeholder="対象（種族/文明/名前・「／」区切り・空欄＝全て）" style="flex:1;min-width:170px">
+        <input type="text" id="fxStCostF" list="raceList" placeholder="対象（種族/文明/名前・空欄＝全て）" style="flex:1;min-width:150px"></span>
         <label><input type="checkbox" id="fxShinkalize"> シンカライズ（この上に進化クリーチャーを置ける）</label>
         <label><input type="checkbox" id="fxSST"> スーパー・S・トリガー（盾0でトリガー時に追加能力）</label>
         <label><input type="checkbox" id="fxSTPlus"> S・トリガー・プラス（相手ターンに2枚以上ブレイクされていれば追加能力）</label>
@@ -1131,12 +1139,12 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
           <option value="kindan">禁断フィールド</option>
           <option value="cho">超フィールド</option>
         </select>
-        <span style="font-size:12px;font-weight:700">攻撃誘導</span>
+        <span class="pair"><span style="font-size:12px;font-weight:700">攻撃誘導</span>
         <select id="fxTaunt" style="width:auto;flex:0 0 150px">
           <option value="">なし</option>
           <option value="always">永続（可能なら常にこのクリーチャーへ）</option>
           <option value="first">各ターン最初の攻撃のみ誘導</option>
-        </select>
+        </select></span>
         <span style="font-size:12px;font-weight:700">P'Sドロンゴー</span>
         <select id="fxDronGo" style="width:auto;flex:0 0 110px">
           <option value="">なし</option>
@@ -1235,6 +1243,7 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <label><input type="checkbox" id="fxWatchTurnEndMine"> 自分のターンの終わりに</label>
         <label><input type="checkbox" id="fxWatchTurnEndOpp"> 相手のターンの終わりに</label>
         <label><input type="checkbox" id="fxWatchTurnEndBoth"> お互いのターンの終わりに</label>
+      </details>
       <div class="row" style="align-items:center;margin-top:8px">
         <span style="font-size:12px;font-weight:700">誘発時の自動処理（〜時に n枚ドロー/ブースト/墓地肥やし等）</span>
         <button class="btn small" id="fxTrigAdd" type="button">＋追加</button>
