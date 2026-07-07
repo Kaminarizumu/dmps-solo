@@ -5899,7 +5899,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.escape)attrs.push("エスケープ");
     if(v.trueEscape)attrs.push("真エスケープ");
     if(v.repShield)attrs.push("離脱置換：表向き盾→墓地（サッヴァーク型）");
-    if(v.ddd)attrs.push("DDD");
+    if(v.ddd)attrs.push(`DDD${v.dddOff>0?`：召喚−${v.dddOff}`:"（攻撃時踏み倒し）"}`);
     if(v.uraNinja)attrs.push(`裏NS${v.uraNinja}${v.uraCiv?"("+({light:"光",water:"水",dark:"闇",fire:"火",nature:"自然"}[v.uraCiv]||"")+")":""}`);
     if(v.kirifuda)attrs.push(`キリフダッシュ${v.kirifuda}`);
     if(v.hyper)attrs.push("ハイパー化");
