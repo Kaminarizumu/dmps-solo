@@ -1805,6 +1805,21 @@ function startGame(picks){
   dealPlayer(0,picks&&picks[0]||null);
   if(S.vs&&S.players[1].mainList.length)dealPlayer(1,picks&&picks[1]||null);
   S.turn=1;S.sel=null;S.msel=[];S.who=0;
+  if(S.expert){
+    for(const pi of (S.vs?[0,1]:[0])){
+      const hasZeron=zonesOf(pi).battle.some(x=>{const r=getReg(x);return r&&r.gimmick==="zeron";});
+      if(hasZeron&&S.vs){
+        const op2=pi===0?1:0;
+        const OZ2=zonesOf(op2);
+        if(OZ2.deck.length){
+          const dc=OZ2.deck.shift();
+          dc.faceup=true;
+          OZ2.hand.push(dc);
+          toast(`🌙 零龍：${S.players[op2].label} はカードをもう1枚引いた`);
+        }
+      }
+    }
+  }
   if(S.vs){
     const f=$("stFirst")?$("stFirst").value:"random";
     if(f==="p2")S.who=1;
@@ -2982,6 +2997,13 @@ async function destroyCreature(pi,c){
   if(S.expert&&isSealed(c)){
     toast(`🔒 ${c.name} は封印されている！（クリーチャーとして扱われず、破壊できません）`);
     return;
+  }
+  {
+    const rZ=getReg(c);
+    if(S.expert&&rZ&&rZ.gimmick==="zeron"){
+      toast(`🌙 零龍カードは離れない！（破壊されない）`);
+      return;
+    }
   }
   if(S.expert){
     const rDC=getReg(c);
@@ -6198,6 +6220,13 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   if(S.expert&&fromZone==="battle"&&!(pFrom===pTo&&toZone==="battle")&&isSealed(f.card)){
     toast(`🔒 ${f.card.name} は封印されている！（離れません。先に封印をすべて外してください）`);
     return;
+  }
+  if(S.expert&&fromZone==="battle"&&!(pFrom===pTo&&toZone==="battle")){
+    const rZ=getReg(f.card);
+    if(rZ&&rZ.gimmick==="zeron"){
+      toast(`🌙 零龍カードは離れない！`);
+      return;
+    }
   }
   if(S.expert&&fromZone==="battle"&&!(pFrom===pTo&&toZone==="battle")){
     const rDC=getReg(f.card);
@@ -10002,7 +10031,10 @@ function openZeronPanel(pi,c){
     cell.appendChild(wrap);
   });
   const center=cellAt(2,2);
-  const hu=imgURL.get(faceKeyOf(c));
+  const lkAll=LINKS.get(normName(c.name))||[];
+  const faceZM=lkAll.find(f=>String(f).includes("零無"))||faceKeyOf(c);
+  const faceZR=lkAll.find(f=>String(f).includes("零龍")&&!String(f).includes("零無"))||(lkAll.length>1?lkAll[(lkAll.indexOf(faceZM)+1)%lkAll.length]:null);
+  const hu=imgURL.get(normName(String(faceZM)));
   const hw=document.createElement("div");
   hw.style.cssText="position:relative;width:100%";
   if(hu){
@@ -10013,22 +10045,21 @@ function openZeronPanel(pi,c){
   }else{
     const ph=document.createElement("div");
     ph.style.cssText="width:100%;aspect-ratio:63/88;border-radius:8px;background:#1a2233;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:900;text-align:center";
-    ph.textContent=faceNameOf(c);
+    ph.textContent=String(faceZM);
     hw.appendChild(ph);
   }
   const ccap=document.createElement("div");
   ccap.style.cssText="font-size:11px;font-weight:900;text-align:center;margin-top:3px;color:#e879f9";
-  ccap.textContent=faceNameOf(c);
+  ccap.textContent=String(faceZM);
   const cwrap=document.createElement("div");
   cwrap.appendChild(hw);cwrap.appendChild(ccap);
   center.appendChild(cwrap);
   ol.appendChild(grid);
   // 卍誕後の姿（零龍）：儀が進むほど闇から浮かび上がる
   {
-    const lk0=LINKS.get(normName(c.name));
-    if(lk0&&lk0.length>1){
-      const nf=lk0[((c.face||0)+1)%lk0.length];
-      const nu=imgURL.get(nf);
+    if(faceZR){
+      const nf=String(faceZR);
+      const nu=imgURL.get(normName(nf));
       const prow=document.createElement("div");
       prow.style.cssText="display:flex;align-items:center;gap:10px;background:rgba(20,10,30,.6);border:1px solid #3b2a52;border-radius:10px;padding:6px 12px";
       const plb=document.createElement("div");
