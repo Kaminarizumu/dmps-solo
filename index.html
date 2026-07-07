@@ -7497,6 +7497,128 @@ $("olJoin").addEventListener("click",olJoinRoom);
 $("olLeave").addEventListener("click",()=>{olLeaveRoom();olStatus("切断しました");});
 
 /* ================= drag & tap ================= */
+function openShieldStack(pi,id){
+  const Z=zonesOf(pi);
+  const host=Z.shield.find(x=>x.id===id);
+  if(!host)return;
+  const old=document.getElementById("shieldStackOlay");
+  if(old)old.remove();
+  const ol=document.createElement("div");
+  ol.id="shieldStackOlay";
+  ol.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:85;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px";
+  const ttl=document.createElement("div");
+  ttl.style.cssText="color:#fff;font-weight:900";
+  const stack=[host,...(host.under||[])];
+  ttl.textContent=`🗂 盾の重なり（全${stack.length}枚・上から順）`;
+  ol.appendChild(ttl);
+  const g2=document.createElement("div");
+  g2.style.cssText="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-height:60dvh;overflow:auto";
+  const items=[...(host.under||[])].reverse().concat([host]);
+  items.forEach((x,i9)=>{
+    const cell=document.createElement("div");
+    cell.style.cssText="position:relative;width:96px;cursor:pointer";
+    const isHost=x.id===host.id;
+    const u=x.faceup?imgURL.get(faceKeyOf(x)):null;
+    if(u){
+      const im=document.createElement("img");
+      im.src=u;im.draggable=false;
+      im.style.cssText="width:100%;border-radius:6px;display:block";
+      cell.appendChild(im);
+    }else{
+      const ph=document.createElement("div");
+      ph.style.cssText="width:100%;aspect-ratio:63/88;border-radius:6px;background:#1a2233;display:flex;align-items:center;justify-content:center;font-size:11px;color:#9aa4b2";
+      ph.textContent=x.faceup?x.name:"裏向き";
+      cell.appendChild(ph);
+    }
+    const lb=document.createElement("div");
+    lb.style.cssText="font-size:9px;color:#cbd3df;text-align:center;margin-top:2px";
+    lb.textContent=(isHost?"【盾本体】":`上から${i9+1}枚目`)+(x.faceup?"（表）":"（裏）");
+    cell.appendChild(lb);
+    cell.addEventListener("click",async ev=>{
+      ev.stopPropagation();
+      const nm=x.faceup?x.name:"裏向きのカード";
+      const j=await askChoice(`《${nm}》をどうしますか？`,
+        ["手札へ","墓地へ","バトルゾーンへ","マナへ","山札の上へ","山札の下へ","表/裏を反転","そのまま（閉じる）"]);
+      if(j===null||j===7)return;
+      snap();
+      if(j===6){x.faceup=!x.faceup;sfx("flip");renderAll();openShieldStack(pi,id);return;}
+      if(isHost&&host.under&&host.under.length){
+        toast("盾本体は、重なっているカードを先にどけてから移動してください");
+        return;
+      }
+      if(isHost){
+        const si=Z.shield.findIndex(y=>y.id===host.id);
+        if(si>=0)Z.shield.splice(si,1);
+      }else{
+        const ui=host.under.findIndex(y=>y.id===x.id);
+        if(ui>=0)host.under.splice(ui,1);
+      }
+      x.tapped=false;
+      if(j===0){x.faceup=true;Z.hand.push(x);}
+      else if(j===1){x.faceup=true;Z.grave.push(x);}
+      else if(j===2){x.faceup=true;Z.battle.push(x);markArrive(x);emitEvent(pi,"summon");enqueueFx(pi,x);}
+      else if(j===3){x.faceup=true;Z.mana.push(x);}
+      else if(j===4){x.faceup=false;Z.deck.unshift(x);}
+      else{x.faceup=false;Z.deck.push(x);}
+      sfx("move");renderAll();
+      toast(`🗂 ${nm} を移動しました`);
+      const still=Z.shield.find(y=>y.id===id);
+      if(still&&((still.under&&still.under.length)||true))openShieldStack(pi,id);
+      else ol.remove();
+    });
+    g2.appendChild(cell);
+  });
+  ol.appendChild(g2);
+  const ht=document.createElement("div");
+  ht.style.cssText="color:#9aa4b2;font-size:12px";
+  ht.textContent="カードをタップ→移動先を選択／背景タップで閉じる";
+  ol.appendChild(ht);
+  ol.addEventListener("click",()=>ol.remove());
+  document.body.appendChild(ol);
+}
+function showCardPreview(ctx){
+  const f=findCard(ctx.p,ctx.zone,ctx.id);
+  if(!f)return;
+  const c=f.card;
+  const old=document.getElementById("cardPreviewOlay");
+  if(old)old.remove();
+  const ol=document.createElement("div");
+  ol.id="cardPreviewOlay";
+  ol.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:85;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px";
+  const u=c.faceup?imgURL.get(faceKeyOf(c)):null;
+  if(u){
+    const im=document.createElement("img");
+    im.src=u;im.draggable=false;
+    im.style.cssText="max-width:min(72vw,360px);max-height:52dvh;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.8)";
+    if(c.rot)im.style.transform=`rotate(${c.rot}deg)`;
+    ol.appendChild(im);
+  }else{
+    const d=document.createElement("div");
+    d.style.cssText="color:#fff;font-weight:900;font-size:16px";
+    d.textContent=c.faceup?faceNameOf(c):"（裏向きのカード）";
+    ol.appendChild(d);
+  }
+  const bar=document.createElement("div");
+  bar.style.cssText="display:flex;gap:8px;flex-wrap:wrap;justify-content:center";
+  const mk=(lb,fn,pr)=>{
+    const b=document.createElement("button");
+    b.className="btn"+(pr?" primary":"");
+    b.style.cssText="font-size:14px;padding:10px 14px";
+    b.textContent=lb;
+    b.addEventListener("click",ev=>{ev.stopPropagation();ol.remove();fn();});
+    bar.appendChild(b);
+  };
+  if(S.vs&&ctx.p===S.who&&!c.tapped&&c.faceup&&!isSealed(c))mk("⚔ 攻撃",()=>startAttack(ctx.p,ctx.id),true);
+  mk(c.tapped?"⤴ アンタップ":"⤵ タップ",()=>{c.tapped=!c.tapped;sfx("move");renderAll();});
+  if(c.faceup)mk("⚙ 効果登録",()=>{openFxEditor(faceKeyOf(c));});
+  ol.appendChild(bar);
+  const ht=document.createElement("div");
+  ht.style.cssText="color:#9aa4b2;font-size:12px";
+  ht.textContent="背景タップで閉じる（通常タップでいつものメニュー）";
+  ol.appendChild(ht);
+  ol.addEventListener("click",()=>ol.remove());
+  document.body.appendChild(ol);
+}
 function attachPointer(el,ctx){
   el.addEventListener("dragstart",ev=>ev.preventDefault());
   el.addEventListener("pointerdown",ev=>{
@@ -7506,10 +7628,20 @@ function attachPointer(el,ctx){
     const scroller=el.closest(".cards");
     const startScroll=scroller?scroller.scrollLeft:0;
     let mode=null,ghost=null,lastTgt=null;
+    let lpT=null;
+    if(ctx.zone==="battle"&&!ctx.viewer){
+      lpT=setTimeout(()=>{
+        if(mode)return;
+        mode="preview";
+        try{navigator.vibrate&&navigator.vibrate(10);}catch(e){}
+        showCardPreview(ctx);
+      },500);
+    }
     const move=e2=>{
       const dx=e2.clientX-sx, dy=e2.clientY-sy;
       if(!mode){
         if(Math.hypot(dx,dy)<10)return;
+        if(lpT){clearTimeout(lpT);lpT=null;}
         if(scroller&&Math.abs(dx)>Math.abs(dy)*1.4)mode="scroll";
         else{
           mode="drag";
@@ -7562,6 +7694,7 @@ function attachPointer(el,ctx){
       }
     };
     const up=e2=>{
+      if(lpT){clearTimeout(lpT);lpT=null;}
       const wasMode=mode;
       finish();
       if(wasMode==="drag")window.__lastDragT=Date.now();
@@ -7571,7 +7704,16 @@ function attachPointer(el,ctx){
           snap();
           const inSel=S.multi&&S.msel.some(x=>x.id===ctx.id);
           const group=inSel?S.msel.slice():[{p:ctx.p,zone:ctx.zone,id:ctx.id}];
-          for(const g2 of group)moveCardX(g2.p,g2.zone,g2.id,tgt.p,tgt.zone);
+          for(const g2 of group){
+            if(S.expert&&g2.zone==="battle"&&tgt.zone!=="battle"){
+              const fS=findCard(g2.p,g2.zone,g2.id);
+              if(fS&&isSealed(fS.card)){
+                toast(`🔒 ${fS.card.name} は封印されている！（離れません）`);
+                continue;
+              }
+            }
+            moveCardX(g2.p,g2.zone,g2.id,tgt.p,tgt.zone);
+          }
           if(inSel){endMulti();toast(`${group.length}枚をまとめて移動しました`);}
           closeSel();
           if(ctx.afterDrop)ctx.afterDrop();
@@ -8356,6 +8498,12 @@ function openCardSheet(ctx){
     try{logOnly(`📣 宣言：${_declName}`);}catch(e){}
     closeSheet();
   }));
+  if(ctx.zone==="shield"&&c.under&&c.under.length){
+    box.appendChild(actBtn(`🗂 この盾の重なりを確認（全${c.under.length+1}枚・移動可）`,()=>{
+      closeSheet();closeSel();
+      openShieldStack(ctx.p,ctx.id);
+    },"primary",true));
+  }
   if(ctx.zone==="shield"){
     box.appendChild(actBtn("👁 見る（自分だけ・裏のまま）",()=>{
       closeSheet();
