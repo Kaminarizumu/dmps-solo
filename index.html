@@ -308,6 +308,27 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 .an-spin{animation:anSpin .55s ease-in-out}
 .an-deal{animation:anDeal .3s ease-out}
 .an-pop{animation:anPop .25s ease-out}
+@keyframes anAtkFwd{0%{transform:translateY(0) scale(1)}35%{transform:translateY(-16px) scale(1.08)}70%{transform:translateY(3px) scale(1)}100%{transform:translateY(0) scale(1)}}
+@keyframes anAtkBack{0%{transform:translateY(0) scale(1)}35%{transform:translateY(16px) scale(1.08)}70%{transform:translateY(-3px) scale(1)}100%{transform:translateY(0) scale(1)}}
+.an-atkF{animation:anAtkFwd .4s ease-out}
+.an-atkB{animation:anAtkBack .4s ease-out}
+@keyframes anBreak{0%{transform:scale(1) rotate(0)}25%{transform:scale(1.1) rotate(-5deg)}50%{transform:scale(1.12) rotate(5deg)}100%{transform:scale(1.35) rotate(0);opacity:0;filter:brightness(2.4)}}
+@keyframes anLose{0%{filter:none;transform:scale(1)}30%{filter:brightness(1.6) drop-shadow(0 0 14px #ef4444)}100%{filter:brightness(.35) grayscale(.7);transform:scale(.9);opacity:.25}}
+@keyframes anClash{0%{transform:scale(1)}40%{transform:scale(1.12)}100%{transform:scale(1)}}
+@keyframes anCip{0%{box-shadow:0 0 0 0 rgba(96,165,250,.9)}100%{box-shadow:0 0 0 18px rgba(96,165,250,0)}}
+@keyframes anDark{0%{box-shadow:0 0 0 0 rgba(232,121,249,.9);filter:brightness(1.4) hue-rotate(20deg)}100%{box-shadow:0 0 0 22px rgba(232,121,249,0);filter:none}}
+@keyframes bodyShake{0%,100%{transform:translate(0,0)}20%{transform:translate(-7px,3px)}40%{transform:translate(6px,-4px)}60%{transform:translate(-5px,-3px)}80%{transform:translate(4px,3px)}}
+body.shake{animation:bodyShake .4s ease-out}
+.an-cip{animation:anCip .55s ease-out;border-radius:10px}
+.an-dark{animation:anDark .7s ease-out;border-radius:10px}
+@keyframes anGold{0%{box-shadow:0 0 0 0 rgba(250,204,21,.95);filter:brightness(1.55)}100%{box-shadow:0 0 0 22px rgba(250,204,21,0);filter:none}}
+.an-gold{animation:anGold .7s ease-out;border-radius:10px}
+@keyframes anCharge{0%{box-shadow:0 0 0 0 rgba(74,222,128,.85);transform:scale(1.12)}100%{box-shadow:0 0 0 16px rgba(74,222,128,0);transform:scale(1)}}
+.an-charge{animation:anCharge .45s ease-out;border-radius:10px}
+#resultOlay{position:fixed;inset:0;z-index:96;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(2,4,10,.86);animation:fadeIn .3s ease-out}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes resPop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+#resultOlay .rtxt{font-size:56px;font-weight:900;animation:resPop .5s ease-out;text-shadow:0 0 30px currentColor}
 #fxOlay .row{flex-wrap:wrap}
 #fxOlay .row>*{min-width:0;max-width:100%}
 #fxOlay select,#fxOlay input[type="text"],#fxOlay input[type="number"]{max-width:100%;box-sizing:border-box}
@@ -538,6 +559,9 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
   <div class="panelbox">
     <h2>⚙ 設定</h2>
     <div class="row"><button class="btn small" id="btnHelp" style="flex:1">❓ 使い方・条件式リファレンス</button></div>
+    <div class="row">
+      <label><input type="checkbox" id="setAnim" checked> 🎬 カード演出（タップ/めくり/攻撃などのアニメーション）</label>
+    </div>
     <div class="row" style="align-items:center;gap:8px">
       <span style="font-size:12px;font-weight:700">効果音 音量</span>
       <input type="range" id="setSfxVol" min="0" max="100" step="5" value="100" style="flex:1">
@@ -956,6 +980,7 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <span style="font-size:12px;font-weight:700">破壊置換：</span>
         <label><input type="checkbox" id="fxEscape"> エスケープ</label>
         <label><input type="checkbox" id="fxTrueEscape"> 真・エスケープ（盾なしでも手札へ戻る）</label>
+        <label><input type="checkbox" id="fxRepShield"> 離れるかわりに表向きの盾カードを1枚墓地へ（サッヴァーク型）</label>
         <label><input type="checkbox" id="fxStarEvo"> スター進化（離れる時、自身のみ離れ下は重なったまま残る）</label>
         <label><input type="checkbox" id="fxExLife"> EXライフ</label>
         <label><input type="checkbox" id="fxGNeo"> G・NEO進化（破壊時に一番下が離れ上が残る）</label>
@@ -1087,6 +1112,8 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
             <option value="noDestroy">破壊されない</option>
             <option value="sa">スピードアタッカー</option>
             <option value="unblock">ブロックされない（攻撃時表示）</option>
+            <option value="blocker">ブロッカーを得る</option>
+            <option value="slayer">スレイヤーを得る（バトル時表示）</option>
           </select>
         </div>
         <span style="font-size:12px;font-weight:700">└ SF有効中</span>
@@ -1114,6 +1141,7 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
         <label><input type="checkbox" id="fxStOriotis"> オリオティス（相手のマナ枚数よりコストが大きい相手クリーチャーが出たら山札の下へ）</label>
         <label><input type="checkbox" id="fxNoUntap"> 常在：ターン開始時にアンタップしない（自身）</label>
         <label><input type="checkbox" id="fxStNoHandes"> 常在：自分の手札は相手のカードの効果によって捨てられない</label>
+        <label><input type="checkbox" id="fxLibWin"> 常在：自分の山札が0枚になったら、負けるかわりに勝利する（シャコガイル型）</label>
         <label><input type="checkbox" id="fxCostFloor1"> コストは0にならない（軽減してもコスト1以上・ゼロ文明でも）</label>
         <label><input type="checkbox" id="fxStNoCheat"> 相手は召喚以外でクリーチャーを出せない（センノー型。侵略/チェンジ/蘇生/ST出しなど不可・GR召喚や墓地召喚は「召喚」なので可）</label>
         <div style="flex:1 1 100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -2960,6 +2988,9 @@ async function destroyCreature(pi,c){
       await dormaCoreRemove(pi,c);
       return;
     }
+    if(rDC&&rDC.repShield){
+      if(await savvarkReplace(pi,c))return;
+    }
   }
   if(S.expert){
     const rCX=getReg(c);
@@ -3116,10 +3147,16 @@ async function runFxList(pi,list,srcCard){
       renderAll();continue;
     }
     if(f.t==="draw"){
-      for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.hand.push(c);markArrive(c);}
+      for(let i=0;i<n&&Z.deck.length;i++){
+        const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.hand.push(c);markArrive(c);
+        if(S.anim!==false&&n>1){sfx("draw");renderAll();await new Promise(r=>setTimeout(r,140));}
+      }
       sfx("draw");emitEvent(pi,"draw");
     }else if(f.t==="charge"){
-      for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.mana.push(c);markArrive(c);}
+      for(let i=0;i<n&&Z.deck.length;i++){
+        const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.mana.push(c);markArrive(c);
+        if(S.anim!==false&&n>1){sfx("move");renderAll();await new Promise(r=>setTimeout(r,140));}
+      }
       sfx("move");
     }else if(f.t==="mill"){
       for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;Z.grave.push(c);}
@@ -3428,6 +3465,7 @@ function enqueueFx(pi,c){
   if(!S.expert)return;
   if(c._repPending)return;
   if(isSealed(c))return;
+  setTimeout(()=>fxAnim(c.id,"an-cip",560),50);
   if(zonesOf(pi).battle.some(b=>b.id===c.id)&&isIgnored(c,pi)){
     toast(`🚯 ${faceNameOf(c)} の能力は無視されている（出た時効果は発動しない）`);
     return;
@@ -3764,6 +3802,16 @@ function resolveOut(Z,o){
 }
 function hasSlayer(c){const r=getReg(c);return !!((r&&r.slayer)||(c.buff&&c.buff.slayer)||(c.hyper&&r&&r.hmSL));}
 async function doBattle(pa,a,pd,d){
+  for(const [pp,x] of [[pa,a],[pd,d]]){
+    const rx=getReg(x);
+    if(rx&&rx.cstCond&&rx.cstFx==="slayer"&&!isSealed(x)&&zoneCondOk(rx.cstCond,pp)){
+      toast(`✨ 条件常在（${rx.cstCond}）：${faceNameOf(x)} はスレイヤー！（負けても相手を破壊）`);
+    }
+  }
+  if(S.anim!==false){
+    fxAnim(a.id,"an-clash",300);
+    await fxAnim(d.id,"an-clash",300);
+  }
   const Pa=await effPower(a,true,true), Pd=await effPower(d,false,true);
   sfx("atk");
   toast(`⚔ バトル：${faceNameOf(a)}(${Pa}) vs ${faceNameOf(d)}(${Pd})`);
@@ -3970,6 +4018,16 @@ async function breakShields(op,count,attacker,forceIdx){
   }
   snap();
   idxs.sort((a,b)=>b-a);
+  if(S.anim!==false){
+    for(const i of idxs){
+      const sc0=OZ.shield[i];
+      if(!sc0)continue;
+      const el=document.querySelector(`[data-cid="${sc0.id}"]`);
+      if(el){el.style.animation="anBreak .32s ease-in forwards";el.style.zIndex="20";}
+    }
+    sfx("flip");
+    await new Promise(r=>setTimeout(r,320));
+  }
   const shs=[];
   for(const i of idxs)shs.push(OZ.shield.splice(i,1)[0]);
   const stack=[];
@@ -4108,6 +4166,7 @@ async function startAttack(pi,id){
   const c=Z.battle.find(x=>x.id===id);if(!c)return;
   if(isSealed(c)){toast(`🔒 ${c.name} は封印されている！（クリーチャーとして扱われず、攻撃できません）`);return;}
   snap();
+  if(S.anim!==false)window.__atkAnim=id;
   if(!c.tapped){c.tapped=true;renderAll();}
   if(!S.vs){
     toast("攻撃宣言（タップ）しました。対戦モードで攻撃対象の処理ができます。");
@@ -4493,8 +4552,15 @@ async function execAttack(pi,id,tg){
     }
   }
   const aregNB=getReg(c);
-  const blockers=(aregNB&&aregNB.noBlock)?[]:OZ.battle.filter(b=>!b.tapped&&!b.noAtkBlock&&((getReg(b)&&getReg(b).blocker)||(b.buff&&b.buff.blocker)));
-  if(aregNB&&aregNB.noBlock&&OZ.battle.some(b=>!b.tapped&&((getReg(b)&&getReg(b).blocker)||(b.buff&&b.buff.blocker))))
+  const isBlk=b=>{
+    const rb=getReg(b);
+    if(rb&&rb.blocker)return true;
+    if(b.buff&&b.buff.blocker)return true;
+    if(rb&&rb.cstCond&&rb.cstFx==="blocker"&&!isSealed(b)&&!isIgnored(b,op)&&zoneCondOk(rb.cstCond,op))return true;
+    return false;
+  };
+  const blockers=(aregNB&&aregNB.noBlock)?[]:OZ.battle.filter(b=>!b.tapped&&!b.noAtkBlock&&isBlk(b));
+  if(aregNB&&aregNB.noBlock&&OZ.battle.some(b=>!b.tapped&&isBlk(b)))
     toast(`${faceNameOf(c)} はブロックされない`);
   let defender=null;
   if(blockers.length){
@@ -4689,6 +4755,10 @@ async function execAttack(pi,id,tg){
     }
   }
   else{
+    if(S.anim!==false){
+      document.body.classList.add("shake");
+      setTimeout(()=>document.body.classList.remove("shake"),450);
+    }
     rev0Asked=false;
     await offerRev0();
     if(rev0Used){
@@ -5081,6 +5151,7 @@ function renderFxEditor(){
   $("fxNinja").value=String(FXEDIT.ninja||0);
   $("fxEscape").checked=!!FXEDIT.escape;
   $("fxTrueEscape").checked=!!FXEDIT.trueEscape;
+  $("fxRepShield").checked=!!FXEDIT.repShield;
   $("fxDDD").checked=!!FXEDIT.ddd;
   $("fxDDDCost").value=String(FXEDIT.dddCost||0);
   $("fxDDDCiv").value=FXEDIT.dddCiv||"";
@@ -5160,6 +5231,7 @@ function renderFxEditor(){
   $("fxCostFloor1").checked=!!FXEDIT.costFloor1;
   $("fxNoUntap").checked=!!FXEDIT.noUntap;
   $("fxStNoHandes").checked=!!FXEDIT.stNoHandes;
+  $("fxLibWin").checked=!!FXEDIT.libWin;
   $("fxRepIn").value=FXEDIT.repIn||"";
   $("fxRepInF").value=FXEDIT.repInF||"";
   $("fxRepInNC").checked=!!FXEDIT.repInNC;
@@ -5271,6 +5343,7 @@ function openFxEditor(key){
     ninja:cur&&cur.ninja||0,
     escape:cur?!!cur.escape:false,
     trueEscape:cur?!!cur.trueEscape:false,
+    repShield:cur?!!cur.repShield:false,
     ddd:cur?!!cur.ddd:false,
     dddCost:cur&&(+cur.dddCost||0)||0,
     dddCiv:cur&&cur.dddCiv||"",
@@ -5350,6 +5423,7 @@ function openFxEditor(key){
     costFloor1:cur?!!cur.costFloor1:false,
     noUntap:cur?!!cur.noUntap:false,
     stNoHandes:cur?!!cur.stNoHandes:false,
+    libWin:cur?!!cur.libWin:false,
     repIn:cur&&cur.repIn||"",
     repInF:cur&&cur.repInF||"",
     repInNC:cur?!!cur.repInNC:false,
@@ -5460,6 +5534,7 @@ $("fxSave").addEventListener("click",async ()=>{
     ninja:+$("fxNinja").value||0,
     escape:$("fxEscape").checked,
     trueEscape:$("fxTrueEscape").checked,
+    repShield:$("fxRepShield").checked,
     ddd:$("fxDDD").checked,
     dddCost:+$("fxDDDCost").value||0,
     dddCiv:$("fxDDDCiv").value||"",
@@ -5539,6 +5614,7 @@ $("fxSave").addEventListener("click",async ()=>{
     costFloor1:$("fxCostFloor1").checked,
     noUntap:$("fxNoUntap").checked,
     stNoHandes:$("fxStNoHandes").checked,
+    libWin:$("fxLibWin").checked,
     repIn:$("fxRepIn").value||"",
     repInF:$("fxRepInF").value.trim(),
     repInNC:$("fxRepInNC").checked,
@@ -5710,6 +5786,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.ninja)attrs.push(`NS${v.ninja}`);
     if(v.escape)attrs.push("エスケープ");
     if(v.trueEscape)attrs.push("真エスケープ");
+    if(v.repShield)attrs.push("離脱置換：表向き盾→墓地（サッヴァーク型）");
     if(v.ddd)attrs.push("DDD");
     if(v.uraNinja)attrs.push(`裏NS${v.uraNinja}${v.uraCiv?"("+({light:"光",water:"水",dark:"闇",fire:"火",nature:"自然"}[v.uraCiv]||"")+")":""}`);
     if(v.kirifuda)attrs.push(`キリフダッシュ${v.kirifuda}`);
@@ -5764,7 +5841,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.soulshift)attrs.push("ソウルシフト");
     if(v.gaiash)attrs.push("相手ターン終了時に出せる");
     if(v.sforce)attrs.push("シールド・フォース"+(v.sforceFx?`（${{noLeave:"離れない",noDestroy:"破壊されない"}[v.sforceFx]}）`:""));
-    if(v.cstCond)attrs.push(`条件常在：${v.cstCond}→${{noLeave:"離れない",noDestroy:"破壊されない",sa:"SA",unblock:"ブロックされない"}[v.cstFx]||"表示"}`);
+    if(v.cstCond)attrs.push(`条件常在：${v.cstCond}→${{noLeave:"離れない",noDestroy:"破壊されない",sa:"SA",unblock:"ブロックされない",blocker:"ブロッカー",slayer:"スレイヤー"}[v.cstFx]||"表示"}`);
     if(v.splus)attrs.push(["","シールド・プラス","スーパー・S・プラス","ウルトラ・S・プラス"][v.splus]||`S・プラス${v.splus}`);
     if(v.jbig1)attrs.push("ジョラゴン・ビッグ1");
     if(v.grantDS)attrs.push("手札にシンパシー付与");
@@ -5776,6 +5853,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.costFloor1)attrs.push("コスト0にならない");
     if(v.noUntap)attrs.push("アンタップしない");
     if(v.stNoHandes)attrs.push("常在：ハンデスされない");
+    if(v.libWin)attrs.push("常在：山札0で勝利（シャコガイル型）");
     if(v.repIn)attrs.push(`常在：置換ロック（${v.repInF||"相手全て"}${v.repInNC?"・召喚以外":""}→${v.repIn==="grave"?"墓地":"山下"}）`);
     if(v.madness)attrs.push(v.madness==="baiken"?"マッドネス（バイケン型）":"マッドネス（永遠型）");
     if(v.ignore)attrs.push(v.ignore==="cost"?`能力無視：コスト${v.ignoreN}以下`:"能力無視：名前指定");
@@ -5844,7 +5922,43 @@ function placeCard(Z,toZone,c){
   else if(Z[toZone])Z[toZone].push(c);
   else Z.hand.push(c);
 }
+async function savvarkReplace(pi,c){
+  const Z2=zonesOf(pi);
+  const opts=[];
+  Z2.shield.forEach((sc,si)=>{
+    if(sc.faceup)opts.push({lb:`${sc.name}（盾${si+1}の本体）`,si,ui:-1});
+    (sc.under||[]).forEach((u,ui)=>{
+      if(u.faceup)opts.push({lb:`${u.name}（盾${si+1}の上）`,si,ui});
+    });
+  });
+  if(!opts.length)return false;
+  const j=await askChoice(`🛡✨ ${faceNameOf(c)}：バトルゾーンを離れるかわりに、表向きの盾カードを1枚選んで墓地に置きますか？`,
+    [...opts.map(o=>o.lb),"置換しない（そのまま離れる）"]);
+  if(j===null||j>=opts.length)return false;
+  snap();
+  const o=opts[j];
+  const sc=Z2.shield[o.si];
+  let moved;
+  if(o.ui<0){
+    const rest=sc.under?sc.under.splice(0):[];
+    Z2.shield.splice(o.si,1);
+    moved=sc;
+    if(rest.length){
+      const nh=rest.pop();
+      nh.under=rest;
+      Z2.shield.splice(o.si,0,nh);
+    }
+  }else{
+    moved=sc.under.splice(o.ui,1)[0];
+  }
+  moved.faceup=true;moved.tapped=false;
+  Z2.grave.push(moved);
+  sfx("grave");renderAll();
+  toast(`🛡✨ 置換：${moved.name} を墓地に置き、${faceNameOf(c)} は場に残った`);
+  return true;
+}
 async function dormaCoreRemove(pi,c,manual){
+  fxAnim(c.id,"an-dark",700);
   if(c.coreN==null)c.coreN=3;
   if(c.coreN<=0)return;
   let mode=0;
@@ -5891,7 +6005,165 @@ async function dormaCoreRemove(pi,c,manual){
   }
   renderAll();
 }
-function moveCardX(pFrom,fromZone,id,pTo,toZone){
+function openLinkProgress(pi,id){
+  const Z=zonesOf(pi);
+  const c=Z.battle.find(x=>x.id===id);
+  if(!c)return;
+  const reg=getReg(c);
+  const old=document.getElementById("linkProgOlay");
+  if(old)old.remove();
+  const ol=document.createElement("div");
+  ol.id="linkProgOlay";
+  ol.style.cssText="position:fixed;inset:0;background:rgba(2,4,12,.9);z-index:85;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:14px";
+  // パーツ決定：①under（零龍の儀方式）②psyLink登録（ゴッド/覚醒リンク：場に相手が揃っているか）
+  let parts=[],mode="under";
+  if(c.under&&c.under.length){
+    parts=c.under.map(x=>({img:imgURL.get(faceKeyOf(x)),name:x.name,on:true}));
+  }else if(reg&&reg.psyLink){
+    mode="psy";
+    const names=reg.psyLink.split(/[／\/、,]/).map(t=>t.trim()).filter(Boolean);
+    parts=names.map(nm=>{
+      const hit=Z.battle.find(x=>x.id!==c.id&&normName(faceNameOf(x))===normName(nm));
+      return {img:imgURL.get(normName(nm)),name:nm,on:!!hit,ref:hit||null};
+    });
+  }
+  const slotN=Math.max(parts.length,(mode==="under"?Math.max(c.cnt||0,4):parts.length),2);
+  const lit=mode==="psy"?parts.filter(x=>x.on).length:Math.max(parts.length,c.cnt||0);
+  const ttl=document.createElement("div");
+  ttl.style.cssText="color:#fff;font-weight:900";
+  ttl.textContent=`🔗 リンク進行：${lit} / ${slotN}`;
+  ol.appendChild(ttl);
+  const grid=document.createElement("div");
+  const cw=Math.min(104,Math.floor(window.innerWidth/4.4));
+  grid.style.cssText=`display:grid;grid-template-columns:repeat(3,${cw}px);grid-template-rows:repeat(3,${cw*1.4|0}px);gap:6px;align-items:center;justify-items:center`;
+  const cellAt=(gr,gc)=>{const d=document.createElement("div");d.style.cssText=`grid-row:${gr};grid-column:${gc};width:${cw}px`;grid.appendChild(d);return d;};
+  const posOrder=slotN<=2?[[2,1],[2,3]]
+    :slotN===3?[[1,2],[2,1],[2,3]]
+    :slotN===4?[[1,2],[2,1],[2,3],[3,2]]
+    :[[1,2],[2,1],[2,3],[3,2],[1,1],[1,3],[3,1],[3,3]];
+  const slots=posOrder.slice(0,Math.min(slotN,8)).map(([gr,gc])=>cellAt(gr,gc));
+  const center=cellAt(2,2);
+  const mkImg=(pt,on,idx)=>{
+    const w=document.createElement("div");
+    w.style.cssText="position:relative;width:100%";
+    if(pt&&pt.img){
+      const im=document.createElement("img");
+      im.src=pt.img;im.draggable=false;
+      im.style.cssText=`width:100%;border-radius:8px;display:block;${on?"box-shadow:0 0 14px 3px rgba(147,197,253,.85);":"filter:grayscale(1) brightness(.4);"}`;
+      w.appendChild(im);
+    }else{
+      const ph=document.createElement("div");
+      ph.style.cssText=`width:100%;aspect-ratio:63/88;border-radius:8px;border:2px dashed ${on?"#93c5fd":"#3a4560"};display:flex;align-items:center;justify-content:center;color:${on?"#93c5fd":"#556077"};font-size:${pt&&pt.name?"9px":"22px"};font-weight:900;text-align:center;padding:2px;${on?"box-shadow:0 0 14px 3px rgba(147,197,253,.6);":""}`;
+      ph.textContent=pt&&pt.name?pt.name:(on?"✦":(idx+1));
+      w.appendChild(ph);
+    }
+    return w;
+  };
+  slots.forEach((sl,i)=>{
+    const pt=parts[i]||null;
+    const on=pt?pt.on!==false:(i<lit);
+    sl.appendChild(mkImg(pt,on,i));
+  });
+  const hu=imgURL.get(faceKeyOf(c));
+  const hw=document.createElement("div");
+  hw.style.cssText="position:relative;width:100%";
+  if(hu){
+    const im=document.createElement("img");
+    im.src=hu;im.draggable=false;
+    im.style.cssText=`width:100%;border-radius:8px;display:block;box-shadow:0 0 ${8+lit*5}px ${1+lit}px rgba(232,121,249,${0.35+lit*0.14})`;
+    hw.appendChild(im);
+  }else{
+    const ph=document.createElement("div");
+    ph.style.cssText="width:100%;aspect-ratio:63/88;border-radius:8px;background:#1a2233;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:900;text-align:center";
+    ph.textContent=faceNameOf(c);
+    hw.appendChild(ph);
+  }
+  center.appendChild(hw);
+  ol.appendChild(grid);
+  const bar=document.createElement("div");
+  bar.style.cssText="display:flex;gap:8px;flex-wrap:wrap;justify-content:center";
+  const mk=(lb,fn,pr)=>{
+    const b=document.createElement("button");
+    b.className="btn"+(pr?" primary":"");
+    b.style.cssText="font-size:14px;padding:9px 13px";
+    b.textContent=lb;
+    b.addEventListener("click",ev=>{ev.stopPropagation();fn();});
+    bar.appendChild(b);
+  };
+  if(mode==="under"){
+    mk("🔵 ＋1",()=>{snap();c.cnt=(c.cnt||0)+1;sfx("ok");renderAll();openLinkProgress(pi,id);});
+    mk("🔵 −1",()=>{snap();c.cnt=Math.max(0,(c.cnt||0)-1);sfx("move");renderAll();openLinkProgress(pi,id);});
+  }
+  const lk=LINKS.get(normName(c.name));
+  if(mode==="under"&&lit>=slotN&&lk&&lk.length>1){
+    mk("💀 卍誕！（次の面へ変形）",()=>{
+      snap();
+      c.face=((c.face||0)+1)%lk.length;
+      c.tapped=false;
+      markArrive(c);
+      emitEvent(pi,"summon");
+      enqueueFx(pi,c);
+      sfx("flip");
+      ol.remove();
+      if(S.anim!==false){
+        document.body.classList.add("shake");
+        setTimeout(()=>document.body.classList.remove("shake"),450);
+        setTimeout(()=>fxAnim(c.id,"an-dark",800),80);
+      }
+      renderAll();
+      toast(`💀 卍誕！ ${faceNameOf(c)}`);
+    },true);
+  }
+  if(mode==="psy"&&parts.length&&parts.every(x=>x.on)){
+    mk("🔗 リンク合体！",()=>{
+      snap();
+      const members=[c,...parts.map(x=>x.ref)];
+      for(const x of members){
+        const i2=Z.battle.findIndex(y=>y.id===x.id);
+        if(i2>=0)Z.battle.splice(i2,1);
+      }
+      const nm2=(reg.psyLinkTo)||members.map(x=>faceNameOf(x)).join("／");
+      const nc=makeCard(nm2);
+      nc.gl=true;
+      nc.under=members;
+      nc.rot=reg.psyLinkW?((pi===S.seat)?270:90):0;
+      members.forEach(b=>{b.tapped=false;});
+      Z.battle.push(nc);
+      markArrive(nc);
+      emitEvent(pi,"summon");
+      enqueueFx(pi,nc);
+      sfx("ok");
+      ol.remove();
+      if(S.anim!==false)setTimeout(()=>fxAnim(nc.id,"an-gold",800),80);
+      renderAll();
+      toast(`🔗 リンク！ ${nm2}（${members.length}枚合体・メニューから解除可）`);
+    },true);
+  }
+  ol.appendChild(bar);
+  const ht=document.createElement("div");
+  ht.style.cssText="color:#9aa4b2;font-size:12px";
+  ht.textContent=mode==="psy"?"点灯＝場に揃っているリンク相手／背景タップで閉じる":"点灯＝リンク済み（下のカード or カウンター数）／背景タップで閉じる";
+  ol.appendChild(ht);
+  ol.addEventListener("click",()=>ol.remove());
+  document.body.appendChild(ol);
+}
+function dissolveGhostBadge(id2){
+  fxAnim(id2,"an-dark",600);
+}
+function dissolveGhost(id2,mode){
+  if(S.anim===false)return;
+  const el=document.querySelector(`[data-cid="${id2}"]`);
+  if(!el)return;
+  const r=el.getBoundingClientRect();
+  const g=el.cloneNode(true);
+  g.style.cssText=`position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;margin:0;z-index:60;pointer-events:none;animation:${mode==="break"?"anBreak .38s ease-in":"anLose .45s ease-in"} forwards`;
+  document.body.appendChild(g);
+  setTimeout(()=>g.remove(),500);
+}
+function moveCardXRaw(pFrom,fromZone,id,pTo,toZone){
+  return moveCardX(pFrom,fromZone,id,pTo,toZone,true);
+}
+function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   const f=findCard(pFrom,fromZone,id);if(!f)return;
   if(S.expert&&fromZone==="battle"&&!(pFrom===pTo&&toZone==="battle")&&isSealed(f.card)){
     toast(`🔒 ${f.card.name} は封印されている！（離れません。先に封印をすべて外してください）`);
@@ -5904,7 +6176,18 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone){
       dormaCoreRemove(pFrom,f.card);
       return;
     }
+    if(!skipRep&&rDC&&rDC.repShield){
+      const hasFu=zonesOf(pFrom).shield.some(sc=>sc.faceup||(sc.under||[]).some(u=>u.faceup));
+      if(hasFu){
+        (async()=>{
+          const done=await savvarkReplace(pFrom,f.card);
+          if(!done)moveCardXRaw(pFrom,fromZone,id,pTo,toZone);
+        })();
+        return;
+      }
+    }
   }
+  if((fromZone==="battle"||fromZone==="shield")&&(toZone==="grave"||toZone==="exile"))dissolveGhost(id,fromZone==="shield"?"break":"lose");
   f.arr.splice(f.idx,1);
   const c=f.card,Z=zonesOf(pTo);
   c.tapped=false;c.sideways=false;c.rot=0;c.buff=null;
@@ -6767,18 +7050,29 @@ function cardEl(pi,zone,c){
     if(shz!==100)el.style.zoom=shz/100;
   }
   {
+    el.dataset.cid=c.id;
+    if(window.__atkAnim===c.id&&S.anim!==false){
+      el.classList.add((pi===S.seat)?"an-atkF":"an-atkB");
+      window.__atkAnim=null;
+    }
     const pv=CARD_PREV.get(c.id);
     if(pv&&S.anim!==false){
       if(pv.face!==(c.face||0))el.classList.add("an-spin");
       else if(pv.faceup!==c.faceup)el.classList.add("an-flip");
-      else if(pv.zone!==zone)el.classList.add(zone==="hand"?"an-deal":"an-pop");
+      else if(pv.zone!==zone)el.classList.add(zone==="hand"?"an-deal":(zone==="mana"?"an-charge":"an-pop"));
       else if(pv.tapped!==c.tapped)el.classList.add(c.tapped?"an-tap":"an-untap");
     }
     CARD_PREV.set(c.id,{tapped:!!c.tapped,faceup:!!c.faceup,zone,face:c.face||0});
   }
-  const url=showFace?imgURL.get(faceKeyOf(c)):backURL(pi);
-  if(url){const im=document.createElement("img");im.src=url;im.alt="";im.draggable=false;if(!showFace&&pi!==S.seat)im.style.transform="rotate(180deg)";el.appendChild(im);}
-  else{const np=document.createElement("div");np.className="nameplate";np.textContent=showFace?faceNameOf(c):(zone==="shield"?"盾":"?");el.appendChild(np);}
+  let topOver=null;
+  if(zone==="shield"&&!showFace&&c.under&&c.under.length){
+    for(let i9=c.under.length-1;i9>=0;i9--){
+      if(c.under[i9].faceup){topOver=c.under[i9];break;}
+    }
+  }
+  const url=showFace?imgURL.get(faceKeyOf(c)):(topOver?imgURL.get(faceKeyOf(topOver)):backURL(pi));
+  if(url){const im=document.createElement("img");im.src=url;im.alt="";im.draggable=false;if(!showFace&&!topOver&&pi!==S.seat)im.style.transform="rotate(180deg)";el.appendChild(im);}
+  else{const np=document.createElement("div");np.className="nameplate";np.textContent=showFace?faceNameOf(c):(topOver?topOver.name:(zone==="shield"?"盾":"?"));el.appendChild(np);}
   if(c.rot){
     el.style.transform=`rotate(${c.rot}deg)${c.tapped?" scale(.9)":""}`;
     if(c.rot%180===90&&zone==="battle"){
@@ -6786,7 +7080,15 @@ function cardEl(pi,zone,c){
     }
   }
   if(c.under&&c.under.length){
-    const st=document.createElement("span");st.className="stacktag";st.textContent="+"+c.under.length;
+    const st=document.createElement("span");st.className="stacktag";
+    if(zone==="shield"){
+      const fu=(c.under||[]).filter(x=>x.faceup).length+(c.faceup?1:0);
+      const total=1+(c.under?c.under.length:0);
+      st.textContent="+"+c.under.length+(fu>1?` 表${fu}`:"");
+      st.title=`全${total}枚（表${fu}・裏${total-fu}）`;
+    }else{
+      st.textContent="+"+c.under.length;
+    }
     el.appendChild(st);
   }
   if(c.seals&&c.seals.length){
@@ -6815,7 +7117,7 @@ function cardEl(pi,zone,c){
   if(c.buff){
     const parts=[];
     if(c.buff.pa)parts.push("PA+"+c.buff.pa);
-    if(c.buff.pm)parts.push((c.buff.pm>0?"+":"")+c.buff.pm);
+    if(c.buff.pm&&dispPower(c)==null)parts.push((c.buff.pm>0?"+":"")+c.buff.pm);
     if(c.buff.slayer)parts.push("殺");
     if(c.buff.blocker)parts.push("盾");
     if(c.buff.note)parts.push(c.buff.note);
@@ -6866,6 +7168,13 @@ function cardEl(pi,zone,c){
       cb2.style.cssText="position:absolute;left:2px;top:2px;z-index:6;background:#0d2a16;color:#4ade80;font-size:11px;font-weight:900;border-radius:6px;padding:0 5px;line-height:1.5;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.5)";
       el.appendChild(cb2);
     }
+  }
+  if(zone==="battle"&&c.cnt>0){
+    const kb=document.createElement("span");
+    kb.textContent="🔵×"+c.cnt;
+    kb.style.cssText="position:absolute;left:2px;top:2px;z-index:6;background:#000d;color:#93c5fd;font-size:11px;font-weight:900;border-radius:6px;padding:0 5px;line-height:1.5;pointer-events:none";
+    if((()=>{const r0=getReg(c);return r0&&r0.gimmick==="dormacore";})())kb.style.top="20px";
+    el.appendChild(kb);
   }
   if(zone==="battle"&&(()=>{const r0=getReg(c);return r0&&r0.gimmick==="dormacore";})()){
     if(c.coreN==null)c.coreN=3;
@@ -7128,7 +7437,24 @@ function renderPlayer(pi){
   const peekBtn=document.querySelector(`.zbtn[data-pi="1"][data-act="peek"]`);
   if(peekBtn)peekBtn.textContent=S.hideOpp?"👁 見る":"🙈 隠す";
 }
+let LIBWIN_ASKED=[false,false];
+function checkLibWin(){
+  if(!S.expert)return;
+  for(const pi of (S.vs?[0,1]:[0])){
+    const Z=zonesOf(pi);
+    if(Z.deck.length>0){LIBWIN_ASKED[pi]=false;continue;}
+    if(LIBWIN_ASKED[pi])continue;
+    const holder=Z.battle.find(x=>{const r=getReg(x);return r&&r.libWin&&!isSealed(x)&&!isIgnored(x,pi);});
+    if(!holder)continue;
+    LIBWIN_ASKED[pi]=true;
+    setTimeout(async()=>{
+      fxAnim(holder.id,"an-gold",800);
+      await declareWin(pi,`🌊 ${faceNameOf(holder)}：山札が0枚になったので、負けるかわりに勝利！（エクストラウィン）`);
+    },250);
+  }
+}
 function renderAll(){
+  checkLibWin();
   const order=S.vs?[1,0]:[0];
   for(const pi of order)renderPlayer(pi);
   $("turnBadge").textContent=`ターン ${S.turn}${S.vs?"・"+S.players[S.who].label:""}${S.vs&&(SCORE[0]||SCORE[1])?`　🏆${SCORE[0]}-${SCORE[1]}`:""}`;
@@ -7417,6 +7743,30 @@ async function olSendDeckImages(names){
   }
   toast(`🖼 画像送信完了（${sent}枚）`);
 }
+function showResultScreen(winner,reason){
+  if(S.anim===false)return;
+  const old=document.getElementById("resultOlay");
+  if(old)old.remove();
+  const ol=document.createElement("div");
+  ol.id="resultOlay";
+  const meWin=(winner===(S.seat|0));
+  const t=document.createElement("div");
+  t.className="rtxt";
+  t.style.color=meWin?"#fbbf24":"#f87171";
+  t.textContent=meWin?"🏆 WIN!":"💀 LOSE...";
+  const sub=document.createElement("div");
+  sub.style.cssText="color:#e5e9f0;font-size:16px;font-weight:700;text-align:center;padding:0 20px";
+  sub.textContent=`${S.players[winner].label} の勝利　—　${reason}`;
+  const sc=document.createElement("div");
+  sc.style.cssText="color:#9aa4b2;font-size:14px";
+  sc.textContent=`戦績 ${SCORE[0]} - ${SCORE[1]}`;
+  const ht=document.createElement("div");
+  ht.style.cssText="color:#9aa4b2;font-size:12px;margin-top:14px";
+  ht.textContent="タップで閉じる";
+  ol.appendChild(t);ol.appendChild(sub);ol.appendChild(sc);ol.appendChild(ht);
+  ol.addEventListener("click",()=>ol.remove());
+  document.body.appendChild(ol);
+}
 async function declareWin(winner,reason,askFirst=true){
   if(!S.vs){toast(`🏆 ${reason}`);return;}
   let warn="";
@@ -7430,6 +7780,7 @@ async function declareWin(winner,reason,askFirst=true){
   SCORE[winner]++;
   toast(`🏆 ${S.players[winner].label} の勝利！（${reason}／戦績 ${SCORE[0]} - ${SCORE[1]}）`);
   sfx("atk");
+  showResultScreen(winner,reason);
   if(ONLINE.conn&&ONLINE.conn.open){
     try{ONLINE.conn.send({t:"win",winner,reason,score:SCORE.slice()});}catch(e){}
   }
@@ -7525,10 +7876,18 @@ function openShieldStack(pi,id){
       im.style.cssText="width:100%;border-radius:6px;display:block";
       cell.appendChild(im);
     }else{
-      const ph=document.createElement("div");
-      ph.style.cssText="width:100%;aspect-ratio:63/88;border-radius:6px;background:#1a2233;display:flex;align-items:center;justify-content:center;font-size:11px;color:#9aa4b2";
-      ph.textContent=x.faceup?x.name:"裏向き";
-      cell.appendChild(ph);
+      const su=!x.faceup?backURL(pi):null;
+      if(su){
+        const im2=document.createElement("img");
+        im2.src=su;im2.draggable=false;
+        im2.style.cssText="width:100%;border-radius:6px;display:block";
+        cell.appendChild(im2);
+      }else{
+        const ph=document.createElement("div");
+        ph.style.cssText="width:100%;aspect-ratio:63/88;border-radius:6px;background:#1a2233;display:flex;align-items:center;justify-content:center;font-size:11px;color:#9aa4b2";
+        ph.textContent=x.faceup?x.name:"裏向き";
+        cell.appendChild(ph);
+      }
     }
     const lb=document.createElement("div");
     lb.style.cssText="font-size:9px;color:#cbd3df;text-align:center;margin-top:2px";
@@ -7538,10 +7897,19 @@ function openShieldStack(pi,id){
       ev.stopPropagation();
       const nm=x.faceup?x.name:"裏向きのカード";
       const j=await askChoice(`《${nm}》をどうしますか？`,
-        ["手札へ","墓地へ","バトルゾーンへ","マナへ","山札の上へ","山札の下へ","表/裏を反転","そのまま（閉じる）"]);
-      if(j===null||j===7)return;
+        ["手札へ","墓地へ","バトルゾーンへ","マナへ","山札の上へ","山札の下へ","表/裏を反転","⬆ 1つ上へ","⬇ 1つ下へ","そのまま（閉じる）"]);
+      if(j===null||j===9)return;
       snap();
       if(j===6){x.faceup=!x.faceup;sfx("flip");renderAll();openShieldStack(pi,id);return;}
+      if(j===7||j===8){
+        if(isHost){toast("盾本体は一番下に固定です");openShieldStack(pi,id);return;}
+        const ui2=host.under.findIndex(y=>y.id===x.id);
+        const to=j===7?ui2+1:ui2-1;
+        if(to<0||to>=host.under.length){toast("これ以上動かせません");openShieldStack(pi,id);return;}
+        host.under.splice(ui2,1);
+        host.under.splice(to,0,x);
+        sfx("move");renderAll();openShieldStack(pi,id);return;
+      }
       if(isHost&&host.under&&host.under.length){
         toast("盾本体は、重なっているカードを先にどけてから移動してください");
         return;
@@ -7576,6 +7944,13 @@ function openShieldStack(pi,id){
   ol.addEventListener("click",()=>ol.remove());
   document.body.appendChild(ol);
 }
+function fxAnim(id,cls,ms){
+  if(S.anim===false)return Promise.resolve();
+  const el=document.querySelector(`[data-cid="${id}"]`);
+  if(!el)return Promise.resolve();
+  el.classList.add(cls);
+  return new Promise(r=>setTimeout(()=>{el.classList.remove(cls);r();},ms||400));
+}
 function showCardPreview(ctx){
   const f=findCard(ctx.p,ctx.zone,ctx.id);
   if(!f)return;
@@ -7584,14 +7959,40 @@ function showCardPreview(ctx){
   if(old)old.remove();
   const ol=document.createElement("div");
   ol.id="cardPreviewOlay";
-  ol.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:85;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px";
+  ol.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:95;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px";
   const u=c.faceup?imgURL.get(faceKeyOf(c)):null;
   if(u){
+    const wrap=document.createElement("div");
+    wrap.style.cssText="position:relative;display:inline-block";
     const im=document.createElement("img");
     im.src=u;im.draggable=false;
-    im.style.cssText="max-width:min(72vw,360px);max-height:52dvh;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.8)";
+    im.style.cssText="max-width:min(72vw,360px);max-height:52dvh;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.8);display:block";
     if(c.rot)im.style.transform=`rotate(${c.rot}deg)`;
-    ol.appendChild(im);
+    wrap.appendChild(im);
+    if(ctx.zone==="battle"){
+      const pw=dispPower(c);
+      if(pw!=null){
+        const r0=getReg(c);
+        const base=(r0&&+r0.power)||0;
+        const up=pw>base,down=pw<base;
+        const pb=document.createElement("span");
+        pb.textContent="⚡"+pw;
+        pb.style.cssText=`position:absolute;right:8px;bottom:8px;background:${up?"#14351f":down?"#3a1414":"#000c"};color:${up?"#4ade80":down?"#f87171":"#fff"};font-size:16px;font-weight:900;border-radius:8px;padding:2px 10px;box-shadow:0 2px 8px rgba(0,0,0,.6)`;
+        wrap.appendChild(pb);
+      }
+    }
+    if(ctx.zone==="hand"){
+      const dc=dispCost(c,ctx.p);
+      const r0=getReg(c);
+      const showC=dc?dc.cost:(r0&&r0.cost!=null&&!isNaN(+r0.cost)?+r0.cost:null);
+      if(showC!=null){
+        const cb=document.createElement("span");
+        cb.textContent="💎"+showC+(dc?`（元${dc.base}）`:"");
+        cb.style.cssText=`position:absolute;left:8px;top:8px;background:${dc?"#0d2a16":"#000c"};color:${dc?"#4ade80":"#fff"};font-size:15px;font-weight:900;border-radius:8px;padding:2px 10px;box-shadow:0 2px 8px rgba(0,0,0,.6)`;
+        wrap.appendChild(cb);
+      }
+    }
+    ol.appendChild(wrap);
   }else{
     const d=document.createElement("div");
     d.style.cssText="color:#fff;font-weight:900;font-size:16px";
@@ -7608,9 +8009,10 @@ function showCardPreview(ctx){
     b.addEventListener("click",ev=>{ev.stopPropagation();ol.remove();fn();});
     bar.appendChild(b);
   };
-  if(S.vs&&ctx.p===S.who&&!c.tapped&&c.faceup&&!isSealed(c))mk("⚔ 攻撃",()=>startAttack(ctx.p,ctx.id),true);
-  mk(c.tapped?"⤴ アンタップ":"⤵ タップ",()=>{c.tapped=!c.tapped;sfx("move");renderAll();});
+  if(ctx.zone==="battle"&&S.vs&&ctx.p===S.who&&!c.tapped&&c.faceup&&!isSealed(c))mk("⚔ 攻撃",()=>startAttack(ctx.p,ctx.id),true);
+  if(ctx.zone!=="hand")mk(c.tapped?"⤴ アンタップ":"⤵ タップ",()=>{c.tapped=!c.tapped;sfx("move");renderAll();});
   if(c.faceup)mk("⚙ 効果登録",()=>{openFxEditor(faceKeyOf(c));});
+  mk("📋 メニュー",()=>{onCardTap(ctx);});
   ol.appendChild(bar);
   const ht=document.createElement("div");
   ht.style.cssText="color:#9aa4b2;font-size:12px";
@@ -7629,7 +8031,7 @@ function attachPointer(el,ctx){
     const startScroll=scroller?scroller.scrollLeft:0;
     let mode=null,ghost=null,lastTgt=null;
     let lpT=null;
-    if(ctx.zone==="battle"&&!ctx.viewer){
+    if(["battle","hand","mana","grave","hyper","exile"].includes(ctx.zone)&&!ctx.hidden){
       lpT=setTimeout(()=>{
         if(mode)return;
         mode="preview";
@@ -7700,7 +8102,29 @@ function attachPointer(el,ctx){
       if(wasMode==="drag")window.__lastDragT=Date.now();
       if(wasMode==="drag"){
         const tgt=dropTargetAt(e2.clientX,e2.clientY);
-        if(tgt&&!(tgt.p===ctx.p&&tgt.zone===ctx.zone)){
+        if(tgt&&tgt.zone==="shieldStack"){
+          const ZT=zonesOf(tgt.p);
+          const host=ZT.shield.find(x=>String(x.id)===String(tgt.sid));
+          const fS=findCard(ctx.p,ctx.zone,ctx.id);
+          if(host&&fS&&!(ctx.zone==="shield"&&fS.card.id===host.id)){
+            if(S.expert&&ctx.zone==="battle"&&isSealed(fS.card)){toast(`🔒 ${fS.card.name} は封印されている！（離れません）`);}
+            else{
+              snap();
+              fS.arr.splice(fS.idx,1);
+              const cc=fS.card;
+              cc.tapped=false;
+              if(ctx.zone!=="battle")cc.faceup=true;
+              if(S.turn>0)cc.mark=true;
+              host.under=host.under||[];
+              host.under.push(cc);
+              sfx("move");closeSel();
+              if(ctx.afterDrop)ctx.afterDrop();
+              renderAll();
+              toast(`🛡 盾に重ねました：${cc.faceup?cc.name:"裏向きのカード"}（+${host.under.length}）`);
+            }
+          }
+        }
+        else if(tgt&&!(tgt.p===ctx.p&&tgt.zone===ctx.zone)){
           snap();
           const inSel=S.multi&&S.msel.some(x=>x.id===ctx.id);
           const group=inSel?S.msel.slice():[{p:ctx.p,zone:ctx.zone,id:ctx.id}];
@@ -7754,7 +8178,13 @@ function dropTargetAt(x,y){
       const pb=z.closest(".pboard");
       const p=pb?+pb.dataset.p:0;
       const valid=["hand","mana","battle","grave","shield","shieldUp","resolve","reveal","deckTop","grBottom","hyper","exile"];
-      if(valid.includes(zone))return {el:z,zone,p};
+      if(valid.includes(zone)){
+        if(zone==="shield"){
+          const cardEl2=el.closest&&el.closest("[data-cid]");
+          if(cardEl2&&z.contains(cardEl2))return {el:cardEl2,zone:"shieldStack",p,sid:cardEl2.dataset.cid};
+        }
+        return {el:z,zone,p};
+      }
     }
   }
   return null;
@@ -7947,6 +8377,32 @@ function openCardSheet(ctx){
         document.body.appendChild(ol);
       });
       box.appendChild(pv);
+    }
+  }
+  if(ctx.zone==="battle"&&((c.under&&c.under.length)||c.cnt>0||(reg&&reg.psyLink))){
+    box.appendChild(actBtn("🔗 リンク進行ビュー（零龍の儀／ゴッド・覚醒リンクの揃い確認）",()=>{
+      closeSheet();closeSel();
+      openLinkProgress(ctx.p,ctx.id);
+    },"",true));
+  }
+  if(ctx.zone==="battle"){
+    box.appendChild(actBtn(`🔵 カウンター（現在${c.cnt||0}）を＋1／長押し不要・儀や封印外の管理に`,()=>{
+      snap();
+      c.cnt=(c.cnt||0)+1;
+      sfx("ok");renderAll();
+      fxAnim(c.id,"an-cip",500);
+      toast(`🔵 カウンター：${c.cnt}`);
+      closeSheet();
+    }));
+    if(c.cnt>0){
+      box.appendChild(actBtn(`🔵 カウンターを−1（0で非表示）`,()=>{
+        snap();
+        c.cnt=Math.max(0,(c.cnt||0)-1);
+        sfx("move");renderAll();
+        dissolveGhostBadge(c.id);
+        toast(`🔵 カウンター：${c.cnt}`);
+        closeSheet();
+      }));
     }
   }
   if(ctx.zone==="battle"&&isSealed(c)){
@@ -8618,6 +9074,7 @@ function openCardSheet(ctx){
             pool[j].tapped=true;
             c.hyper=true;
             sfx("ok");closeSel();renderAll();
+            fxAnim(c.id,"an-gold",700);
             toast(`⚡ ハイパーモード解放！ ${faceNameOf(c)}${rH.hyperNote?`（${rH.hyperNote}）`:""}（次の自分のターン開始まで）`);
           },"primary",true));
         }
@@ -8626,6 +9083,7 @@ function openCardSheet(ctx){
             snap();
             c.hyper=true;
             sfx("ok");closeSel();renderAll();
+            fxAnim(c.id,"an-gold",700);
             toast(`⚡ Zラッシュ！ ハイパーモード解放：${faceNameOf(c)}${rH.hyperNote?`（${rH.hyperNote}）`:""}`);
           },"",true));
         }
@@ -10713,6 +11171,11 @@ $("setBgmVol").addEventListener("input",async ()=>{
   if(BGM)BGM.volume=S.bgmVol/100;
   if(db)await idbPut("misc","bgmVol",S.bgmVol);
 });
+$("setAnim").addEventListener("change",async ()=>{
+  S.anim=$("setAnim").checked;
+  if(db)await idbPut("misc","anim",S.anim);
+  toast(S.anim?"🎬 演出：ON":"🎬 演出：OFF");
+});
 $("setSfxVol").addEventListener("input",async ()=>{
   S.sfxVol=+$("setSfxVol").value;
   $("sfxVolLb").textContent=S.sfxVol+"%";
@@ -10840,6 +11303,8 @@ function zoneCondOk(expr,pi){
         cnt=arrs.filter(x=>{
           const r=getReg(x);
           if(filt==="多色")return r&&r.civs&&r.civs.length>=2;
+          if(filt==="呪文")return r&&r.ctype==="spell";
+          if(filt==="クリーチャー")return r&&r.ctype!=="spell";
           if(civMap[filt])return r&&r.civs&&r.civs.includes(civMap[filt]);
           return (r&&raceMatch(r,filt))||String(x.name||"").includes(filt);
         }).length;
@@ -11019,6 +11484,8 @@ if("serviceWorker" in navigator&&location.protocol==="https:"){
   const hk=db?await idbGet("misc","hotkeys"):null;if(hk){try{S.hotkeys=JSON.parse(hk);}catch(e){}}
   const mx=db?await idbGet("misc","matPosX"):null;if(mx!=null&&mx!==undefined)S.matPosX=+mx;
   const my=db?await idbGet("misc","matPosY"):null;if(my!=null&&my!==undefined)S.matPosY=+my;
+  const an=db?await idbGet("misc","anim"):null;
+  if(an!=null){S.anim=an;$("setAnim").checked=!!an;}
   const sv=db?await idbGet("misc","sfxVol"):null;
   if(sv!=null){S.sfxVol=sv;$("setSfxVol").value=sv;$("sfxVolLb").textContent=sv+"%";}
   const bv=db?await idbGet("misc","bgmVol"):null;
