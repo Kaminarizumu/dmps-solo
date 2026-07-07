@@ -544,10 +544,10 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
       <span id="sfxVolLb" style="font-size:12px;width:36px;text-align:right">100%</span>
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap">
-      <button class="btn small" id="btnExport" style="flex:1;min-width:130px">💾 全データをエクスポート</button>
-      <button class="btn small" id="btnExportLite" style="flex:1;min-width:130px">💾 軽量（画像なし）</button>
-      <button class="btn small ghost" id="btnImport" style="flex:1;min-width:130px">📥 インポート</button>
-      <input type="file" id="importFile" accept=".json,application/json" style="display:none">
+      <button class="btn small" id="btnBkExport" style="flex:1;min-width:130px">💾 全データをエクスポート</button>
+      <button class="btn small" id="btnBkExportLite" style="flex:1;min-width:130px">💾 軽量（画像なし）</button>
+      <button class="btn small ghost" id="btnBkImport" style="flex:1;min-width:130px">📥 インポート</button>
+      <input type="file" id="bkImportFile" accept=".json,application/json" style="display:none">
     </div>
     <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">
       <span style="font-size:12px;font-weight:700">BGM</span>
@@ -10508,10 +10508,10 @@ async function bgmLoad(){
     bgmSetState("登録済み（▶で再生・ループ）");
   }
 }
-$("btnExport").addEventListener("click",()=>exportAll(true));
-$("btnExportLite").addEventListener("click",()=>exportAll(false));
-$("btnImport").addEventListener("click",()=>$("importFile").click());
-$("importFile").addEventListener("change",e=>{
+$("btnBkExport").addEventListener("click",()=>exportAll(true));
+$("btnBkExportLite").addEventListener("click",()=>exportAll(false));
+$("btnBkImport").addEventListener("click",()=>$("bkImportFile").click());
+$("bkImportFile").addEventListener("change",e=>{
   const f=e.target.files&&e.target.files[0];
   if(f)importAll(f);
   e.target.value="";
