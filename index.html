@@ -3830,7 +3830,7 @@ async function destroyWithReplace(pi,c){
   if(S.expert&&r){
     const opts=[];
     if(r.escape&&Z.shield.length)opts.push(["escape","🛡 エスケープ（盾を1枚手札に加えて、場に残る）"]);
-    if(r.trueEscape)opts.push(["tescape","🛡 真・エスケープ（このクリーチャーを手札に戻す）"]);
+    if(r.trueEscape)opts.push(["tescape","🛡 真・エスケープ（かわりにシールドを2枚手札に加えて場に残る）"]);
     const exSh=Z.shield.findIndex(x=>x.exFor===c.id);
     if(r.exlife&&(exSh>=0||Z.shield.length))opts.push(["exlife",exSh>=0?"💠 EXライフ（EX盾を墓地に置いて、場に残る）":"💠 EXライフ（盾を1枚墓地に置いて、場に残る）"]);
     if((r.starEvo||["starevo","smaxevo","onismaxevo"].includes(r.ctype))&&c.under&&c.under.length)
@@ -3865,15 +3865,18 @@ async function destroyWithReplace(pi,c){
             renderAll();return;
           }
         }else if(kind==="tescape"){
+          if(!Z.shield.length){toast("シールドがありません（真・エスケープは発動できません）");return;}
           snap();
-          const arr=Z.battle;
-          const i=arr.findIndex(x=>x.id===c.id);
-          if(i>=0)arr.splice(i,1);
-          if(c.under&&c.under.length){const kids=c.under.splice(0);kids.forEach(u=>{u.tapped=false;u.faceup=true;Z.grave.push(u);});}
-          c.tapped=false;c.faceup=true;c.rot=0;c.buff=null;
-          Z.hand.push(c);
-          markArrive(c);
-          toast(`🛡 真・エスケープ！ ${faceNameOf(c)} は手札に戻った`);
+          const take=Math.min(2,Z.shield.length);
+          for(let t2=0;t2<take;t2++){
+            const j2=Z.shield.length===1?0:await askChoice(`🛡 手札に加えるシールドを選択（${t2+1}/${take}枚目）`,
+              Z.shield.map((x,i2)=>`盾${i2+1}${x.faceup?`（表：${x.name}）`:""}${x.under&&x.under.length?` +${x.under.length}`:""}`));
+            if(j2===null){renderAll();return;}
+            const sc=Z.shield.splice(j2,1)[0];
+            const stack=[sc,...(sc.under?sc.under.splice(0):[])];
+            stack.forEach(x=>{x.faceup=true;x.tapped=false;Z.hand.push(x);});
+          }
+          toast(`🛡 真・エスケープ！ シールドを${take}枚手札に加え、${faceNameOf(c)} は場に残った`);
           sfx("flip");renderAll();return;
         }else if(kind==="starTop"){
           snap();
@@ -4617,7 +4620,7 @@ async function execAttack(pi,id,tg){
         if(rPay&&rPay.dddPay>0){
           const rcA=getReg(c);
           const atkCost=(rPay.dddMinus&&rcA&&rcA.cost!=null&&!isNaN(+rcA.cost))?+rcA.cost:0;
-          const pay=Math.max(0,rPay.dddPay-atkCost);
+          const pay=Math.max(1,rPay.dddPay-atkCost);
           const untapped=Z.mana.filter(m=>!m.tapped);
           if(untapped.length<pay){
             toast(`🌀 D・D・D：コスト${pay}が必要ですが、アンタップマナが${untapped.length}枚しかありません`);
@@ -7462,8 +7465,8 @@ function cardEl(pi,zone,c){
     const r0=getReg(c);
     if(r0){
       const ics=[];
-      if(r0.blocker||(c.buff&&c.buff.blocker))ics.push("🛡");
-      if(r0.slayer||(c.buff&&c.buff.slayer))ics.push("☠");
+      if(r0.blocker||(c.buff&&c.buff.blocker)||((r0.hmBlocker||r0.hmBK)&&c.hyper))ics.push("🛡");
+      if(r0.slayer||(c.buff&&c.buff.slayer)||(r0.hmSlayer&&c.hyper))ics.push("☠");
       const bk0=c.hyper&&r0.hmBk?r0.hmBk:r0.breaks;
       if(bk0&&bk0!=="1")ics.push(bk0==="2"?"W":bk0==="3"?"T":bk0==="all"?"∀":bk0+"B");
       if(ics.length){
@@ -8291,8 +8294,8 @@ function showCardPreview(ctx){
       const r0=getReg(c);
       if(r0){
         const tags=[];
-        if(r0.blocker||(c.buff&&c.buff.blocker))tags.push("🛡ブロッカー");
-        if(r0.slayer||(c.buff&&c.buff.slayer))tags.push("☠スレイヤー");
+        if(r0.blocker||(c.buff&&c.buff.blocker)||((r0.hmBlocker||r0.hmBK)&&c.hyper))tags.push("🛡ブロッカー");
+        if(r0.slayer||(c.buff&&c.buff.slayer)||(r0.hmSlayer&&c.hyper))tags.push("☠スレイヤー");
         const bk0=c.hyper&&r0.hmBk?r0.hmBk:r0.breaks;
         if(bk0&&bk0!=="1")tags.push(bk0==="2"?"W・ブレイカー":bk0==="3"?"T・ブレイカー":bk0==="all"?"ワールド・ブレイカー":bk0+"枚ブレイク");
         if(tags.length){
