@@ -1049,7 +1049,7 @@ body.shake{animation:bodyShake .4s ease-out}
           <option value="4">HM時：4枚ブレイク</option>
           <option value="all">HM時：ワールド</option>
         </select>
-        <label><input type="checkbox" id="fxHmBK"> HM時ブロッカー</label>
+
         <label><input type="checkbox" id="fxHmSL"> HM時スレイヤー</label>
         <span style="font-size:12px;font-weight:700">キリフダッシュ</span>
         <select id="fxKirifuda" style="width:auto;flex:0 0 80px">
@@ -4736,7 +4736,7 @@ async function execAttack(pi,id,tg){
     const rb=getReg(b);
     if(rb&&rb.blocker)return true;
     if(b.buff&&b.buff.blocker)return true;
-    if(rb&&rb.hmBlocker&&b.hyper&&!isSealed(b)&&!isIgnored(b,op))return true;
+    if(rb&&(rb.hmBlocker||rb.hmBK)&&b.hyper&&!isSealed(b)&&!isIgnored(b,op))return true;
     if(rb&&rb.cstCond&&rb.cstFx==="blocker"&&!isSealed(b)&&!isIgnored(b,op)&&zoneCondOk(rb.cstCond,op))return true;
     return false;
   };
@@ -5375,7 +5375,7 @@ function renderFxEditor(){
   $("fxHmBlocker").checked=!!FXEDIT.hmBlocker;
   $("fxHmSlayer").checked=!!FXEDIT.hmSlayer;
   $("fxHmBk").value=FXEDIT.hmBk||"";
-  $("fxHmBK").checked=!!FXEDIT.hmBK;
+
   $("fxHmSL").checked=!!FXEDIT.hmSL;
   $("fxSInvade").value=FXEDIT.sInvade||"";
   $("fxSympathy").value=FXEDIT.sympathy||"";
@@ -5572,10 +5572,10 @@ function openFxEditor(key){
     hyperNote:cur&&cur.hyperNote||"",
     hmPow:cur&&cur.hmPow||0,
     hmSA:cur?!!cur.hmSA:false,
-    hmBlocker:cur?!!cur.hmBlocker:false,
+    hmBlocker:cur?!!(cur.hmBlocker||cur.hmBK):false,
     hmSlayer:cur?!!cur.hmSlayer:false,
     hmBk:cur&&cur.hmBk||"",
-    hmBK:cur?!!cur.hmBK:false,
+
     hmSL:cur?!!cur.hmSL:false,
     sInvade:cur&&cur.sInvade||"",
     sympathy:cur&&cur.sympathy||"",
@@ -5774,7 +5774,7 @@ $("fxSave").addEventListener("click",async ()=>{
     hmBlocker:$("fxHmBlocker").checked,
     hmSlayer:$("fxHmSlayer").checked,
     hmBk:$("fxHmBk").value||"",
-    hmBK:$("fxHmBK").checked,
+
     hmSL:$("fxHmSL").checked,
     sInvade:$("fxSInvade").value||"",
     sympathy:$("fxSympathy").value.trim(),
@@ -6019,7 +6019,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.hmBlocker)attrs.push("HM時ブロッカー");
     if(v.hmSlayer)attrs.push("HM時スレイヤー");
     if(v.hmBk)attrs.push(`HM時ブレイク${v.hmBk==="all"?"：ワールド":v.hmBk+"枚"}`);
-    if(v.hmBK)attrs.push("HM時ブロッカー");
+
     if(v.hmSL)attrs.push("HM時スレイヤー");
     if(v.invadeZero)attrs.push("侵略ZERO");
     if(v.rev0)attrs.push("革命0");
