@@ -314,18 +314,25 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 .an-atkB{animation:anAtkBack .4s ease-out}
 @keyframes anBreak{0%{transform:scale(1) rotate(0)}25%{transform:scale(1.1) rotate(-5deg)}50%{transform:scale(1.12) rotate(5deg)}100%{transform:scale(1.35) rotate(0);opacity:0;filter:brightness(2.4)}}
 @keyframes anLose{0%{filter:none;transform:scale(1)}30%{filter:brightness(1.6) drop-shadow(0 0 14px #ef4444)}100%{filter:brightness(.35) grayscale(.7);transform:scale(.9);opacity:.25}}
-@keyframes anVanish{0%{opacity:1;filter:none;transform:scale(1)}30%{filter:brightness(1.7) drop-shadow(0 0 12px #ef4444)}100%{opacity:0;transform:scale(.75);filter:brightness(.3)}}
+@keyframes anVanish{0%{opacity:1;filter:brightness(1.9) drop-shadow(0 0 16px #ef4444)}35%{opacity:1;filter:brightness(1.4) drop-shadow(0 0 10px #ef4444)}100%{opacity:0;transform:scale(.7) rotate(4deg);filter:brightness(.25)}}
 @keyframes anClash{0%{transform:scale(1)}40%{transform:scale(1.12)}100%{transform:scale(1)}}
-@keyframes anCip{0%{box-shadow:inset 0 0 0 3px rgba(96,165,250,.95),inset 0 0 26px rgba(96,165,250,.85);filter:brightness(1.6) saturate(1.3)}100%{box-shadow:inset 0 0 0 0 rgba(96,165,250,0);filter:none}}
-@keyframes anDark{0%{box-shadow:inset 0 0 0 3px rgba(232,121,249,.9),inset 0 0 28px rgba(168,85,247,.9);filter:brightness(1.45) hue-rotate(20deg)}100%{box-shadow:inset 0 0 0 0 rgba(232,121,249,0);filter:none}}
+@keyframes anCip{0%{box-shadow:inset 0 0 0 3px rgba(96,165,250,.95),inset 0 0 26px 8px rgba(96,165,250,.7);background:rgba(96,165,250,.30);opacity:1}100%{box-shadow:none;background:transparent;opacity:0}}
+@keyframes anDark{0%{box-shadow:inset 0 0 0 3px rgba(232,121,249,.9),inset 0 0 28px 10px rgba(168,85,247,.8);background:rgba(168,85,247,.32);opacity:1}100%{box-shadow:none;background:transparent;opacity:0}}
 @keyframes bodyShake{0%,100%{transform:translate(0,0)}20%{transform:translate(-7px,3px)}40%{transform:translate(6px,-4px)}60%{transform:translate(-5px,-3px)}80%{transform:translate(4px,3px)}}
 body.shake{animation:bodyShake .4s ease-out}
-.an-cip{animation:anCip .7s ease-out}
-.an-dark{animation:anDark .7s ease-out;border-radius:10px}
-@keyframes anGold{0%{box-shadow:inset 0 0 0 3px rgba(250,204,21,.95),inset 0 0 28px rgba(250,204,21,.9);filter:brightness(1.7)}100%{box-shadow:inset 0 0 0 0 rgba(250,204,21,0);filter:none}}
-.an-gold{animation:anGold .7s ease-out;border-radius:10px}
-@keyframes anCharge{0%{box-shadow:inset 0 0 0 3px rgba(74,222,128,.95),inset 0 0 24px rgba(74,222,128,.85);transform:scale(1.12);filter:brightness(1.5) saturate(1.4)}100%{box-shadow:inset 0 0 0 0 rgba(74,222,128,0);transform:scale(1);filter:none}}
-.an-charge{animation:anCharge .6s ease-out}
+.an-cip,.an-charge,.an-gold,.an-dark{position:relative}
+.an-cip::after,.an-charge::after,.an-gold::after,.an-dark::after{content:"";position:absolute;inset:0;z-index:9;pointer-events:none;border-radius:inherit}
+.an-cip::after{animation:anCip .7s ease-out forwards}
+.an-cip{animation:anFlash .7s ease-out}
+@keyframes anFlash{0%{filter:brightness(1.45)}100%{filter:none}}
+.an-dark::after{animation:anDark .7s ease-out forwards}
+.an-dark{animation:anFlash .7s ease-out}
+@keyframes anGold{0%{box-shadow:inset 0 0 0 3px rgba(250,204,21,.95),inset 0 0 28px 10px rgba(250,204,21,.75);background:rgba(250,204,21,.30);opacity:1}100%{box-shadow:none;background:transparent;opacity:0}}
+.an-gold::after{animation:anGold .7s ease-out forwards}
+.an-gold{animation:anFlash .7s ease-out}
+@keyframes anCharge{0%{box-shadow:inset 0 0 0 3px rgba(74,222,128,.95),inset 0 0 24px 8px rgba(74,222,128,.7);background:rgba(74,222,128,.30);opacity:1}100%{box-shadow:none;background:transparent;opacity:0}}
+.an-charge::after{animation:anCharge .6s ease-out forwards}
+.an-charge{animation:anFlash .6s ease-out}
 #resultOlay{position:fixed;inset:0;z-index:96;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(2,4,10,.86);animation:fadeIn .3s ease-out}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes resPop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
@@ -6265,9 +6272,9 @@ function dissolveGhost(id2,mode){
   if(!el)return;
   const r=el.getBoundingClientRect();
   const g=el.cloneNode(true);
-  g.style.cssText=`position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;margin:0;z-index:88;pointer-events:none;animation:${mode==="break"?"anBreak .3s ease-in":"anVanish .32s ease-in"} forwards`;
+  g.style.cssText=`position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;margin:0;z-index:88;pointer-events:none;animation:${mode==="break"?"anBreak .34s ease-in":"anVanish .45s ease-in"} forwards`;
   document.body.appendChild(g);
-  setTimeout(()=>g.remove(),340);
+  setTimeout(()=>g.remove(),470);
 }
 function moveCardXRaw(pFrom,fromZone,id,pTo,toZone){
   return moveCardX(pFrom,fromZone,id,pTo,toZone,true);
