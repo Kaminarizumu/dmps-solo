@@ -3031,16 +3031,23 @@ function vtDiscount(){
   for(const pp of (S.vs?[0,1]:[0]))n+=zonesOf(pp).battle.length;
   return n;
 }
-function oppCostUp(r,c,pi){
+function oppCostUp(r,c,pi,asSide){
+  // asSide: "spell"（呪文面/呪文）または "creature"（クリーチャー面/クリーチャー）を明示。
+  // 未指定時は r.ctype から推定（ツインパクトは判定不能のため呪文限定/クリーチャー限定フィルタが両面に誤適用されるのを防ぐ）
   let up=0;
   try{
     const op=pi===0?1:0;
     if(!S.vs)return 0;
+    const sideIsSpell=asSide?(asSide==="spell"):(r&&r.ctype==="spell");
     for(const b of zonesOf(op).battle){
       const rb=getReg(b);
       if(!rb||!rb.stCostUp||rb.stCostUp<=0)continue;
       if(isSealed(b)||isIgnored(b,op))continue;
-      if(rb.stCostUpT&&(rb.stCostUpT==="spell"?(r.ctype!=="spell"):(r.ctype==="spell")))continue;
+      if(rb.stCostUpT){
+        // 呪文限定/クリーチャー限定の常在は、対象の面がその種別のときだけ適用
+        const wantSpell=(rb.stCostUpT==="spell");
+        if(wantSpell!==sideIsSpell)continue;
+      }
       if(rb.stCostUpF){
         const civMap={"光":"light","水":"water","闇":"dark","火":"fire","自然":"nature","ゼロ":"zero"};
         const ok=rb.stCostUpF.split(/[／\/、,]/).some(tk=>{
@@ -3068,11 +3075,14 @@ async function autoTapCost(pi,c){
   const r=getReg(c);
   if(!r||(r.cost==null&&r.cost2==null))return;
   let cost=r.cost;
+  let paySide=(r.ctype==="spell")?"spell":"creature"; // 支払う面の種別（コスト＋n常在の判定用）
   if((r.twin||r.ctype==="twinpact")&&r.cost2!=null){
     const j=await askChoice(`《${faceNameOf(c)}》どちらの面のコストを支払う？`,
       [`上面：コスト${r.cost!=null?r.cost:"未設定"}`,`下面：コスト${r.cost2}`,"支払わない"]);
     if(j===null||j===2)return;
     cost=j===0?r.cost:r.cost2;
+    // ツインパクトは上面＝クリーチャー・下面＝呪文が通例
+    paySide=j===0?"creature":"spell";
   }
   if(cost==null)return;
   const Z=zonesOf(pi);
@@ -3111,7 +3121,7 @@ async function autoTapCost(pi,c){
         toast(`⚡ 場のクリーチャー${vd}体：コスト軽減（残り${cost}）`);
       }
     }
-    const upN=oppCostUp(r,c,pi);
+    const upN=oppCostUp(r,c,pi,paySide);
     if(upN>0){
       cost+=upN;
       toast(`⬆ 相手の常在効果：コスト＋${upN}（計${cost}）`);
@@ -4031,7 +4041,9 @@ function dispCost(c,pi){
     if(c.buff&&c.buff.costM>0)cost-=c.buff.costM;
     cost-=dddDiscount(r,pi);
     if(r.vtCost)cost=Math.max(1,cost-vtDiscount());
-    cost+=oppCostUp(r,c,pi);
+    // ツインパクトは表示している上面（r.cost側）の種別で判定。上面=クリーチャーなら呪文限定の＋nは効かない
+    const topSide=(r.ctype==="twinpact"||r.twin)?(r.ctype==="spell"?"spell":"creature"):null;
+    cost+=oppCostUp(r,c,pi,topSide);
     if(S.nextPlay&&S.nextPlay[pi])for(const g of S.nextPlay[pi]){
       const wOK=!g.word||String(g.word).split(/[／\/、,]/).some(tk=>tk&&(raceMatch(r,tk)||faceNameOf(c).includes(tk)));
       if((!g.civ||(r.civs&&r.civs.includes(g.civ)))&&wOK)cost-=g.n;
