@@ -1005,10 +1005,16 @@ body.shake{animation:bodyShake .4s ease-out}
         <select id="fxDDDCost" style="width:auto;flex:0 0 90px">
           <option value="0">コスト条件なし</option><option value="1">マナ1以上</option><option value="2">マナ2以上</option><option value="3">マナ3以上</option><option value="4">マナ4以上</option><option value="5">マナ5以上</option><option value="6">マナ6以上</option><option value="7">マナ7以上</option><option value="8">マナ8以上</option>
         </select>
-        <select id="fxDDDCiv" style="width:auto;flex:0 0 110px">
+        <select id="fxDDDCiv" style="width:auto;flex:0 0 130px">
           <option value="">文明指定なし</option>
           <option value="light">光</option><option value="water">水</option><option value="dark">闇</option><option value="fire">火</option><option value="nature">自然</option>
+          <option value="lfn">光・火・自然すべて</option>
         </select>
+        <select id="fxDDDPay" style="width:auto;flex:0 0 190px">
+          <option value="0">支払いなし（踏み倒し/軽減型）</option>
+          <option value="5">攻撃時支払い：基本[5]</option><option value="6">攻撃時支払い：基本[6]</option><option value="7">攻撃時支払い：基本[7]</option><option value="8">攻撃時支払い：基本[8]</option><option value="9">攻撃時支払い：基本[9]</option><option value="10">攻撃時支払い：基本[10]</option>
+        </select>
+        <label><input type="checkbox" id="fxDDDMinus"> 攻撃中クリーチャーのコスト分軽減（ドギラゴン王道型）</label>
         <select id="fxDDDOff" style="width:auto;flex:0 0 140px">
           <option value="0">攻撃時踏み倒し型</option>
           <option value="1">召喚コスト−1</option><option value="2">召喚コスト−2</option><option value="3">召喚コスト−3</option><option value="4">召喚コスト−4</option><option value="5">召喚コスト−5</option><option value="6">召喚コスト−6</option>
@@ -1551,6 +1557,13 @@ function sfxPlay(kind){
 document.addEventListener("click",e=>{
   if(e.target.closest&&e.target.closest(".btn,.zbtn,.pmenu"))sfx("tap");
 },true);
+document.addEventListener("pointerdown",()=>{
+  try{
+    if(!S.sound)return;
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
+    if(AC.state==="suspended")AC.resume();
+  }catch(e){}
+},{capture:true,passive:true});
 
 /* ================= state ================= */
 let nextId=1;
@@ -2176,7 +2189,10 @@ function nextTurn(){
         if(!r||!r.ddd)continue;
         const need=r.dddCost|0;
         if(need&&Zc.mana.length<need)continue;
-        if(r.dddCiv){
+        if(r.dddCiv==="lfn"){
+          const okAll=["light","fire","nature"].every(cv=>Zc.mana.some(m=>{const rm=getReg(m);return rm&&rm.civs&&rm.civs.includes(cv);}));
+          if(!okAll)continue;
+        }else if(r.dddCiv){
           const has=Zc.mana.some(m=>{const rm=getReg(m);return rm&&rm.civs&&rm.civs.includes(r.dddCiv);});
           if(!has)continue;
         }
@@ -2907,7 +2923,10 @@ function dddDiscount(r,pi){
   const Z=zonesOf(pi);
   const need=r.dddCost|0;
   if(need&&Z.mana.length<need)return 0;
-  if(r.dddCiv){
+  if(r.dddCiv==="lfn"){
+    const okAll=["light","fire","nature"].every(cv=>Z.mana.some(m=>{const rm=getReg(m);return rm&&rm.civs&&rm.civs.includes(cv);}));
+    if(!okAll)return 0;
+  }else if(r.dddCiv){
     const has=Z.mana.some(m=>{const rm=getReg(m);return rm&&rm.civs&&rm.civs.includes(r.dddCiv);});
     if(!has)return 0;
   }
@@ -4579,7 +4598,10 @@ async function execAttack(pi,id,tg){
         if(!r||!r.ddd)continue;
         const need=r.dddCost|0;
         if(need&&Z.mana.length<need)continue;
-        if(r.dddCiv){
+        if(r.dddCiv==="lfn"){
+          const okAll=["light","fire","nature"].every(cv=>Z.mana.some(m=>{const rm=getReg(m);return rm&&rm.civs&&rm.civs.includes(cv);}));
+          if(!okAll)continue;
+        }else if(r.dddCiv){
           const has=Z.mana.some(m=>{const rm=getReg(m);return rm&&rm.civs&&rm.civs.includes(r.dddCiv);});
           if(!has)continue;
         }
@@ -4591,6 +4613,22 @@ async function execAttack(pi,id,tg){
         [...dCands.map(({h,zn})=>`${faceNameOf(h)}（${zLbD[zn]}）`),"発動しない"]);
       if(j!==null&&j<dCands.length){
         const {h,zn}=dCands[j];
+        const rPay=getReg(h);
+        if(rPay&&rPay.dddPay>0){
+          const rcA=getReg(c);
+          const atkCost=(rPay.dddMinus&&rcA&&rcA.cost!=null&&!isNaN(+rcA.cost))?+rcA.cost:0;
+          const pay=Math.max(0,rPay.dddPay-atkCost);
+          const untapped=Z.mana.filter(m=>!m.tapped);
+          if(untapped.length<pay){
+            toast(`🌀 D・D・D：コスト${pay}が必要ですが、アンタップマナが${untapped.length}枚しかありません`);
+            renderAll();
+            return;
+          }
+          const okPay=await ask(`🌀 D・D・D：《${faceNameOf(h)}》を召喚しますか？\nコスト：[${rPay.dddPay}]${atkCost?`−攻撃中のコスト${atkCost}＝${pay}`:`＝${pay}`}（マナを${pay}枚タップ）`);
+          if(!okPay){renderAll();return;}
+          for(let ti=0;ti<pay;ti++)untapped[ti].tapped=true;
+          toast(`🌀 D・D・D：コスト${pay}を支払った`);
+        }
         snap();
         const arr0=Z[zn];
         const hi=arr0.findIndex(x=>x.id===h.id);
@@ -5317,6 +5355,8 @@ function renderFxEditor(){
   $("fxDDDCost").value=String(FXEDIT.dddCost||0);
   $("fxDDDCiv").value=FXEDIT.dddCiv||"";
   $("fxDDDOff").value=String(FXEDIT.dddOff||0);
+  $("fxDDDPay").value=String(FXEDIT.dddPay||0);
+  $("fxDDDMinus").checked=!!FXEDIT.dddMinus;
   $("fxUraNinja").value=String(FXEDIT.uraNinja||0);
   $("fxUraCiv").value=FXEDIT.uraCiv||"";
   $("fxKirifuda").value=String(FXEDIT.kirifuda||0);
@@ -5515,6 +5555,8 @@ function openFxEditor(key){
     dddCost:cur&&(+cur.dddCost||0)||0,
     dddCiv:cur&&cur.dddCiv||"",
     dddOff:cur&&(+cur.dddOff||0)||0,
+    dddPay:cur&&(+cur.dddPay||0)||0,
+    dddMinus:cur?!!cur.dddMinus:false,
     uraNinja:cur?((typeof cur.uraNinja==="number")?cur.uraNinja:(cur.uraNinja?(cur.ninja||0):0)):0,
     uraCiv:cur&&cur.uraCiv||"",
     kirifuda:cur&&cur.kirifuda||0,
@@ -5711,6 +5753,8 @@ $("fxSave").addEventListener("click",async ()=>{
     ddd:$("fxDDD").checked,
     dddCost:+$("fxDDDCost").value||0,
     dddOff:+$("fxDDDOff").value||0,
+    dddPay:+$("fxDDDPay").value||0,
+    dddMinus:$("fxDDDMinus").checked,
     dddCiv:$("fxDDDCiv").value||"",
     uraNinja:+$("fxUraNinja").value||0,
     uraCiv:$("fxUraCiv").value||"",
@@ -5966,7 +6010,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.escape)attrs.push("エスケープ");
     if(v.trueEscape)attrs.push("真エスケープ");
     if(v.repShield)attrs.push("離脱置換：表向き盾→墓地（サッヴァーク型）");
-    if(v.ddd)attrs.push(`DDD${v.dddOff>0?`：召喚−${v.dddOff}`:"（攻撃時踏み倒し）"}`);
+    if(v.ddd)attrs.push(`DDD${v.dddPay>0?`：攻撃時[${v.dddPay}${v.dddMinus?"−攻撃コスト":""}]支払い`:(v.dddOff>0?`：召喚−${v.dddOff}`:"（攻撃時踏み倒し）")}`);
     if(v.uraNinja)attrs.push(`裏NS${v.uraNinja}${v.uraCiv?"("+({light:"光",water:"水",dark:"闇",fire:"火",nature:"自然"}[v.uraCiv]||"")+")":""}`);
     if(v.kirifuda)attrs.push(`キリフダッシュ${v.kirifuda}`);
     if(v.hyper)attrs.push("ハイパー化");
@@ -7258,7 +7302,10 @@ function cardEl(pi,zone,c){
     el.dataset.cid=c.id;
     {
       const afx=ANIM_FX.get(c.id);
-      if(afx&&S.anim!==false&&Date.now()<afx.until)el.classList.add(afx.cls);
+      if(afx&&S.anim!==false&&Date.now()<afx.until){
+        el.classList.add(afx.cls);
+        if(afx.start)el.style.animationDelay=`-${Date.now()-afx.start}ms`;
+      }
     }
     if(window.__atkAnim===c.id&&S.anim!==false){
       ANIM_FX.set(c.id,{cls:(pi===S.seat)?"an-atkF":"an-atkB",until:Date.now()+420});
@@ -7273,14 +7320,14 @@ function cardEl(pi,zone,c){
       else if(pv.zone!==zone&&animOn("zone")){
         const zc=zone==="hand"?"an-deal":(zone==="mana"?"an-charge":"an-pop");
         el.classList.add(zc);
-        ANIM_FX.set(c.id,{cls:zc,until:Date.now()+460});
+        ANIM_FX.set(c.id,{cls:zc,until:Date.now()+460,start:Date.now()});
         setTimeout(()=>{const a2=ANIM_FX.get(c.id);if(a2&&a2.cls===zc)ANIM_FX.delete(c.id);},470);
       }
       else if(pv.tapped!==c.tapped)el.classList.add(c.tapped?"an-tap":"an-untap");
     }else if(animOn("zone")&&arrived.has(c.id)&&!ANIM_FX.has(c.id)&&["hand","mana","battle"].includes(zone)&&S.turn>0){
       const zc=zone==="hand"?"an-deal":(zone==="mana"?"an-charge":"an-pop");
       el.classList.add(zc);
-      ANIM_FX.set(c.id,{cls:zc,until:Date.now()+460});
+      ANIM_FX.set(c.id,{cls:zc,until:Date.now()+460,start:Date.now()});
       setTimeout(()=>{const a2=ANIM_FX.get(c.id);if(a2&&a2.cls===zc)ANIM_FX.delete(c.id);},470);
     }
     CARD_PREV.set(c.id,{tapped:!!c.tapped,faceup:!!c.faceup,zone,face:c.face||0});
@@ -8200,7 +8247,7 @@ function fxAnim(id,cls,ms){
   const k=ANIM_CLS_KEY[cls];
   if(k&&!animOn(k))return Promise.resolve();
   ms=ms||400;
-  ANIM_FX.set(id,{cls,until:Date.now()+ms});
+  ANIM_FX.set(id,{cls,until:Date.now()+ms,start:Date.now()});
   const el=document.querySelector(`[data-cid="${id}"]`);
   if(el)el.classList.add(cls);
   return new Promise(r=>setTimeout(()=>{
