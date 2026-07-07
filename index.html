@@ -10032,9 +10032,17 @@ function openZeronPanel(pi,c){
   });
   const center=cellAt(2,2);
   const lkAll=LINKS.get(normName(c.name))||[];
-  const faceZM=lkAll.find(f=>String(f).includes("零無"))||faceKeyOf(c);
-  const faceZR=lkAll.find(f=>String(f).includes("零龍")&&!String(f).includes("零無"))||(lkAll.length>1?lkAll[(lkAll.indexOf(faceZM)+1)%lkAll.length]:null);
-  const hu=imgURL.get(normName(String(faceZM)));
+  const imgKeys=[...imgURL.keys()];
+  const findKey=(inc,exc)=>imgKeys.find(k=>String(k).includes(inc)&&(!exc||!String(k).includes(exc)));
+  let faceZM=lkAll.find(f=>String(f).includes("零無"));
+  let zmKey=faceZM?normName(String(faceZM)):findKey("零無");
+  if(!zmKey){faceZM=faceKeyOf(c);zmKey=normName(String(faceZM));}
+  else if(!faceZM)faceZM=zmKey;
+  let faceZR=lkAll.find(f=>String(f).includes("零龍")&&!String(f).includes("零無"));
+  let zrKey=faceZR?normName(String(faceZR)):findKey("零龍","零無");
+  if(!zrKey&&lkAll.length>1){faceZR=lkAll[(lkAll.indexOf(faceZM)+1)%lkAll.length];zrKey=normName(String(faceZR));}
+  else if(!faceZR&&zrKey)faceZR=zrKey;
+  const hu=imgURL.get(zmKey);
   const hw=document.createElement("div");
   hw.style.cssText="position:relative;width:100%";
   if(hu){
@@ -10059,7 +10067,7 @@ function openZeronPanel(pi,c){
   {
     if(faceZR){
       const nf=String(faceZR);
-      const nu=imgURL.get(normName(nf));
+      const nu=imgURL.get(zrKey);
       const prow=document.createElement("div");
       prow.style.cssText="display:flex;align-items:center;gap:10px;background:rgba(20,10,30,.6);border:1px solid #3b2a52;border-radius:10px;padding:6px 12px";
       const plb=document.createElement("div");
