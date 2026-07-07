@@ -1515,8 +1515,16 @@ const CARD_PREV=new Map();
 function sfx(kind){
   if(!S.sound)return;
   try{
-    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
-    if(AC.state==="suspended")AC.resume();
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
+    if(AC.state==="suspended"){
+      AC.resume().then(()=>{try{sfxPlay(kind);}catch(e){}});
+      return;
+    }
+    sfxPlay(kind);
+  }catch(e){}
+}
+function sfxPlay(kind){
+  {
     const t=AC.currentTime;
     const o=AC.createOscillator(),g=AC.createGain();
     const VOL=(S.sfxVol!=null?S.sfxVol:100)/100;
@@ -1538,7 +1546,7 @@ function sfx(kind){
     g.gain.exponentialRampToValueAtTime(conf[4],t+0.008);
     g.gain.exponentialRampToValueAtTime(0.0001,t+conf[2]);
     o.start(t);o.stop(t+conf[2]+0.02);
-  }catch(e){}
+  }
 }
 document.addEventListener("click",e=>{
   if(e.target.closest&&e.target.closest(".btn,.zbtn,.pmenu"))sfx("tap");
@@ -8398,6 +8406,7 @@ function attachPointer(el,ctx){
           sfx("move");
         }
         else if(tgt&&!(tgt.p===ctx.p&&tgt.zone===ctx.zone)){
+          sfx(tgt.zone==="grave"?"grave":"move");
           snap();
           const inSel=S.multi&&S.msel.some(x=>x.id===ctx.id);
           const group=inSel?S.msel.slice():[{p:ctx.p,zone:ctx.zone,id:ctx.id}];
