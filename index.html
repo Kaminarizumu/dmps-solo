@@ -1167,6 +1167,15 @@ body.shake{animation:bodyShake .4s ease-out}
         <div style="flex:1 1 100%;font-size:12px;font-weight:900;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:2px;margin-top:6px">常在効果（場にある間）</div>
         <label><input type="checkbox" id="fxStManaTap"> 相手のマナはタップして置かれる</label>
         <label><input type="checkbox" id="fxStAllSA"> 自分のクリーチャー全てスピードアタッカー</label>
+        <div class="row" style="gap:6px 12px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:12px;font-weight:700">常在付与（自分のクリーチャー全員）：</span>
+          <label><input type="checkbox" id="fxAGMach"> マッハF</label>
+          <label><input type="checkbox" id="fxAGBlocker"> ブロッカー</label>
+          <label><input type="checkbox" id="fxAGSlayer"> スレイヤー</label>
+          <label><input type="checkbox" id="fxAGEsc"> エスケープ</label>
+          <label><input type="checkbox" id="fxAGTEsc"> 真・エスケープ</label>
+          <input type="text" id="fxAGCond" placeholder="条件式（例：マナ:光>=5・空欄＝無条件）" style="flex:1;min-width:170px">
+        </div>
         <label><input type="checkbox" id="fxStUnblock"> 自分のクリーチャー全てブロックされない（攻撃時アナウンス）</label>
         <label><input type="checkbox" id="fxStOriotis"> オリオティス（相手のマナ枚数よりコストが大きい相手クリーチャーが出たら山札の下へ）</label>
         <label><input type="checkbox" id="fxNoUntap"> 常在：ターン開始時にアンタップしない（自身）</label>
@@ -2918,6 +2927,23 @@ function fxSummary(list){
   if(!list||!list.length)return "（効果なし）";
   return list.map(f=>FX_LABEL[f.t].replace("n",f.n)).join(" → ");
 }
+function allyGrant(pi,key,exceptId){
+  const Z=zonesOf(pi);
+  return Z.battle.some(b=>{
+    if(exceptId!=null&&b.id===exceptId)return false;
+    const rb=getReg(b);
+    if(!rb||!rb[key])return false;
+    if(isSealed(b)||isIgnored(b,pi))return false;
+    if(rb.agCond&&!zoneCondOk(rb.agCond,pi))return false;
+    return true;
+  })||Z.battle.some(b=>{
+    // 付与元自身も対象（エバーラスト等）
+    if(exceptId==null)return false;
+    if(b.id!==exceptId)return false;
+    const rb=getReg(b);
+    return rb&&rb[key]&&!isSealed(b)&&!isIgnored(b,pi)&&(!rb.agCond||zoneCondOk(rb.agCond,pi));
+  });
+}
 function dddDiscount(r,pi){
   if(!r||!r.ddd||!(r.dddOff>0))return 0;
   const Z=zonesOf(pi);
@@ -3829,8 +3855,8 @@ async function destroyWithReplace(pi,c){
   const Z=zonesOf(pi);
   if(S.expert&&r){
     const opts=[];
-    if(r.escape&&Z.shield.length)opts.push(["escape","🛡 エスケープ（盾を1枚手札に加えて、場に残る）"]);
-    if(r.trueEscape)opts.push(["tescape","🛡 真・エスケープ（かわりにシールドを2枚手札に加えて場に残る）"]);
+    if((r.escape||allyGrant(pi,"agEsc"))&&Z.shield.length)opts.push(["escape","🛡 エスケープ（盾を1枚手札に加えて、場に残る）"]);
+    if(r.trueEscape||allyGrant(pi,"agTEsc"))opts.push(["tescape","🛡 真・エスケープ（かわりにシールドを2枚手札に加えて場に残る）"]);
     const exSh=Z.shield.findIndex(x=>x.exFor===c.id);
     if(r.exlife&&(exSh>=0||Z.shield.length))opts.push(["exlife",exSh>=0?"💠 EXライフ（EX盾を墓地に置いて、場に残る）":"💠 EXライフ（盾を1枚墓地に置いて、場に残る）"]);
     if((r.starEvo||["starevo","smaxevo","onismaxevo"].includes(r.ctype))&&c.under&&c.under.length)
@@ -3966,6 +3992,9 @@ async function doBattle(pa,a,pd,d){
     }
     if(rx&&rx.hmSlayer&&x.hyper&&!isSealed(x)){
       toast(`⚡ HM解放中：${faceNameOf(x)} はスレイヤー！（負けても相手を破壊）`);
+    }
+    if(!isSealed(x)&&allyGrant(pp,"agSlayer")){
+      toast(`✨ 常在付与：${faceNameOf(x)} はスレイヤー！（負けても相手を破壊）`);
     }
   }
   if(animOn("clash")){
@@ -4398,7 +4427,7 @@ async function execAttack(pi,id,tg){
   if(S.expert&&c.sick){
     const rA=getReg(c);
     const saOk=rA&&rA.sa;
-    const machOk=rA&&rA.mach&&tg.kind==="creature";
+    const machOk=(rA&&rA.mach||allyGrant(pi,"agMach"))&&tg.kind==="creature";
     if(saOk||machOk){
       c.sick=false;
     }else{
@@ -4740,6 +4769,7 @@ async function execAttack(pi,id,tg){
     if(rb&&rb.blocker)return true;
     if(b.buff&&b.buff.blocker)return true;
     if(rb&&(rb.hmBlocker||rb.hmBK)&&b.hyper&&!isSealed(b)&&!isIgnored(b,op))return true;
+    if(!isSealed(b)&&!isIgnored(b,op)&&allyGrant(op,"agBlocker"))return true;
     if(rb&&rb.cstCond&&rb.cstFx==="blocker"&&!isSealed(b)&&!isIgnored(b,op)&&zoneCondOk(rb.cstCond,op))return true;
     return false;
   };
@@ -4833,7 +4863,7 @@ async function execAttack(pi,id,tg){
   if(S.expert){
     S.tauntUsed=S.tauntUsed||{};
     const rAtk=getReg(c);
-    const canHitUntapped=!!(rAtk&&rAtk.mach)||!!(c.buff&&c.buff.attackUntapped);
+    const canHitUntapped=!!(rAtk&&rAtk.mach)||!!(c.buff&&c.buff.attackUntapped)||allyGrant(pi,"agMach");
     const taunts=OZ.battle.filter(x=>{
       const r2=getReg(x);
       if(!r2||!r2.taunt)return false;
@@ -5433,6 +5463,12 @@ function renderFxEditor(){
   $("fxGrantDS").checked=!!FXEDIT.grantDS;
   $("fxStManaTap").checked=!!FXEDIT.stManaTap;
   $("fxStAllSA").checked=!!FXEDIT.stAllSA;
+  $("fxAGMach").checked=!!FXEDIT.agMach;
+  $("fxAGBlocker").checked=!!FXEDIT.agBlocker;
+  $("fxAGSlayer").checked=!!FXEDIT.agSlayer;
+  $("fxAGEsc").checked=!!FXEDIT.agEsc;
+  $("fxAGTEsc").checked=!!FXEDIT.agTEsc;
+  $("fxAGCond").value=FXEDIT.agCond||"";
   $("fxStUnblock").checked=!!FXEDIT.stUnblock;
   $("fxStOriotis").checked=!!FXEDIT.stOriotis;
   $("fxStNoCheat").checked=!!FXEDIT.stNoCheat;
@@ -5633,6 +5669,12 @@ function openFxEditor(key){
     grantDS:cur?!!cur.grantDS:false,
     stManaTap:cur?!!cur.stManaTap:false,
     stAllSA:cur?!!cur.stAllSA:false,
+    agMach:cur?!!cur.agMach:false,
+    agBlocker:cur?!!cur.agBlocker:false,
+    agSlayer:cur?!!cur.agSlayer:false,
+    agEsc:cur?!!cur.agEsc:false,
+    agTEsc:cur?!!cur.agTEsc:false,
+    agCond:cur&&cur.agCond||"",
     stUnblock:cur?!!cur.stUnblock:false,
     stOriotis:cur?!!cur.stOriotis:false,
     stNoCheat:cur?!!cur.stNoCheat:false,
@@ -5832,6 +5874,12 @@ $("fxSave").addEventListener("click",async ()=>{
     grantDS:$("fxGrantDS").checked,
     stManaTap:$("fxStManaTap").checked,
     stAllSA:$("fxStAllSA").checked,
+    agMach:$("fxAGMach").checked,
+    agBlocker:$("fxAGBlocker").checked,
+    agSlayer:$("fxAGSlayer").checked,
+    agEsc:$("fxAGEsc").checked,
+    agTEsc:$("fxAGTEsc").checked,
+    agCond:$("fxAGCond").value.trim(),
     stUnblock:$("fxStUnblock").checked,
     stOriotis:$("fxStOriotis").checked,
     stNoCheat:$("fxStNoCheat").checked,
@@ -6076,6 +6124,15 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.grantDS)attrs.push("手札にシンパシー付与");
     if(v.stManaTap)attrs.push("常在：相手マナはタップイン");
     if(v.stAllSA)attrs.push("常在：全員SA");
+    {
+      const gs=[];
+      if(v.agMach)gs.push("マッハF");
+      if(v.agBlocker)gs.push("ブロッカー");
+      if(v.agSlayer)gs.push("スレイヤー");
+      if(v.agEsc)gs.push("エスケープ");
+      if(v.agTEsc)gs.push("真エスケープ");
+      if(gs.length)attrs.push(`常在付与（全員）：${gs.join("・")}${v.agCond?`／条件：${v.agCond}`:""}`);
+    }
     if(v.stUnblock)attrs.push("常在：ブロックされない");
     if(v.stOriotis)attrs.push("常在：オリオティス");
     if(v.stNoCheat)attrs.push("常在：召喚以外で出せない");
@@ -8811,7 +8868,8 @@ function openCardSheet(ctx){
       if(pick===6){
         c.frozen=!c.frozen;
         closeSel();renderAll();
-        toast(c.frozen?`❄ フリーズ：${faceNameOf(c)}（次のターン アンタップしない）`:"フリーズを解除しました");
+        if(c.frozen)c.tapped=true;
+        toast(c.frozen?`❄ フリーズ：${faceNameOf(c)}（タップし、次のターン アンタップしない）`:"フリーズを解除しました");
         return;
       }
       if(pick===7){
