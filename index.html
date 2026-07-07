@@ -178,7 +178,7 @@ body.vs .pboard{gap:3px}
   box-shadow:0 1px 4px rgba(0,0,0,.6);letter-spacing:.5px;
 }
 .card .bufftag{
-  position:absolute;left:0;bottom:0;z-index:2;
+  position:absolute;left:26px;bottom:0;z-index:2;max-width:calc(100% - 26px);
   background:#7b5cff;color:#fff;
   font-size:9px;font-weight:800;padding:0 5px;border-top-right-radius:6px;
   max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
@@ -435,6 +435,7 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
   <button class="btn small warn" id="btnResignBar" style="display:none">🏳 投了</button>
   <button class="btn small ghost" id="btnLog">📜</button>
   <button class="btn small" id="btnFreePlay">踏倒:OFF</button>
+  <button class="btn" id="btnPause" title="処理中（誤操作防止ロック）">⏸ 処理中</button>
   <button class="btn primary" id="btnNextTurn">次のターン ▶</button>
 </div>
 
@@ -1807,6 +1808,16 @@ function draw(pi,n=1){
 }
 let NEXT_TURN_HOLD=0;
 let LABY_RUN=false;
+let GAME_PAUSE=false;
+function togglePause(){
+  GAME_PAUSE=!GAME_PAUSE;
+  const b=$("btnPause");
+  if(b){
+    b.textContent=GAME_PAUSE?"▶ 再開":"⏸ 処理中";
+    b.classList.toggle("primary",GAME_PAUSE);
+  }
+  toast(GAME_PAUSE?"⏸ 処理中：ターン送りとショートカットをロックしました（カード操作は可能）":"▶ 処理を終了しました");
+}
 async function runLabyEnd(cur2){
   const ZL=zonesOf(cur2);
   const OZL=zonesOf(cur2===0?1:0);
@@ -1848,6 +1859,10 @@ async function runLabyEnd(cur2){
   renderAll();
 }
 function nextTurn(){
+  if(GAME_PAUSE){
+    toast("⏸ 処理中です（「▶ 再開」を押してから進めてください）");
+    return;
+  }
   if(LABY_RUN){
     toast("⏳ ラビリンス・マジックの処理中です");
     return;
@@ -2940,6 +2955,14 @@ async function destroyCreature(pi,c){
   const i=Z.battle.findIndex(x=>x.id===c.id);
   if(i<0)return;
   if(S.expert){
+    const rDC=getReg(c);
+    if(rDC&&rDC.gimmick==="dormacore"&&(c.coreN==null||c.coreN>0)){
+      toast(`⚫ ${faceNameOf(c)} は破壊されない！ かわりに禁断コアが外れる`);
+      await dormaCoreRemove(pi,c);
+      return;
+    }
+  }
+  if(S.expert){
     const rCX=getReg(c);
     const IGN=isIgnored(c,pi);
     if(IGN&&rCX&&(rCX.ggg||rCX.sforceFx||rCX.cstCond||rCX.gimmick==="complex")){
@@ -3579,7 +3602,7 @@ function dispPower(c){
   if(!r||r.power===""||r.power==null||isNaN(+r.power))return null;
   let p=+r.power;
   if(c.hyper&&r.hmPow)p=+r.hmPow;
-  if(c.buff&&c.buff.pw)p+=(+c.buff.pw||0);
+  if(c.buff)p+=(+c.buff.pm||0)+(+c.buff.pw||0);
   if(c.sfActive&&r.sforceFx==="pw"&&r.sforceN)p+=(+r.sforceN||0);
   return p;
 }
@@ -4193,6 +4216,16 @@ async function execAttack(pi,id,tg){
           return;
         }
         if(!Z.battle.find(x=>x.id===id)){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
+        {
+          const j9=await askChoice(`⚡ 攻撃時効果の処理が終わったら選択`,["⚔ そのまま攻撃を続ける","⏸ 処理中にする（攻撃を保留→▶再開）"]);
+          if(j9===1){
+            c._atkFxDone=true;
+            S.pendingAtk={pi,id,tg:JSON.parse(JSON.stringify(tg))};
+            showResumeBtn();
+            renderAll();
+            return;
+          }
+        }
       }
     }
   }
@@ -4289,6 +4322,16 @@ async function execAttack(pi,id,tg){
   }
   if(invadedOnce&&S.vs){
     await offerInvadeZeroPrompt(op);
+  }
+  if(invadedOnce){
+    const j9=await askChoice(`♻ 侵略/革命チェンジの処理が終わったら選択`,["⚔ そのまま攻撃を続ける","⏸ 処理中にする（攻撃を保留→▶再開）"]);
+    if(j9===1){
+      c._atkFxDone=true;
+      S.pendingAtk={pi,id,tg:JSON.parse(JSON.stringify(tg))};
+      showResumeBtn();
+      renderAll();
+      return;
+    }
   }
   // COMPLEX：攻撃時、下のカードを1枚墓地へ（クリーチャーなら墓地から出せる）
   if(S.expert){
@@ -4618,6 +4661,18 @@ async function execAttack(pi,id,tg){
       }
     }
     await breakShields(op,n,c);
+    if(S.expert&&brokeN>0&&Z.battle.find(x=>x.id===id)){
+      const rBB=getReg(c);
+      const fxBB=rBB&&rBB.watchFx?rBB.watchFx.filter(w=>w.ev==="onBreak"):[];
+      if(fxBB.length){
+        toast(`💥 ブレイク・ボーナス！（${brokeN}回）`);
+        for(let i2=0;i2<brokeN;i2++){
+          await runFxList(pi,fxBB,c);
+          if(!Z.battle.find(x=>x.id===id))break;
+        }
+        renderAll();
+      }
+    }
     if(S.expert){
       const rT2=getReg(c);
       if(rT2&&rT2.twice==="afterAtk"&&!c._twiceUsed&&Z.battle.find(x=>x.id===c.id)){
@@ -4698,6 +4753,7 @@ function fxRowEl(faceIdx,i){
 const CIVS=[["fxCivL","light","光"],["fxCivW","water","水"],["fxCivD","dark","闇"],["fxCivF","fire","火"],["fxCivN","nature","自然"],["fxCivZ","zero","ゼロ"]];
 const TRIG_EVS=[
   ["turnStartMine","自分のターンのはじめに"],
+  ["onBreak","このクリーチャーがシールドをブレイクした時（ブレイク1枚ごとに1回・ブレイクボーナス）"],
   ["pig","このクリーチャーが破壊された時"],
   ["tapAbility","タップ能力（攻撃の代わりにタップ）"],
   ["selfAtk","このクリーチャーが攻撃する時（対象問わず）"],
@@ -4910,6 +4966,19 @@ function fxUiPolish(){
         });
       }
     }catch(e){console.warn("finder",e);}
+    // 関連項目を近接配置（裏NS→NS直下／龍マナ武装・マナドライブ→マナ武装直下／Sバック→ST直下／ドラゴンB→ブレイク数直下）
+    try{
+      const mv=(fromId,afterId)=>{
+        const a=document.getElementById(fromId),b=document.getElementById(afterId);
+        if(!a||!b)return;
+        const ra=a.closest(".row"),rb=b.closest(".row");
+        if(ra&&rb&&ra!==rb&&ra.parentElement===rb.parentElement)rb.after(ra);
+      };
+      mv("fxUraNinja","fxNinja");
+      mv("fxRyuArm","fxManaArm");
+      mv("fxSBack","fxST");
+      mv("fxDragonB","fxBreaks");
+    }catch(e){console.warn("group",e);}
     // GGGラベル＋セレクトの泣き別れ解消（この1箇所のみ・幅自然）
     try{
       const gl=[...ol.querySelectorAll("span")].find(x=>x.textContent==="G・G・G（手札1枚以下）");
@@ -5771,8 +5840,55 @@ function placeCard(Z,toZone,c){
   else if(Z[toZone])Z[toZone].push(c);
   else Z.hand.push(c);
 }
+async function dormaCoreRemove(pi,c){
+  if(c.coreN==null)c.coreN=3;
+  if(c.coreN<=0)return;
+  snap();
+  c.coreN--;
+  sfx("grave");renderAll();
+  const Z2=zonesOf(pi);
+  if(Z2.shield.length){
+    const j=randInt(Z2.shield.length);
+    const sc=Z2.shield.splice(j,1)[0];
+    sc.faceup=true;sc.tapped=false;
+    if(sc.under&&sc.under.length){const us=sc.under.splice(0);us.forEach(u=>{u.faceup=true;Z2.grave.push(u);});}
+    Z2.grave.push(sc);
+    renderAll();
+    toast(`⚫ 禁断コアが外れた！ ランダム：${sc.name} を墓地へ（コア残り${c.coreN}）`);
+  }else toast(`⚫ 禁断コアが外れた！（盾なし・コア残り${c.coreN}）`);
+  if(c.coreN<=0){
+    const yes=await ask(`⚫ 最後の禁断コアが外れた！\nバトルゾーンのカードを（耐性・置換に関係なく）すべて墓地に置き、その後 ${S.players[pi].label} はゲームに負けます。実行しますか？`);
+    if(yes){
+      snap();
+      for(const p2 of (S.vs?[0,1]:[0])){
+        const ZB=zonesOf(p2).battle;
+        const all=ZB.splice(0);
+        for(const x of all){
+          x.tapped=false;x.faceup=true;
+          if(x.gear&&x.gear.length){const gs=x.gear.splice(0);gs.forEach(g=>{g.faceup=true;zonesOf(p2).grave.push(g);});}
+          if(x.under&&x.under.length){const us=x.under.splice(0);us.forEach(u=>{u.faceup=true;zonesOf(p2).grave.push(u);});}
+          if(x.seals&&x.seals.length){const sl=x.seals.splice(0);sl.forEach(u=>{u.faceup=true;zonesOf(p2).grave.push(u);});}
+          zonesOf(p2).grave.push(x);
+        }
+      }
+      sfx("grave");renderAll();
+      toast(`⚫ 世界の終わり——バトルゾーンのすべてが墓地に置かれた`);
+      const op3=pi===0?1:0;
+      await declareWin(op3,`⚫ 禁断爆発：${S.players[pi].label} はゲームに負けた`);
+    }
+  }
+  renderAll();
+}
 function moveCardX(pFrom,fromZone,id,pTo,toZone){
   const f=findCard(pFrom,fromZone,id);if(!f)return;
+  if(S.expert&&fromZone==="battle"&&!(pFrom===pTo&&toZone==="battle")){
+    const rDC=getReg(f.card);
+    if(rDC&&rDC.gimmick==="dormacore"&&(f.card.coreN==null||f.card.coreN>0)){
+      toast(`⚫ ${faceNameOf(f.card)} はバトルゾーンを離れない！ かわりに禁断コアが外れる`);
+      dormaCoreRemove(pFrom,f.card);
+      return;
+    }
+  }
   f.arr.splice(f.idx,1);
   const c=f.card,Z=zonesOf(pTo);
   c.tapped=false;c.sideways=false;c.rot=0;c.buff=null;
@@ -6289,6 +6405,10 @@ function hotkeyMap(){
   return Object.assign(def,S.hotkeys||{});
 }
 function runHotkey(act){
+  if(GAME_PAUSE&&act!=="undo"){
+    toast("⏸ 処理中です（「▶ 再開」で解除）");
+    return;
+  }
   if(LABY_RUN){
     toast("⏳ ラビリンス・マジックの処理中です（完了後にターンが送られます）");
     return;
@@ -8053,49 +8173,15 @@ function openCardSheet(ctx){
       rerender();
     },"primary"));
   }
-  if(c.seals&&c.seals.length){
-    const isDorma=reg&&reg.gimmick==="dorma";
   if(reg&&reg.gimmick==="dormacore"&&ctx.zone==="battle"){
     if(c.coreN==null)c.coreN=3;
     box.appendChild(actBtn(`⚫ 禁断コアを1つ外す（残り${c.coreN}）＋自分の盾をランダムに墓地へ`,async ()=>{
-      if(c.coreN<=0)return;
-      snap();
-      c.coreN--;
-      sfx("grave");closeSheet();renderAll();
-      const Z2=zonesOf(ctx.p);
-      if(Z2.shield.length){
-        const j=randInt(Z2.shield.length);
-        const sc=Z2.shield.splice(j,1)[0];
-        sc.faceup=true;sc.tapped=false;
-        if(sc.under&&sc.under.length){const us=sc.under.splice(0);us.forEach(u=>{u.faceup=true;Z2.grave.push(u);});}
-        Z2.grave.push(sc);
-        renderAll();
-        toast(`⚫ コアが外れた！ ランダム：${sc.name} を墓地へ（コア残り${c.coreN}）`);
-      }else toast(`⚫ 盾がないため墓地送りはなし（コア残り${c.coreN}）`);
-      if(c.coreN<=0){
-        const yes=await ask(`⚫ 最後の禁断コアが外れた！\nバトルゾーンのカードを（耐性・置換に関係なく）すべて墓地に置き、その後 ${S.players[ctx.p].label} はゲームに負けます。実行しますか？`);
-        if(yes){
-          snap();
-          for(const p2 of (S.vs?[0,1]:[0])){
-            const ZB=zonesOf(p2).battle;
-            const all=ZB.splice(0);
-            for(const x of all){
-              x.tapped=false;x.faceup=true;
-              if(x.gear&&x.gear.length){const gs=x.gear.splice(0);gs.forEach(g=>{g.faceup=true;zonesOf(p2).grave.push(g);});}
-              if(x.under&&x.under.length){const us=x.under.splice(0);us.forEach(u=>{u.faceup=true;zonesOf(p2).grave.push(u);});}
-              if(x.seals&&x.seals.length){const sl=x.seals.splice(0);sl.forEach(u=>{u.faceup=true;zonesOf(p2).grave.push(u);});}
-              zonesOf(p2).grave.push(x);
-            }
-          }
-          sfx("grave");renderAll();
-          toast(`⚫ 世界の終わり——バトルゾーンのすべてが墓地に置かれた`);
-          const op3=ctx.p===0?1:0;
-          await declareWin(op3,`⚫ 禁断爆発：${S.players[ctx.p].label} はゲームに負けた`);
-        }
-      }
-      renderAll();
+      closeSheet();closeSel();
+      await dormaCoreRemove(ctx.p,c);
     },"warn",true));
   }
+  if(c.seals&&c.seals.length){
+    const isDorma=reg&&reg.gimmick==="dorma";
     box.appendChild(actBtn(`封印を1つ外す（残り${c.seals.length}）${isDorma?"＋効果選択":""}`,async ()=>{
       const s=c.seals.shift();
       s.faceup=true;zonesOf(ctx.p).grave.push(s);
@@ -9777,6 +9863,7 @@ $("stPickFull").addEventListener("click",()=>{
   $("startOlay").classList.remove("open");startCustom(true);
 });
 $("stCancel").addEventListener("click",()=>$("startOlay").classList.remove("open"));
+$("btnPause").addEventListener("click",togglePause);
 $("btnNextTurn").addEventListener("click",nextTurn);
 $("btnEffects").addEventListener("click",openEffects);
 $("btnUndo").addEventListener("click",undo);
@@ -10003,14 +10090,15 @@ $("btnViewDeck").addEventListener("click",async ()=>{
   const secs=[["メイン",d.main||[]],["超GR",d.gr||[]],["超次元",d.hy||[]],["ゲーム外",d.ex||[]],["特殊",d.sp||[]]];
   const ttl=document.createElement("div");
   ttl.style.cssText="color:#fff;font-weight:900;font-size:15px";
-  const total=(d.main||[]).reduce((a,x)=>a+(x.n||1),0);
+  const cntOf=x=>(x.n!=null?x.n:(x.count!=null?x.count:1));
+  const total=(d.main||[]).reduce((a,x)=>a+cntOf(x),0);
   ttl.textContent=`🖼 ${name}（メイン${total}枚）`;
   ol.appendChild(ttl);
   for(const [lb,arr] of secs){
     if(!arr.length)continue;
     const h=document.createElement("div");
     h.style.cssText="color:#9aa4b2;font-size:12px;font-weight:700;align-self:flex-start";
-    h.textContent=`■ ${lb}（${arr.reduce((a,x)=>a+(x.n||1),0)}枚・${arr.length}種）`;
+    h.textContent=`■ ${lb}（${arr.reduce((a,x)=>a+cntOf(x),0)}枚・${arr.length}種）`;
     ol.appendChild(h);
     const g2=document.createElement("div");
     g2.style.cssText="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start;align-self:stretch";
@@ -10033,10 +10121,10 @@ $("btnViewDeck").addEventListener("click",async ()=>{
       nm.style.cssText="font-size:9px;color:#cbd3df;text-align:center;line-height:1.2;margin-top:2px;word-break:break-word";
       nm.textContent=it.name;
       cell.appendChild(nm);
-      if((it.n||1)>1){
+      if(cntOf(it)>1){
         const b=document.createElement("span");
         b.style.cssText="position:absolute;right:2px;top:2px;background:#000d;color:#fff;font-size:11px;font-weight:900;border-radius:6px;padding:1px 5px";
-        b.textContent="×"+it.n;
+        b.textContent="×"+cntOf(it);
         cell.appendChild(b);
       }
       g2.appendChild(cell);
