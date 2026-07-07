@@ -314,8 +314,9 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 .an-atkB{animation:anAtkBack .4s ease-out}
 @keyframes anBreak{0%{transform:scale(1) rotate(0)}25%{transform:scale(1.1) rotate(-5deg)}50%{transform:scale(1.12) rotate(5deg)}100%{transform:scale(1.35) rotate(0);opacity:0;filter:brightness(2.4)}}
 @keyframes anLose{0%{filter:none;transform:scale(1)}30%{filter:brightness(1.6) drop-shadow(0 0 14px #ef4444)}100%{filter:brightness(.35) grayscale(.7);transform:scale(.9);opacity:.25}}
+@keyframes anVanish{0%{opacity:1;filter:none;transform:scale(1)}30%{filter:brightness(1.7) drop-shadow(0 0 12px #ef4444)}100%{opacity:0;transform:scale(.75);filter:brightness(.3)}}
 @keyframes anClash{0%{transform:scale(1)}40%{transform:scale(1.12)}100%{transform:scale(1)}}
-@keyframes anCip{0%{box-shadow:0 0 0 0 rgba(96,165,250,.9)}100%{box-shadow:0 0 0 18px rgba(96,165,250,0)}}
+@keyframes anCip{0%{box-shadow:0 0 0 2px rgba(96,165,250,1);filter:brightness(1.35)}100%{box-shadow:0 0 0 28px rgba(96,165,250,0);filter:none}}
 @keyframes anDark{0%{box-shadow:0 0 0 0 rgba(232,121,249,.9);filter:brightness(1.4) hue-rotate(20deg)}100%{box-shadow:0 0 0 22px rgba(232,121,249,0);filter:none}}
 @keyframes bodyShake{0%,100%{transform:translate(0,0)}20%{transform:translate(-7px,3px)}40%{transform:translate(6px,-4px)}60%{transform:translate(-5px,-3px)}80%{transform:translate(4px,3px)}}
 body.shake{animation:bodyShake .4s ease-out}
@@ -323,7 +324,7 @@ body.shake{animation:bodyShake .4s ease-out}
 .an-dark{animation:anDark .7s ease-out;border-radius:10px}
 @keyframes anGold{0%{box-shadow:0 0 0 0 rgba(250,204,21,.95);filter:brightness(1.55)}100%{box-shadow:0 0 0 22px rgba(250,204,21,0);filter:none}}
 .an-gold{animation:anGold .7s ease-out;border-radius:10px}
-@keyframes anCharge{0%{box-shadow:0 0 0 0 rgba(74,222,128,.85);transform:scale(1.12)}100%{box-shadow:0 0 0 16px rgba(74,222,128,0);transform:scale(1)}}
+@keyframes anCharge{0%{box-shadow:0 0 0 2px rgba(74,222,128,1);transform:scale(1.18);filter:brightness(1.4)}100%{box-shadow:0 0 0 26px rgba(74,222,128,0);transform:scale(1);filter:none}}
 .an-charge{animation:anCharge .45s ease-out;border-radius:10px}
 #resultOlay{position:fixed;inset:0;z-index:96;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(2,4,10,.86);animation:fadeIn .3s ease-out}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -2808,9 +2809,10 @@ const FX_TYPES=[
   ["graveViewMy","自分の墓地を見る（一覧表示）"],
   ["randMove","ランダムでn枚選んで移動（実行時に対象ゾーンと行き先を選択・デッドソード型）"],
   ["flip","この多面カードを裏返す（次の面へ・チャクラ/ディアスZ型・確認あり）"],
+  ["handShieldUp","手札から1枚選んで表向きにシールド化（サッヴァーク型・任意/新規盾or重ねるを選択）"],
 ];
 const FX_LABEL=new Proxy(Object.fromEntries(FX_TYPES),{get:(t,k)=>(k in t)?t[k]:(typeof k==="string"&&k.startsWith("sp:")?"特殊："+k.slice(3):k)});
-const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip"]);
+const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp"]);
 const fxNoN=t=>FX_NO_N.has(t)||(typeof t==="string"&&t.startsWith("sp:"));
 function fxSummary(list){
   if(!list||!list.length)return "（効果なし）";
@@ -3219,6 +3221,30 @@ async function runFxList(pi,list,srcCard){
       Z.deck.sort(()=>Math.random()-.5);
       toast("山札をシャッフルした");
       sfx("draw");
+    }else if(f.t==="handShieldUp"){
+      if(!Z.hand.length){toast("手札がありません");continue;}
+      const j=await askChoice(`🛡✨ 手札から表向きにシールド化するカードを選択（任意）`,
+        [...Z.hand.map(x=>faceNameOf(x)),"シールド化しない"]);
+      if(j===null||j>=Z.hand.length)continue;
+      snap();
+      const sc=Z.hand.splice(j,1)[0];
+      sc.faceup=true;sc.tapped=false;
+      if(S.turn>0)sc.mark=true;
+      let put=0;
+      if(Z.shield.length){
+        put=await askChoice("置き方を選択",["新しい盾として置く","既存の盾に重ねる"]);
+        if(put===null){Z.hand.splice(j,0,sc);continue;}
+      }
+      if(put===1){
+        const pk=await askChoice("どの盾に重ねる？",Z.shield.map((x,i2)=>`盾${i2+1}${x.faceup?`（表：${x.name}）`:""}${x.under&&x.under.length?` +${x.under.length}`:""}`));
+        if(pk===null){Z.hand.splice(j,0,sc);continue;}
+        const t2=Z.shield[pk];t2.under=t2.under||[];t2.under.push(sc);
+        toast(`🛡✨ 盾${pk+1}に表向きで重ねた：${sc.name}`);
+      }else{
+        Z.shield.push(sc);
+        toast(`🛡✨ 表向きシールド化：${sc.name}`);
+      }
+      sfx("move");renderAll();
     }else if(f.t==="flip"){
       const tgtC=srcCard||null;
       if(!tgtC){toast("裏返す対象がありません");continue;}
@@ -5923,20 +5949,24 @@ function placeCard(Z,toZone,c){
   else Z.hand.push(c);
 }
 async function savvarkReplace(pi,c){
-  const Z2=zonesOf(pi);
   const opts=[];
-  Z2.shield.forEach((sc,si)=>{
-    if(sc.faceup)opts.push({lb:`${sc.name}（盾${si+1}の本体）`,si,ui:-1});
-    (sc.under||[]).forEach((u,ui)=>{
-      if(u.faceup)opts.push({lb:`${u.name}（盾${si+1}の上）`,si,ui});
+  const sides=S.vs?[[pi,"自分"],[pi===0?1:0,"相手"]]:[[0,"自分"]];
+  for(const [pp,lb0] of sides){
+    const ZS=zonesOf(pp);
+    ZS.shield.forEach((sc,si)=>{
+      if(sc.faceup)opts.push({lb:`${lb0}：${sc.name}（盾${si+1}の本体）`,pp,si,ui:-1});
+      (sc.under||[]).forEach((u,ui)=>{
+        if(u.faceup)opts.push({lb:`${lb0}：${u.name}（盾${si+1}の上）`,pp,si,ui});
+      });
     });
-  });
+  }
   if(!opts.length)return false;
   const j=await askChoice(`🛡✨ ${faceNameOf(c)}：バトルゾーンを離れるかわりに、表向きの盾カードを1枚選んで墓地に置きますか？`,
     [...opts.map(o=>o.lb),"置換しない（そのまま離れる）"]);
   if(j===null||j>=opts.length)return false;
   snap();
   const o=opts[j];
+  const Z2=zonesOf(o.pp);
   const sc=Z2.shield[o.si];
   let moved;
   if(o.ui<0){
@@ -6156,9 +6186,9 @@ function dissolveGhost(id2,mode){
   if(!el)return;
   const r=el.getBoundingClientRect();
   const g=el.cloneNode(true);
-  g.style.cssText=`position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;margin:0;z-index:60;pointer-events:none;animation:${mode==="break"?"anBreak .38s ease-in":"anLose .45s ease-in"} forwards`;
+  g.style.cssText=`position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;margin:0;z-index:88;pointer-events:none;animation:${mode==="break"?"anBreak .3s ease-in":"anVanish .32s ease-in"} forwards`;
   document.body.appendChild(g);
-  setTimeout(()=>g.remove(),500);
+  setTimeout(()=>g.remove(),340);
 }
 function moveCardXRaw(pFrom,fromZone,id,pTo,toZone){
   return moveCardX(pFrom,fromZone,id,pTo,toZone,true);
@@ -6177,7 +6207,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
       return;
     }
     if(!skipRep&&rDC&&rDC.repShield){
-      const hasFu=zonesOf(pFrom).shield.some(sc=>sc.faceup||(sc.under||[]).some(u=>u.faceup));
+      const hasFu=(S.vs?[0,1]:[0]).some(pp=>zonesOf(pp).shield.some(sc=>sc.faceup||(sc.under||[]).some(u=>u.faceup)));
       if(hasFu){
         (async()=>{
           const done=await savvarkReplace(pFrom,f.card);
@@ -7169,6 +7199,13 @@ function cardEl(pi,zone,c){
       el.appendChild(cb2);
     }
   }
+  if(zone==="battle"&&(()=>{const r0=getReg(c);return r0&&r0.gimmick==="zeron";})()){
+    const gd=["te","bo","ha","fu"].filter(k=>c.gi&&c.gi[k]).length;
+    const zb=document.createElement("span");
+    zb.textContent="🌙"+gd+"/4";
+    zb.style.cssText=`position:absolute;left:2px;top:2px;z-index:6;background:#000d;color:${gd===4?"#e879f9":"#93c5fd"};font-size:11px;font-weight:900;border-radius:6px;padding:0 5px;line-height:1.5;pointer-events:none${gd===4?";box-shadow:0 0 8px 2px rgba(232,121,249,.6)":""}`;
+    el.appendChild(zb);
+  }
   if(zone==="battle"&&c.cnt>0){
     const kb=document.createElement("span");
     kb.textContent="🔵×"+c.cnt;
@@ -8037,11 +8074,12 @@ function attachPointer(el,ctx){
         mode="preview";
         try{navigator.vibrate&&navigator.vibrate(10);}catch(e){}
         showCardPreview(ctx);
-      },500);
+      },600);
     }
     const move=e2=>{
       const dx=e2.clientX-sx, dy=e2.clientY-sy;
       if(!mode){
+        if(lpT&&Math.hypot(dx,dy)>5){clearTimeout(lpT);lpT=null;}
         if(Math.hypot(dx,dy)<10)return;
         if(lpT){clearTimeout(lpT);lpT=null;}
         if(scroller&&Math.abs(dx)>Math.abs(dy)*1.4)mode="scroll";
@@ -8927,6 +8965,7 @@ function openCardSheet(ctx){
           toast(`山上${n2}枚を墓地へ`);
         }
         sfx("ok");
+        fxAnim(c.id,"an-cip",600);
         if(c.gi.te&&c.gi.bo&&c.gi.ha&&c.gi.fu){
           if(await ask("🌑 4つの儀がすべてリンク！\n零龍卍誕しますか？")){
             if(link&&link.length>1)c.face=((c.face||0)+1)%link.length;
@@ -9924,23 +9963,131 @@ function openShieldViewer(pi){
 function openZeronPanel(pi,c){
   const names=[["te","手札の儀"],["bo","墓地の儀"],["ha","破壊の儀"],["fu","復活の儀"]];
   const done=names.filter(([k])=>c.gi&&c.gi[k]).length;
-  $("vTitle").textContent=`🌑 零龍の儀：${done}/4 リンク${done===4?"（卍誕！）":""}`;
-  $("vHint").textContent="コアの画像を「手札の儀」などの名前で登録しておくと、ここに表示されます。リンク操作はカードのメニューから。";
-  $("vSearch").style.display="none";
-  $("vOk").style.display="none";$("vStatus").textContent="";
-  const g=$("vGrid");g.innerHTML="";
-  for(const [k,nm] of names){
-    const wrap=document.createElement("div");
-    const el=vCardEl(nm);
-    if(c.gi&&c.gi[k])el.classList.add("picked");
-    else el.style.opacity=".45";
+  const old=document.getElementById("zeronOlay");
+  if(old)old.remove();
+  const ol=document.createElement("div");
+  ol.id="zeronOlay";
+  ol.style.cssText="position:fixed;inset:0;background:rgba(2,3,10,.92);z-index:85;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:14px";
+  const ttl=document.createElement("div");
+  ttl.style.cssText="color:#fff;font-weight:900;font-size:16px";
+  ttl.textContent=`🌙 零龍の儀：${done} / 4 リンク${done===4?"　—　卍誕の時来たれり":""}`;
+  ol.appendChild(ttl);
+  const grid=document.createElement("div");
+  const cw=Math.min(120,Math.floor(window.innerWidth/4.4));
+  grid.style.cssText=`display:grid;grid-template-columns:repeat(3,${cw}px);grid-template-rows:repeat(3,${cw*1.4|0}px);gap:8px;align-items:center;justify-items:center`;
+  const cellAt=(gr,gc)=>{const d=document.createElement("div");d.style.cssText=`grid-row:${gr};grid-column:${gc};width:${cw}px`;grid.appendChild(d);return d;};
+  const pos=[[1,2],[2,1],[2,3],[3,2]];
+  names.forEach(([k,nm],i)=>{
+    const cell=cellAt(pos[i][0],pos[i][1]);
+    const on=!!(c.gi&&c.gi[k]);
+    const w=document.createElement("div");
+    w.style.cssText="position:relative;width:100%";
+    const u=imgURL.get(normName(nm));
+    if(u){
+      const im=document.createElement("img");
+      im.src=u;im.draggable=false;
+      im.style.cssText=`width:100%;border-radius:8px;display:block;transition:all .3s;${on?"box-shadow:0 0 16px 4px rgba(147,197,253,.9);":"filter:grayscale(1) brightness(.35);"}`;
+      w.appendChild(im);
+    }else{
+      const ph=document.createElement("div");
+      ph.style.cssText=`width:100%;aspect-ratio:63/88;border-radius:8px;border:2px ${on?"solid #93c5fd":"dashed #3a4560"};display:flex;align-items:center;justify-content:center;color:${on?"#93c5fd":"#556077"};font-size:11px;font-weight:900;text-align:center;padding:4px;${on?"box-shadow:0 0 16px 4px rgba(147,197,253,.7);":""}`;
+      ph.textContent=nm;
+      w.appendChild(ph);
+    }
     const cap=document.createElement("div");
-    cap.style.cssText="font-size:11px;font-weight:800;text-align:center;margin-top:4px;color:"+(c.gi&&c.gi[k]?"var(--tap)":"var(--muted)");
-    cap.textContent=c.gi&&c.gi[k]?"✅ リンク済":"未リンク";
-    wrap.appendChild(el);wrap.appendChild(cap);
-    g.appendChild(wrap);
+    cap.style.cssText=`font-size:11px;font-weight:900;text-align:center;margin-top:3px;color:${on?"#93c5fd":"#556077"}`;
+    cap.textContent=`${nm}　${on?"✅":"—"}`;
+    const wrap=document.createElement("div");
+    wrap.appendChild(w);wrap.appendChild(cap);
+    cell.appendChild(wrap);
+  });
+  const center=cellAt(2,2);
+  const hu=imgURL.get(faceKeyOf(c));
+  const hw=document.createElement("div");
+  hw.style.cssText="position:relative;width:100%";
+  if(hu){
+    const im=document.createElement("img");
+    im.src=hu;im.draggable=false;
+    im.style.cssText=`width:100%;border-radius:8px;display:block;box-shadow:0 0 ${10+done*7}px ${2+done*2}px rgba(232,121,249,${0.3+done*0.17});transition:all .4s`;
+    hw.appendChild(im);
+  }else{
+    const ph=document.createElement("div");
+    ph.style.cssText="width:100%;aspect-ratio:63/88;border-radius:8px;background:#1a2233;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:900;text-align:center";
+    ph.textContent=faceNameOf(c);
+    hw.appendChild(ph);
   }
-  $("viewerOlay").classList.add("open");
+  const ccap=document.createElement("div");
+  ccap.style.cssText="font-size:11px;font-weight:900;text-align:center;margin-top:3px;color:#e879f9";
+  ccap.textContent=faceNameOf(c);
+  const cwrap=document.createElement("div");
+  cwrap.appendChild(hw);cwrap.appendChild(ccap);
+  center.appendChild(cwrap);
+  ol.appendChild(grid);
+  // 卍誕後の姿（零龍）：儀が進むほど闇から浮かび上がる
+  {
+    const lk0=LINKS.get(normName(c.name));
+    if(lk0&&lk0.length>1){
+      const nf=lk0[((c.face||0)+1)%lk0.length];
+      const nu=imgURL.get(nf);
+      const prow=document.createElement("div");
+      prow.style.cssText="display:flex;align-items:center;gap:10px;background:rgba(20,10,30,.6);border:1px solid #3b2a52;border-radius:10px;padding:6px 12px";
+      const plb=document.createElement("div");
+      plb.style.cssText="font-size:11px;font-weight:900;color:#9aa4b2;white-space:pre-line;text-align:center";
+      plb.textContent=done===4?"卍誕の刻…！":"卍誕後の姿\n（儀が進むと浮かび上がる）";
+      const rv=done/4;
+      if(nu){
+        const pim=document.createElement("img");
+        pim.src=nu;pim.draggable=false;
+        pim.style.cssText=`width:64px;border-radius:6px;display:block;transition:all .5s;filter:grayscale(${1-rv}) brightness(${0.25+rv*0.85}) blur(${(1-rv)*2.5}px);${done===4?"box-shadow:0 0 18px 5px rgba(232,121,249,.9);":""}`;
+        prow.appendChild(pim);
+      }else{
+        const pph=document.createElement("div");
+        pph.style.cssText=`width:64px;aspect-ratio:63/88;border-radius:6px;background:#12081d;display:flex;align-items:center;justify-content:center;color:#6b5a86;font-size:9px;font-weight:900;text-align:center;padding:2px;opacity:${0.3+rv*0.7}`;
+        pph.textContent=nf;
+        prow.appendChild(pph);
+      }
+      prow.appendChild(plb);
+      ol.appendChild(prow);
+    }
+  }
+  const bar=document.createElement("div");
+  bar.style.cssText="display:flex;gap:8px;flex-wrap:wrap;justify-content:center";
+  if(done===4){
+    const lk=LINKS.get(normName(c.name));
+    const b=document.createElement("button");
+    b.className="btn primary";
+    b.style.cssText="font-size:15px;padding:10px 16px;font-weight:900";
+    b.textContent="💀 零龍卍誕！！";
+    b.addEventListener("click",async ev=>{
+      ev.stopPropagation();
+      ol.remove();
+      snap();
+      if(lk&&lk.length>1)c.face=((c.face||0)+1)%lk.length;
+      c.tapped=false;
+      sfx("atk");
+      if(S.anim!==false){
+        document.body.classList.add("shake");
+        setTimeout(()=>document.body.classList.remove("shake"),450);
+        setTimeout(()=>fxAnim(c.id,"an-dark",900),80);
+      }
+      renderAll();
+      toast("💀 零龍卍誕！！ このターン、相手クリーチャーすべてのパワーを0にする");
+      const op2=pi===0?1:0;
+      if(S.vs&&zonesOf(op2).battle.length&&await ask("相手のクリーチャーをすべて破壊しますか？（パワー0）")){
+        for(const t of [...zonesOf(op2).battle])await destroyCreature(op2,t);
+        renderAll();
+      }
+    });
+    bar.appendChild(b);
+  }
+  ol.appendChild(bar);
+  const ht=document.createElement("div");
+  ht.style.cssText="color:#9aa4b2;font-size:12px;text-align:center";
+  ht.textContent="儀のリンク操作はカードメニューの各儀ボタンから（達成すると青く灯ります）\n儀の画像は「手札の儀」等の名前でカード画像登録すると表示されます／背景タップで閉じる";
+  ht.style.whiteSpace="pre-line";
+  ol.appendChild(ht);
+  ol.addEventListener("click",()=>ol.remove());
+  document.body.appendChild(ol);
 }
 function openDeckViewer(pi){
   const Z=zonesOf(pi);
