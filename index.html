@@ -7110,15 +7110,26 @@ function cardEl(pi,zone,c){
   }
   {
     el.dataset.cid=c.id;
+    {
+      const afx=ANIM_FX.get(c.id);
+      if(afx&&S.anim!==false&&Date.now()<afx.until)el.classList.add(afx.cls);
+    }
     if(window.__atkAnim===c.id&&S.anim!==false){
+      ANIM_FX.set(c.id,{cls:(pi===S.seat)?"an-atkF":"an-atkB",until:Date.now()+420});
       el.classList.add((pi===S.seat)?"an-atkF":"an-atkB");
+      setTimeout(()=>ANIM_FX.delete(c.id),430);
       window.__atkAnim=null;
     }
     const pv=CARD_PREV.get(c.id);
     if(pv&&S.anim!==false){
       if(pv.face!==(c.face||0))el.classList.add("an-spin");
       else if(pv.faceup!==c.faceup)el.classList.add("an-flip");
-      else if(pv.zone!==zone)el.classList.add(zone==="hand"?"an-deal":(zone==="mana"?"an-charge":"an-pop"));
+      else if(pv.zone!==zone){
+        const zc=zone==="hand"?"an-deal":(zone==="mana"?"an-charge":"an-pop");
+        el.classList.add(zc);
+        ANIM_FX.set(c.id,{cls:zc,until:Date.now()+460});
+        setTimeout(()=>{const a2=ANIM_FX.get(c.id);if(a2&&a2.cls===zc)ANIM_FX.delete(c.id);},470);
+      }
       else if(pv.tapped!==c.tapped)el.classList.add(c.tapped?"an-tap":"an-untap");
     }
     CARD_PREV.set(c.id,{tapped:!!c.tapped,faceup:!!c.faceup,zone,face:c.face||0});
@@ -7248,6 +7259,22 @@ function cardEl(pi,zone,c){
     cb.textContent="⚫×"+c.coreN;
     cb.style.cssText="position:absolute;left:2px;top:2px;z-index:6;background:#000d;color:#e879f9;font-size:11px;font-weight:900;border-radius:6px;padding:0 5px;line-height:1.5;pointer-events:none";
     el.appendChild(cb);
+  }
+  if(zone==="battle"&&!hidden&&c.faceup){
+    const r0=getReg(c);
+    if(r0){
+      const ics=[];
+      if(r0.blocker||(c.buff&&c.buff.blocker))ics.push("🛡");
+      if(r0.slayer||(c.buff&&c.buff.slayer))ics.push("☠");
+      const bk0=c.hyper&&r0.hmBk?r0.hmBk:r0.breaks;
+      if(bk0&&bk0!=="1")ics.push(bk0==="2"?"W":bk0==="3"?"T":bk0==="all"?"∀":bk0+"B");
+      if(ics.length){
+        const ib=document.createElement("span");
+        ib.textContent=ics.join("");
+        ib.style.cssText="position:absolute;right:2px;top:2px;z-index:6;background:#000c;color:#fcd34d;font-size:10px;font-weight:900;border-radius:6px;padding:0 4px;line-height:1.5;pointer-events:none";
+        el.appendChild(ib);
+      }
+    }
   }
   if(zone==="battle"&&!hidden&&c.faceup&&S.showPower!==false){
     const pw=dispPower(c);
@@ -8010,12 +8037,19 @@ function openShieldStack(pi,id){
   ol.addEventListener("click",()=>ol.remove());
   document.body.appendChild(ol);
 }
+const ANIM_FX=new Map();
 function fxAnim(id,cls,ms){
   if(S.anim===false)return Promise.resolve();
+  ms=ms||400;
+  ANIM_FX.set(id,{cls,until:Date.now()+ms});
   const el=document.querySelector(`[data-cid="${id}"]`);
-  if(!el)return Promise.resolve();
-  el.classList.add(cls);
-  return new Promise(r=>setTimeout(()=>{el.classList.remove(cls);r();},ms||400));
+  if(el)el.classList.add(cls);
+  return new Promise(r=>setTimeout(()=>{
+    ANIM_FX.delete(id);
+    const el2=document.querySelector(`[data-cid="${id}"]`);
+    if(el2)el2.classList.remove(cls);
+    r();
+  },ms));
 }
 function showCardPreview(ctx){
   const f=findCard(ctx.p,ctx.zone,ctx.id);
@@ -8045,6 +8079,22 @@ function showCardPreview(ctx){
         pb.textContent="⚡"+pw;
         pb.style.cssText=`position:absolute;right:8px;bottom:8px;background:${up?"#14351f":down?"#3a1414":"#000c"};color:${up?"#4ade80":down?"#f87171":"#fff"};font-size:16px;font-weight:900;border-radius:8px;padding:2px 10px;box-shadow:0 2px 8px rgba(0,0,0,.6)`;
         wrap.appendChild(pb);
+      }
+    }
+    if(ctx.zone==="battle"){
+      const r0=getReg(c);
+      if(r0){
+        const tags=[];
+        if(r0.blocker||(c.buff&&c.buff.blocker))tags.push("🛡ブロッカー");
+        if(r0.slayer||(c.buff&&c.buff.slayer))tags.push("☠スレイヤー");
+        const bk0=c.hyper&&r0.hmBk?r0.hmBk:r0.breaks;
+        if(bk0&&bk0!=="1")tags.push(bk0==="2"?"W・ブレイカー":bk0==="3"?"T・ブレイカー":bk0==="all"?"ワールド・ブレイカー":bk0+"枚ブレイク");
+        if(tags.length){
+          const tb=document.createElement("span");
+          tb.textContent=tags.join("　");
+          tb.style.cssText="position:absolute;left:8px;top:8px;background:#000c;color:#fcd34d;font-size:13px;font-weight:900;border-radius:8px;padding:2px 10px;box-shadow:0 2px 8px rgba(0,0,0,.6)";
+          wrap.appendChild(tb);
+        }
       }
     }
     if(ctx.zone==="hand"){
@@ -8191,6 +8241,10 @@ function attachPointer(el,ctx){
             }
           }
         }
+        else if(!tgt){
+          toast("⤫ ドロップ先が見つかりません（ゾーンの枠内で離してください）");
+          sfx("move");
+        }
         else if(tgt&&!(tgt.p===ctx.p&&tgt.zone===ctx.zone)){
           snap();
           const inSel=S.multi&&S.msel.some(x=>x.id===ctx.id);
@@ -8253,6 +8307,26 @@ function dropTargetAt(x,y){
         return {el:z,zone,p};
       }
     }
+  }
+  // 近傍スナップ：外した時は40px以内で最も近い有効ゾーンを採用（墓地パイル等の狭い枠対策）
+  {
+    const valid2=["hand","mana","battle","grave","shield","resolve","hyper","exile","deckTop","grBottom"];
+    let best=null,bd=41;
+    for(const z of document.querySelectorAll("[data-zone]")){
+      const zone=z.dataset.zone;
+      if(!valid2.includes(zone))continue;
+      const r=z.getBoundingClientRect();
+      if(!r.width||!r.height)continue;
+      const dx=Math.max(r.left-x,0,x-r.right);
+      const dy=Math.max(r.top-y,0,y-r.bottom);
+      const d=Math.hypot(dx,dy);
+      if(d>0&&d<bd){
+        const pb=z.closest(".pboard");
+        best={el:z,zone,p:pb?+pb.dataset.p:0};
+        bd=d;
+      }
+    }
+    if(best)return best;
   }
   return null;
 }
@@ -10005,9 +10079,10 @@ function openZeronPanel(pi,c){
   const cw=Math.min(120,Math.floor(window.innerWidth/4.4));
   grid.style.cssText=`display:grid;grid-template-columns:repeat(3,${cw}px);grid-template-rows:repeat(3,${cw*1.4|0}px);gap:8px;align-items:center;justify-items:center`;
   const cellAt=(gr,gc)=>{const d=document.createElement("div");d.style.cssText=`grid-row:${gr};grid-column:${gc};width:${cw}px`;grid.appendChild(d);return d;};
-  const pos=[[1,2],[2,1],[2,3],[3,2]];
-  names.forEach(([k,nm],i)=>{
-    const cell=cellAt(pos[i][0],pos[i][1]);
+  const pos={te:[1,1,true],bo:[1,3,true],fu:[3,1,false],ha:[3,3,false]};
+  names.forEach(([k,nm])=>{
+    const [gr,gc,flip]=pos[k];
+    const cell=cellAt(gr,gc);
     const on=!!(c.gi&&c.gi[k]);
     const w=document.createElement("div");
     w.style.cssText="position:relative;width:100%";
@@ -10015,7 +10090,7 @@ function openZeronPanel(pi,c){
     if(u){
       const im=document.createElement("img");
       im.src=u;im.draggable=false;
-      im.style.cssText=`width:100%;border-radius:8px;display:block;transition:all .3s;${on?"box-shadow:0 0 16px 4px rgba(147,197,253,.9);":"filter:grayscale(1) brightness(.35);"}`;
+      im.style.cssText=`width:100%;border-radius:8px;display:block;transition:all .3s;${flip?"transform:rotate(180deg);":""}${on?"box-shadow:0 0 16px 4px rgba(147,197,253,.9);":"filter:grayscale(1) brightness(.35);"}`;
       w.appendChild(im);
     }else{
       const ph=document.createElement("div");
