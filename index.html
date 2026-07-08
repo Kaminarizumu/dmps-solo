@@ -12889,9 +12889,25 @@ $("bApply").addEventListener("click",()=>{
 /* ================= init ================= */
 if("serviceWorker" in navigator&&location.protocol==="https:"){
   window.addEventListener("load",()=>{
-    navigator.serviceWorker.register("./sw.js").then(()=>{
+    navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"}).then(reg=>{
       console.log("SW registered: offline ready");
+      reg.update().catch(()=>{});
+      reg.addEventListener("updatefound",()=>{
+        const nw=reg.installing;
+        if(!nw)return;
+        nw.addEventListener("statechange",()=>{
+          if(nw.state==="installed"&&navigator.serviceWorker.controller){
+            try{toast("🔄 新しいバージョンを取得しました。リロードします…");}catch(_){}
+            nw.postMessage({type:"SKIP_WAITING"});
+          }
+        });
+      });
     }).catch(e=>console.warn("SW register failed",e));
+    let _swReloaded=false;
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{
+      if(_swReloaded)return;_swReloaded=true;
+      setTimeout(()=>location.reload(),300);
+    });
   });
 }
 (async function init(){
