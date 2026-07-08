@@ -2150,7 +2150,7 @@ function nextTurn(){
       }
     }
   }
-  for(const P of S.players)P.zones.battle.forEach(c=>c.buff=null);
+  for(const P of S.players)P.zones.battle.forEach(c=>{c.buff=null;c.tmpWB=false;});
   let extra=false;
   if(S.extra[cur]>0){S.extra[cur]--;extra=true;S.turn++;}
   else if(S.vs){
@@ -2594,6 +2594,52 @@ function revealMaxMin(op,spellOnly){
 }
 
 /* ================= 汎用効果 ================= */
+// メクレイド残り処理：山上のめくり残りを「ランダム」または「好きな順」で山札の下へ
+async function mekureidoRest(Z,rest){
+  if(!rest.length)return;
+  if(rest.length===1){rest[0].faceup=false;Z.deck.push(rest[0]);return;}
+  const mode=await askChoice(`残り${rest.length}枚を山札の下へ。並び順は？`,["ランダム","好きな順に並べる"]);
+  let ordered;
+  if(mode===1){
+    ordered=[];const pool=[...rest];
+    while(pool.length>1){
+      const k=await askChoice(`山札の下から${ordered.length+1}番目に置くカードを選択（残り${pool.length}枚）`,pool.map(x=>x.name));
+      if(k===null)break;
+      ordered.push(pool.splice(k,1)[0]);
+    }
+    ordered.push(...pool);
+    toast(`残り${ordered.length}枚を指定順で山下へ：${ordered.map(x=>x.name).join(" → ")}`);
+  }else{
+    ordered=[...rest];
+    for(let i=ordered.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[ordered[i],ordered[j]]=[ordered[j],ordered[i]];}
+    toast(`残り${ordered.length}枚をランダムで山下へ`);
+  }
+  ordered.forEach(x=>{x.faceup=false;Z.deck.push(x);});
+}
+// メクレイド本体（count枚めくる。3=通常／6=ダブル）
+async function mekureidoRun(count){
+  const pi=S.vs?S.who:0;
+  closeSheet();
+  const Z=zonesOf(pi);
+  if(!Z.deck.length){toast("山札がありません");return;}
+  const n=await askNumber("メクレイドの数値（コストn以下）",5,99);
+  if(n===null)return;
+  snap();
+  const top=Z.deck.splice(0,Math.min(count,Z.deck.length));
+  const j=await askChoice(`🔧 ${count>=6?"ダブル・":""}メクレイド${n}：山上${top.length}枚\n出すカードを選択（コスト${n}以下・種族条件はプレイヤー判断）`,
+    [...top.map(x=>x.name),"出さない（全て山下へ）"]);
+  if(j!==null&&j<top.length){
+    const cc=top.splice(j,1)[0];
+    cc.faceup=true;cc.tapped=false;
+    Z.battle.push(cc);
+    markArrive(cc);
+    emitEvent(pi,"summon");
+    enqueueFx(pi,cc);
+    toast(`🔧 ${count>=6?"ダブル・":""}メクレイド${n}！ ${cc.name} を出した`);
+  }
+  await mekureidoRest(Z,top);
+  renderAll();sfx("ok");
+}
 const EFFECTS=[
   {name:"🔢 数字を宣言（ラッキーナンバー／シャッフ型）",cat:"✨ その他",
    desc:"宣言者と数字を選び、画面上部に常時表示（宣言者の次のターン開始まで）。効果の強制はなし・手動運用。該当コストのカード使用時に警告を表示",
@@ -2774,30 +2820,11 @@ const EFFECTS=[
      toast(`💎✨ ${S.players[pi].label}：このターン、マナが2倍！（コスト支払いのタップ枚数が半分に）`);
    }},
   {name:"メクレイド（山上3枚からコストn以下を出す）",
-   desc:"山札の上から3枚を見て、コストn以下（種族条件はプレイヤー判断）のカードを1枚出し、残りは山札の下へ",
-   async run(){
-     const pi=S.vs?S.who:0;
-     closeSheet();
-     const Z=zonesOf(pi);
-     if(!Z.deck.length){toast("山札がありません");return;}
-     const n=await askNumber("メクレイドの数値（コストn以下）",5,99);
-     if(n===null)return;
-     snap();
-     const top3=Z.deck.splice(0,Math.min(3,Z.deck.length));
-     const j=await askChoice(`🔧 メクレイド${n}：山上${top3.length}枚\n出すカードを選択（コスト${n}以下・種族条件はプレイヤー判断）`,
-       [...top3.map(x=>x.name),"出さない（全て山下へ）"]);
-     if(j!==null&&j<top3.length){
-       const cc=top3.splice(j,1)[0];
-       cc.faceup=true;cc.tapped=false;
-       Z.battle.push(cc);
-       markArrive(cc);
-       emitEvent(pi,"summon");
-       enqueueFx(pi,cc);
-       toast(`🔧 メクレイド${n}！ ${cc.name} を出した`);
-     }
-     top3.forEach(x=>{x.faceup=false;Z.deck.push(x);});
-     renderAll();sfx("ok");
-   }},
+   desc:"山札の上から3枚を見て、コストn以下（種族条件はプレイヤー判断）のカードを1枚出し、残りは山札の下へ（ランダム／好きな順を選択）",
+   async run(){ await mekureidoRun(3); }},
+  {name:"ダブル・メクレイド（山上6枚からコストn以下を出す）",
+   desc:"山札の上から6枚を見て、コストn以下のカードを1枚出し、残りは山札の下へ（ランダム／好きな順を選択）",
+   async run(){ await mekureidoRun(6); }},
   {name:"相手のクリーチャーをランダムでn体、指定ゾーンへ",
    desc:"手札/マナ/墓地/山札の上/山札の下/シールドから行き先を選び、ランダムに移動（スタックはまとめて移動）",
    async run(){
@@ -3396,8 +3423,8 @@ async function destroyCreature(pi,c){
         return;
       }
     }
-    if(!IGN&&rCX&&rCX.gimmick==="complex"&&(c.under?c.under.length:0)<8){
-      toast(`⬛ ${faceNameOf(c)} は離れない！（下が7枚以下）`);
+    if(!IGN&&rCX&&rCX.gimmick==="complex"&&(c.under?c.under.length:0)<(rCX.complexArc?7:8)){
+      toast(`⬛ ${faceNameOf(c)} は離れない！（下が${rCX.complexArc?6:7}枚以下）`);
       return;
     }
     {
@@ -4939,34 +4966,73 @@ async function execAttack(pi,id,tg){
       return;
     }
   }
-  // COMPLEX：攻撃時、下のカードを1枚墓地へ（クリーチャーなら墓地から出せる）
+  // COMPLEX：攻撃時
   if(S.expert){
     const rCX=getReg(c);
     if(rCX&&rCX.gimmick==="complex"&&c.under&&c.under.length){
-      const j=await askChoice(`⬛ ${faceNameOf(c)} の攻撃時：下のカードを1枚、墓地に置きますか？（クリーチャーなら墓地から出せる）`,
-        [...c.under.map(x=>x.name),"置かない"]);
-      if(j!==null&&j<c.under.length){
-        snap();
-        const t=c.under.splice(j,1)[0];
-        t.faceup=true;t.tapped=false;
-        Z.grave.push(t);
-        toast(`⬛ ${t.name} を墓地へ（下は残り${c.under.length}枚）`);
-        const rT=getReg(t);
-        const isCr=!rT||!rT.ctype||!["spell","crossgear","aura","gigaaura","dragheart","field","castle","tamaseed"].includes(rT.ctype);
-        if(isCr){
-          const yes=await ask(`《${t.name}》はクリーチャー。墓地から出しますか？`);
+      if(rCX.complexArc){
+        // ARC REALITY型：下7枚以上なら、下を全部手札に戻す→このターンW・ブレイカー→コスト9以下を1枚踏み倒し
+        if(c.under.length>=7){
+          const yes=await ask(`⬛ ${faceNameOf(c)} の攻撃時（下${c.under.length}枚）\n下のカードをすべて手札に戻し、このターン「ワールド・ブレイカー」を与え、コスト9以下を1枚コストを支払わずに実行しますか？`);
           if(yes){
-            const gi=Z.grave.findIndex(x=>x.id===t.id);
-            if(gi>=0)Z.grave.splice(gi,1);
-            Z.battle.push(t);
-            markArrive(t);
-            emitEvent(pi,"summon");
-            enqueueFx(pi,t);
-            toast(`⬛ ${t.name} を墓地から出した！`);
-            await waitFxIdle();
+            snap();
+            const kids=c.under.splice(0);
+            kids.forEach(x=>{x.faceup=true;x.tapped=false;Z.hand.push(x);});
+            c.tmpWB=true;
+            toast(`⬛ 下の${kids.length}枚を手札に戻し、このターン ワールド・ブレイカー！`);
+            const playable=Z.hand.filter(h=>{const r=getReg(h);return r&&r.cost!=null&&+r.cost<=9;});
+            if(playable.length){
+              const k=await askChoice("⬛ コスト9以下を1枚、手札からコストを支払わずに実行しますか？",
+                [...playable.map(h=>`${faceNameOf(h)}（コスト${getReg(h).cost}）`),"実行しない"]);
+              if(k!==null&&k<playable.length){
+                const h=playable[k];
+                const hi=Z.hand.findIndex(x=>x.id===h.id);
+                Z.hand.splice(hi,1);
+                h.faceup=true;h.tapped=false;
+                const rH=getReg(h);
+                if(rH&&rH.ctype==="spell"){
+                  if(Z.resolve.length){const olds=Z.resolve.splice(0);olds.forEach(o=>resolveOut(Z,o));}
+                  Z.resolve.push(h);emitEvent(pi,"spell");
+                  toast(`⬛ ${faceNameOf(h)} を唱えた（解決中へ）`);
+                }else{
+                  Z.battle.push(h);markArrive(h);emitEvent(pi,"summon");
+                  toast(`⬛ ${faceNameOf(h)} を出した`);
+                }
+                enqueueFx(pi,h);await waitFxIdle();
+              }
+            }
+            renderAll();
           }
+        }else{
+          toast(`⬛ ${faceNameOf(c)}：下が${c.under.length}枚（7枚未満）のため攻撃時能力は使えません`);
         }
-        renderAll();
+      }else{
+        // 初代マガツナ・パンドラ型：下1枚を墓地へ（クリーチャーなら墓地から出せる）
+        const j=await askChoice(`⬛ ${faceNameOf(c)} の攻撃時：下のカードを1枚、墓地に置きますか？（クリーチャーなら墓地から出せる）`,
+          [...c.under.map(x=>x.name),"置かない"]);
+        if(j!==null&&j<c.under.length){
+          snap();
+          const t=c.under.splice(j,1)[0];
+          t.faceup=true;t.tapped=false;
+          Z.grave.push(t);
+          toast(`⬛ ${t.name} を墓地へ（下は残り${c.under.length}枚）`);
+          const rT=getReg(t);
+          const isCr=!rT||!rT.ctype||!["spell","crossgear","aura","gigaaura","dragheart","field","castle","tamaseed"].includes(rT.ctype);
+          if(isCr){
+            const yes=await ask(`《${t.name}》はクリーチャー。墓地から出しますか？`);
+            if(yes){
+              const gi=Z.grave.findIndex(x=>x.id===t.id);
+              if(gi>=0)Z.grave.splice(gi,1);
+              Z.battle.push(t);
+              markArrive(t);
+              emitEvent(pi,"summon");
+              enqueueFx(pi,t);
+              toast(`⬛ ${t.name} を墓地から出した！`);
+              await waitFxIdle();
+            }
+          }
+          renderAll();
+        }
       }
     }
   }
@@ -5271,7 +5337,7 @@ async function execAttack(pi,id,tg){
   }
   else if(tg.kind==="shield"){
     const reg=getReg(c);
-    const bk=(c.hyper&&reg&&reg.hmBk)?reg.hmBk:(reg&&reg.breaks?reg.breaks:"1");
+    const bk=c.tmpWB?"all":((c.hyper&&reg&&reg.hmBk)?reg.hmBk:(reg&&reg.breaks?reg.breaks:"1"));
     let n;
     if(bk==="all")n="all";
     else if(bk==="powered"){
@@ -5496,6 +5562,23 @@ function fxUiPolish(){
     ol.dataset.polished="1";
     // マイナスパワー入力を許可（トグルは増やさず入力欄のmin制限を解除）
     try{const pw=document.getElementById("fxPower");if(pw){pw.removeAttribute("min");pw.setAttribute("step","500");}}catch(e){}
+    // COMPLEX：ARC REALITY型フラグを注入（NEO進化・タップインしない・下6枚以下で離れず攻撃不可・攻撃時に下を全部手札へ→W・ブレイカー→コスト9以下踏み倒し）
+    try{
+      const gm=document.getElementById("fxGimmick");
+      if(gm&&!document.getElementById("fxComplexArc")){
+        const host=gm.closest(".row")||gm.parentElement;
+        const nr=document.createElement("div");
+        nr.className="row";nr.style.cssText="gap:6px;flex-wrap:wrap;align-items:center";
+        const lab=document.createElement("label");
+        lab.style.cssText="font-size:12px";
+        const cb=document.createElement("input");
+        cb.type="checkbox";cb.id="fxComplexArc";
+        lab.appendChild(cb);
+        lab.appendChild(document.createTextNode(" ⬛ ARC REALITY型（COMPLEXと併用：NEO進化でタップインせず／下6枚以下で離れず・攻撃不可／攻撃時に下7枚以上なら全部手札へ→このターンW・ブレイカー→コスト9以下1枚踏み倒し）"));
+        nr.appendChild(lab);
+        host.after(nr);
+      }
+    }catch(e){console.warn("complexArc",e);}
     // ツインパクト下面（呪文面）の種族入力を種族欄の直後に注入（上面と別種族／呪文面に種族が付くカード用）
     try{
       const r5=document.getElementById("fxRace5");
@@ -5926,6 +6009,7 @@ function renderFxEditor(){
   $("fxPB").value=FXEDIT.pb||"";
   $("fxBreaks").value=FXEDIT.breaks||"1";
   $("fxGimmick").value=FXEDIT.gimmick||"";
+  {const e=document.getElementById("fxComplexArc");if(e)e.checked=!!FXEDIT.complexArc;}
   $("fxPowerSel").value=(FXEDIT.power!=null&&[...$("fxPowerSel").options].some(o=>o.value===String(FXEDIT.power)))?String(FXEDIT.power):"";
   $("fxCost").value=FXEDIT.cost==null?"":String(FXEDIT.cost);
   $("fxCost2").value=FXEDIT.cost2==null?"":String(FXEDIT.cost2);
@@ -6131,6 +6215,7 @@ function openFxEditor(key){
     pb:cur&&cur.pb||null,
     breaks:cur&&cur.breaks||"1",
     gimmick:cur&&cur.gimmick||"",
+    complexArc:cur&&!!cur.complexArc,
     cost:cur&&cur.cost!=null?cur.cost:null,
     cost2:cur&&cur.cost2!=null?cur.cost2:null,
     ctype:cur&&cur.ctype||"",
@@ -6350,6 +6435,7 @@ $("fxSave").addEventListener("click",async ()=>{
     pb:$("fxPB").value.trim()===""?null:Math.max(0,+$("fxPB").value||0),
     breaks:$("fxBreaks").value,
     gimmick:$("fxGimmick").value,
+    complexArc:document.getElementById("fxComplexArc")?$("fxComplexArc").checked:((FXEDIT&&FXEDIT.complexArc)||false),
     cost:$("fxCost").value===""?null:+$("fxCost").value,
     cost2:$("fxCost2").value===""?null:+$("fxCost2").value,
     ctype:$("fxCType").value,
@@ -6581,7 +6667,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.ignore)attrs.push(v.ignore==="cost"?`能力無視：コスト${v.ignoreN}以下`:"能力無視：名前指定");
     if(v.stCostM)attrs.push(`常在：${v.stCostF?v.stCostF+"の":""}${v.stCostT==="creature"?"クリーチャーの":v.stCostT==="spell"?"呪文の":""}召喚コスト−${v.stCostM}`);
     if(v.stCostUp)attrs.push(`常在：相手のコスト＋${v.stCostUp}${v.stCostUpF?`（${v.stCostUpF}）`:""}${v.stCostUpT?`【${v.stCostUpT==="spell"?"呪文":"クリーチャー"}】`:""}`);
-    if(v.gimmick==="complex")attrs.push("COMPLEX型");
+    if(v.gimmick==="complex")attrs.push(v.complexArc?"COMPLEX型(ARC REALITY)":"COMPLEX型");
     if(v.gimmick==="phoenixfield")attrs.push("フェニックス・フィールド");
     if(v.gzero)attrs.push("G・ゼロ");
     if(v.manaArm)attrs.push(`マナ武装${v.manaArm}`);
@@ -7175,7 +7261,8 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
     }
     const reg=getReg(c);
     if(reg&&(reg.d2||reg.wide))c.rot=(pTo===S.seat)?270:90;
-    if(S.expert&&reg&&reg.gimmick==="complex"){c.tapped=true;c.under=c.under||[];toast(`⬛ ${c.name} はタップして出る（下に8枚でアンタップ）`);}
+    if(S.expert&&reg&&reg.gimmick==="complex"&&!reg.complexArc){c.tapped=true;c.under=c.under||[];toast(`⬛ ${c.name} はタップして出る（下に8枚でアンタップ）`);}
+    if(S.expert&&reg&&reg.gimmick==="complex"&&reg.complexArc){c.under=c.under||[];}
     if(S.expert&&reg&&reg.tapIn&&(!reg.gimmick||reg.gimmick!=="complex")){c.tapped=true;toast(`⤵ ${c.name} はタップして出る`);}
     if(S.expert&&reg&&reg.jdiver){
       toast(`🌀 ジャストダイバー持ち：${faceNameOf(c)}（付与はメニューのバフから手動で・処理順は任意）`);
@@ -7332,6 +7419,8 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
     const rS=getReg(c);
     const evoS=rS&&["evo","neoevo","starevo","smaxevo","onismaxevo","gneo","lunatic","ultimate"].includes(rS.ctype);
     if(c.sick==null)c.sick=!evoS&&!(rS&&rS.sa);
+    // ペテンシー着地カウント：markArriveは配置前に呼ばれ「バトルゾーンにいるか」判定が偽になるため、確定配置後のここで加算（通常のドラッグ召喚もこれで確実にカウント）
+    if(fromZone!=="battle"){ENTERED_CNT++;c.bornTurn=S.turn;}
   }
   if(S.expert&&S.autoTap&&!S.freePlay&&fromZone==="hand"&&(toZone==="battle"||toZone==="resolve")){
     MOVE_TAP_CHAIN=MOVE_TAP_CHAIN.then(()=>autoTapCost(pTo,c)).catch(()=>{});
@@ -7447,13 +7536,13 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
       renderAll();
       return;
     }
-    if(rCX&&rCX.gimmick==="complex"&&(c.under?c.under.length:0)<8){
+    if(rCX&&rCX.gimmick==="complex"&&(c.under?c.under.length:0)<(rCX.complexArc?7:8)){
       const ZT=zonesOf(pTo);
       const key=(toZone==="deckTop"||toZone==="deckBottom")?"deck":(toZone==="shieldUp"?"shield":toZone);
       const arrT=ZT[key];
       if(arrT){const ix=arrT.findIndex(x=>x.id===c.id);if(ix>=0)arrT.splice(ix,1);}
       zonesOf(pFrom).battle.push(c);
-      toast(`⬛ ${faceNameOf(c)} は離れない！（下が7枚以下）`);
+      toast(`⬛ ${faceNameOf(c)} は離れない！（下が${rCX.complexArc?6:7}枚以下）`);
       renderAll();
       return;
     }
