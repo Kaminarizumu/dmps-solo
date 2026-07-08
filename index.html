@@ -6814,6 +6814,38 @@ function moveCardXRaw(pFrom,fromZone,id,pTo,toZone){
 }
 function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   const f=findCard(pFrom,fromZone,id);if(!f)return;
+  // バトルゾーン→墓地の手動移動：破壊されない判定（GGGグループ効果・レイド型・ゼロン等）
+  if(S.expert&&!S.freePlay&&fromZone==="battle"&&toZone==="grave"&&pFrom===pTo&&S.turn>0&&!skipRep){
+    const c=f.card;
+    const Z=zonesOf(pFrom);
+    const rCX=getReg(c);
+    const IGN=isIgnored(c,pFrom);
+    // 零龍カード
+    if(!IGN&&rCX&&rCX.gimmick==="zeron"){
+      const yes=window.confirm(`🌙 ${faceNameOf(c)} は零龍カード（破壊されない）\nそれでも墓地に置きますか？（効果でない・手動移動）`);
+      if(!yes)return;
+    }
+    // 自身のみのGGG（レイド型）
+    else if(!IGN&&rCX&&rCX.ggg==="noDestroy"&&Z.hand.length<=1){
+      const yes=window.confirm(`🎸 G・G・G発動中：${faceNameOf(c)} は破壊されない\nそれでも墓地に置きますか？（効果でない・手動移動）`);
+      if(!yes)return;
+    }
+    // GGGグループ効果（自身も含む）
+    else{
+      const grpSaver=Z.battle.find(x=>{
+        if(isSealed(x)||isIgnored(x,pFrom))return false;
+        const rx=getReg(x);
+        if(!rx||rx.ggg!=="noDestroyGrp")return false;
+        if(Z.hand.length>1)return false;
+        return lockFilterOk(rx.gggGrp||"",rCX,c);
+      });
+      if(!IGN&&grpSaver){
+        const self=(grpSaver.id===c.id);
+        const yes=window.confirm(`🎸 G・G・G（グループ）発動中：${faceNameOf(c)} は破壊されない${self?"":`（${faceNameOf(grpSaver)} の効果）`}\nそれでも墓地に置きますか？（効果でない・手動移動）`);
+        if(!yes)return;
+      }
+    }
+  }
   // 常在ロック／ターン限定ロック：呪文（唱える＝resolve送り）
   if(S.expert&&!S.freePlay&&toZone==="resolve"&&S.turn>0){
     const rQ=getReg(f.card);
@@ -6881,7 +6913,9 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   if((fromZone==="battle"||fromZone==="shield")&&(toZone==="grave"||toZone==="exile"))dissolveGhost(id,fromZone==="shield"?"break":"lose");
   f.arr.splice(f.idx,1);
   const c=f.card,Z=zonesOf(pTo);
-  c.tapped=false;c.sideways=false;c.rot=0;c.buff=null;
+  c.tapped=false;c.sideways=false;c.rot=0;
+  // buffは通常リセットするが、手札→バトルゾーンの召喚時はautoTapCostが消費するため残す
+  if(!(fromZone==="hand"&&toZone==="battle"))c.buff=null;
   c.faceup=(toZone!=="shield")?true:(fromZone==="battle"&&c.faceup);
   markArrive(c);
   if((toZone==="shield"||toZone==="shieldUp")&&S.turn>0)c.mark=true;
