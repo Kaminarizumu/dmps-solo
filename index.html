@@ -49,14 +49,17 @@ body.vs .pboard{gap:3px}
   background:linear-gradient(180deg,#161e30,#10141f);
   border-bottom:1px solid var(--line);
   box-shadow:0 1px 0 rgba(245,197,66,.15);
-  flex:0 0 auto;overflow-x:auto;
+  flex:0 0 auto;overflow:visible;
 }
+#topScroll{display:flex;align-items:center;gap:7px;min-width:0;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:thin}
+#btnSettings{flex:0 0 auto}
 @media (max-width:640px){
-  #topbar{overflow-x:visible;flex-wrap:wrap;gap:5px;row-gap:4px}
+  #topbar{gap:5px}
+  #topScroll{gap:5px}
   #topbar .wm{display:none}
   #topbar h1{font-size:18px}
   #topbar .btn.small{font-size:11px;padding:4px 8px}
-  #turnBadge{font-size:11px}
+  #turnBadge{font-size:11px;padding:3px 7px}
 }
 #topbar h1{
   font-size:15px;font-weight:900;letter-spacing:.06em;
@@ -322,18 +325,19 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
   flex:0 0 auto;display:flex;gap:7px;align-items:center;
   padding:8px 10px calc(8px + env(safe-area-inset-bottom));
   background:linear-gradient(180deg,#131a2a,#0e1220);
-  border-top:1px solid var(--line);flex-wrap:nowrap;overflow-x:auto;
+  border-top:1px solid var(--line);flex-wrap:nowrap;overflow:visible;
 }
+#barScroll{flex:0 0 auto;display:flex;gap:7px;align-items:center;min-width:0;flex-wrap:nowrap}
 #btnNextTurn{flex:1;font-size:15px;padding:12px;min-width:130px}
 #btnMore{display:none}
 @media (max-width:640px){
-  #bottombar{flex-wrap:wrap;overflow-x:visible;gap:5px;padding:5px 8px calc(5px + env(safe-area-inset-bottom))}
+  #bottombar{gap:5px;padding:5px 8px calc(5px + env(safe-area-inset-bottom))}
+  #barScroll{flex:1 1 auto;overflow-x:auto;scrollbar-width:thin}
   #bottombar .btn.small{font-size:11px;padding:6px 8px}
   #btnMore{display:inline-block}
-  #bottombar .bar-extra{display:none}
+  #barScroll .bar-extra{display:none}
   #bottombar.more-open .bar-extra{display:inline-block}
-  #btnPause{order:98}
-  #btnNextTurn{flex:1 1 100%;order:99;min-width:0;padding:11px;font-size:14px}
+  #btnNextTurn{flex:0 0 auto;min-width:104px;padding:11px 12px;font-size:14px}
 }
 
 #sheet{
@@ -495,28 +499,32 @@ body.shake{animation:bodyShake .4s ease-out}
 
 <div id="topbar">
   <h1><span class="logo">⚡</span><span class="wm"> DM Re:Vault</span></h1>
-  <span id="turnBadge">ターン 0</span>
-  <button class="btn small ex" id="btnExpert">EX</button>
-  <button class="btn small" id="btnDeckMenu">🃏 デッキ</button>
-  <button class="btn small" id="btnVs">対戦</button>
-  <button class="btn small" id="btnFlip" style="display:none">↕ 反転</button>
+  <div id="topScroll">
+    <span id="turnBadge">ターン 0</span>
+    <button class="btn small ex" id="btnExpert">EX</button>
+    <button class="btn small" id="btnDeckMenu">🃏 デッキ</button>
+    <button class="btn small" id="btnVs">対戦</button>
+    <button class="btn small" id="btnFlip" style="display:none">↕ 反転</button>
+  </div>
   <button class="btn small ghost" id="btnSettings">⚙</button>
 </div>
 
 <div id="board"></div>
 
 <div id="bottombar">
-  <button class="btn small bar-extra" id="btnStart">開始/再試合</button>
-  <button class="btn small" id="btnEffects">✨ 効果</button>
-  <button class="btn small" id="btnUndo">↩ 戻る</button>
-  <button class="btn small" id="btnMulti">複数選択</button>
-  <button class="btn small" id="btnWho" style="display:none">操作:P1</button>
-  <button class="btn small" id="btnSeat" style="display:none">視点:P1</button>
-  <button class="btn small warn" id="btnResignBar" style="display:none">🏳 投了</button>
-  <button class="btn small ghost bar-extra" id="btnLog">📜</button>
-  <button class="btn small bar-extra" id="btnFreePlay">踏倒:OFF</button>
-  <button class="btn small ghost" id="btnMore" title="その他の操作">⋯</button>
-  <button class="btn" id="btnPause" title="処理中（誤操作防止ロック）">⏸ 処理中</button>
+  <div id="barScroll">
+    <button class="btn small bar-extra" id="btnStart">開始/再試合</button>
+    <button class="btn small" id="btnEffects">✨ 効果</button>
+    <button class="btn small" id="btnUndo">↩ 戻る</button>
+    <button class="btn small" id="btnMulti">複数選択</button>
+    <button class="btn small" id="btnWho" style="display:none">操作:P1</button>
+    <button class="btn small" id="btnSeat" style="display:none">視点:P1</button>
+    <button class="btn small warn" id="btnResignBar" style="display:none">🏳 投了</button>
+    <button class="btn small ghost bar-extra" id="btnLog">📜</button>
+    <button class="btn small bar-extra" id="btnFreePlay">踏倒:OFF</button>
+    <button class="btn small ghost" id="btnMore" title="その他の操作">⋯</button>
+    <button class="btn" id="btnPause" title="処理中（誤操作防止ロック）">⏸ 処理中</button>
+  </div>
   <button class="btn primary" id="btnNextTurn">次のターン ▶</button>
 </div>
 
@@ -706,10 +714,10 @@ body.shake{animation:bodyShake .4s ease-out}
       </div>
       <div class="hint">コンパクト：丸いゲージにカードをスライドで置ける。ゲージをタップでマナパネルが開き、中でタップ/アンタップ・移動ができます。自動タップは両表示で有効です。</div>
       <div class="row" style="align-items:center;gap:8px">
-        <span style="font-size:12px;font-weight:700">カード上のラベル（能力/コスト/マーク）</span>
+        <span style="font-size:12px;font-weight:700">カード上のラベル（ブレイク数/ブロッカー/スレイヤー/酔い等）</span>
         <select id="setBattleLabels" style="flex:1">
           <option value="on">表示</option>
-          <option value="off">隠す（長押しで確認）</option>
+          <option value="off">隠す（コスト・パワーは常に表示／長押しで詳細）</option>
         </select>
       </div>
       <div class="row" style="align-items:center;gap:8px">
@@ -749,6 +757,7 @@ body.shake{animation:bodyShake .4s ease-out}
         <input type="range" id="setCardScale" min="70" max="200" step="5" value="100" style="flex:1">
         <span id="cardScaleVal" style="font-size:12px;width:44px;text-align:right">100%</span>
       </div>
+      <div class="row"><label><input type="checkbox" id="setFitBoard" checked> カードを画面の高さに自動で収める（オフ＝サイズ設定をそのまま大きく反映し、はみ出す分は縦スクロール）</label></div>
       <div class="row"><label><input type="checkbox" id="setAutoTap"> コスト自動マナタップ（EX時：コスト登録済みカードを手札から出すと左から自動タップ）</label></div>
       <div class="row"><label><input type="checkbox" id="setNoUntapMana"> ターン開始時にマナを自動アンタップしない</label></div>
       <div class="row"><label><input type="checkbox" id="setTapMultiMana"> 多色カード（文明2つ以上を登録）はタップしてマナに置く</label></div>
@@ -8088,10 +8097,10 @@ function buildBoards(){
           if(wrapEl&&wrapEl.contains(handEl)){
             if(manaEl.parentNode!==wrapEl)wrapEl.appendChild(manaEl); // sys | 手札 | マナ
           }else if(handEl.parentNode===pb){
-            // 手札が単独行のとき：手札とマナだけをペアにする
+            // 手札が単独行のとき：マナ（左）｜手札（右）でペアにする
             const w2=document.createElement("div");w2.className="zpair mhpair";
             pb.insertBefore(w2,handEl);
-            w2.appendChild(handEl);w2.appendChild(manaEl);
+            w2.appendChild(manaEl);w2.appendChild(handEl);
           }
         }
       }
@@ -8337,7 +8346,7 @@ function cardEl(pi,zone,c){
       el.appendChild(sy);
     }
   }
-  if(zone==="hand"&&!hidden&&c.faceup&&(!S.vs||pi===S.seat)&&S.expert&&S.battleLabels!==false){
+  if(zone==="hand"&&!hidden&&c.faceup&&(!S.vs||pi===S.seat)&&S.expert){
     const dc=dispCost(c,pi);
     if(dc){
       const cb2=document.createElement("span");
@@ -8384,7 +8393,7 @@ function cardEl(pi,zone,c){
       }
     }
   }
-  if(showBLab&&zone==="battle"&&!hidden&&c.faceup&&S.showPower!==false){
+  if(zone==="battle"&&!hidden&&c.faceup&&S.showPower!==false){
     const pw=dispPower(c);
     if(pw!=null){
       const pb=document.createElement("span");
@@ -8785,6 +8794,7 @@ function fitBoard(){
     const board=$("board");if(!board)return;
     let h=baseCardH();
     document.body.style.setProperty("--card-h",h.toFixed(1)+"px");
+    if(S.fitBoard===false)return; // 自動縮小オフ：カードサイズ設定をそのまま反映（はみ出す分は縦スクロール）
     let guard=45;
     while(board.scrollHeight>board.clientHeight+2&&h>26&&guard-->0){
       h-=3;
@@ -12200,6 +12210,7 @@ function openSettings(){
   $("cardGapVal").textContent=(S.cardGap||5)+"px";
   $("setCardScale").value=String(S.cardScale||100);
   $("cardScaleVal").textContent=(S.cardScale||100)+"%";
+  $("setFitBoard").checked=(S.fitBoard!==false);
   $("setNoUntapMana").checked=!!S.noUntapMana;
   $("setTapMultiMana").checked=!!S.tapMultiMana;
   $("settingsOlay").classList.add("open");
@@ -12284,6 +12295,11 @@ $("setCardScale").addEventListener("input",async ()=>{
   $("cardScaleVal").textContent=S.cardScale+"%";
   if(db)await idbPut("misc","cardScale",S.cardScale);
   fitBoard();renderAll();
+});
+$("setFitBoard").addEventListener("change",async ()=>{
+  S.fitBoard=$("setFitBoard").checked;
+  if(db)await idbPut("misc","fitBoard",S.fitBoard);
+  fitBoard();
 });
 $("setAutoTap").addEventListener("change",async ()=>{
   S.autoTap=$("setAutoTap").checked;
@@ -13155,6 +13171,8 @@ if("serviceWorker" in navigator&&location.protocol==="https:"){
   if(at!==null&&at!==undefined)S.autoTap=!!at;
   const cs=db?await idbGet("misc","cardScale"):null;
   if(cs)S.cardScale=+cs||100;
+  const fb=db?await idbGet("misc","fitBoard"):null;
+  if(fb!==null&&fb!==undefined)S.fitBoard=!!fb;
   const cg=db?await idbGet("misc","cardGap"):null;
   if(cg){S.cardGap=+cg||5;document.documentElement.style.setProperty("--cardgap",S.cardGap+"px");}
   const mf=db?await idbGet("misc","matFit"):null;if(mf)S.matFit=mf;
