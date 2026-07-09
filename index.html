@@ -1008,6 +1008,7 @@ body.shake{animation:bodyShake .4s ease-out}
         <button type="button" class="btn small ghost" data-qk="slayer">スレイヤー</button>
         <button type="button" class="btn small ghost" data-qk="wb">W・ブレイカー</button>
         <button type="button" class="btn small ghost" data-qk="tb">T・ブレイカー</button>
+        <button type="button" class="btn small ghost" data-qk="qb">Q・ブレイカー</button>
         <button type="button" class="btn small ghost" data-qk="st">S・トリガー</button>
         <button type="button" class="btn small ghost" data-qk="mach">マッハF</button>
         <button type="button" class="btn small ghost" data-qk="gs">G・ストライク</button>
@@ -1035,6 +1036,7 @@ body.shake{animation:bodyShake .4s ease-out}
           <option value="1">1（通常）</option>
           <option value="2">2（W・ブレイカー）</option>
           <option value="3">3（T・ブレイカー）</option>
+          <option value="4">4（Q・ブレイカー）</option>
           <option value="all">全部（ワールド・ブレイカー）</option>
           <option value="powered">パワード・ブレイカー（パワー6000ごとに＋1）</option>
           <option value="masterw">マスター・W・ブレイカー（2枚＋出たターンならブレイク数だけ相手を破壊）</option>
@@ -1140,6 +1142,18 @@ body.shake{animation:bodyShake .4s ease-out}
         <label><input type="checkbox" id="fxEscape"> エスケープ</label>
         <label><input type="checkbox" id="fxTrueEscape"> 真・エスケープ（盾なしでも手札へ戻る）</label>
         <label><input type="checkbox" id="fxRepShield"> 離れるかわりに表向きの盾カードを1枚墓地へ（サッヴァーク型）</label>
+        <label style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap"><input type="checkbox" id="fxRepLeave"> 離れるかわりに、自分の
+          <select id="fxRepLeaveZone" style="width:auto">
+            <option value="deck">山札の上</option>
+            <option value="hand">手札</option>
+            <option value="mana">マナ</option>
+            <option value="shield">盾</option>
+            <option value="grave">墓地</option>
+          </select>
+          から
+          <select id="fxRepLeaveN" style="width:auto">
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
+          </select>枚を墓地に置く</label>
         <label><input type="checkbox" id="fxStarEvo"> スター進化（離れる時、自身のみ離れ下は重なったまま残る）</label>
         <label><input type="checkbox" id="fxExLife"> EXライフ</label>
         <label><input type="checkbox" id="fxGNeo"> G・NEO進化（破壊時に一番下が離れ上が残る）</label>
@@ -2415,9 +2429,9 @@ function nextTurn(){
       }
     })();
   }
-  if(frz.length)toast(`❄ フリーズ：${frz.join("、")} はアンタップしない`);
   if(S.noUntapMana)toast("（設定：マナは自動アンタップしません）");
-  else Z.mana.forEach(c=>c.tapped=false);
+  else Z.mana.forEach(c=>{if(c.frozen){c.frozen=false;frz.push("マナ:"+faceNameOf(c));}else c.tapped=false;});
+  if(frz.length)toast(`❄ フリーズ：${frz.join("、")} はアンタップしない`);
   let jdN=[];
   Z.battle.forEach(c=>{if(c.jd){c.jd=false;jdN.push(faceNameOf(c));}});
   {
@@ -2861,6 +2875,28 @@ const EFFECTS=[
      }
      sfx("move");renderAll();
      toast(`💎 マナを${k}枚${tap?"タップ":"アンタップ"}しました`);
+   }},
+  {name:"マナロック（n枚を凍結・次のアンタップでアンタップしない）",cat:"💎 マナ",
+   desc:"自分または相手のマナを左からn枚タップして凍結します。凍結したマナはそのプレイヤーの次のアンタップ時にアンタップしません（その1回のみ・以降は通常）。",
+   async run(){
+     closeSheet();
+     const j=await askChoice("凍結する対象を選択",["自分のマナを凍結","相手のマナを凍結"]);
+     if(j===null)return;
+     const me=fxActor(), opp=me===0?1:0;
+     const pi=(j===0)?me:opp;
+     const Z2=zonesOf(pi);
+     const cands=Z2.mana.filter(m=>!m.frozen);
+     if(!cands.length){toast("凍結できるマナがありません");return;}
+     const n=await askNumber("凍結する枚数",Math.min(2,cands.length),cands.length);
+     if(n==null||n<=0)return;
+     snap();
+     let k=0;
+     for(const m of Z2.mana){
+       if(k>=n)break;
+       if(!m.frozen){m.frozen=true;m.tapped=true;k++;}
+     }
+     sfx("move");renderAll();
+     toast(`❄ マナロック：${k}枚を凍結（次の${S.players[pi].label}のアンタップでアンタップしません）`);
    }},
   {name:"相手のマナをランダムにn枚破壊",cat:"💎 マナ",
    desc:"相手のマナゾーンからランダムに選んだカードを墓地に置きます（ランド・ハンデス系）",
@@ -3593,6 +3629,9 @@ async function destroyCreature(pi,c){
     }
     if(rDC&&rDC.repShield){
       if(await savvarkReplace(pi,c))return;
+    }
+    if(rDC&&rDC.repLeave){
+      if(await repLeaveReplace(pi,c,rDC))return;
     }
   }
   if(S.expert){
@@ -4975,6 +5014,7 @@ async function startAttack(pi,id){
   const pick=await askChoice(`《${faceNameOf(c)}》の攻撃対象を選択`,targets.map(t=>t.label));
   if(pick===null){renderAll();return;}
   const tg=targets[pick];
+  c._atkFxDone=false; // 新規アタック宣言のたびにアタック時効果を再有効化（保留→再開は別経路なので影響なし）
   const wnames=watchNames(pi,tg.kind==="creature"?"atkC":"atkP");
   if(wnames.length){
     const q=await askChoice(`⚡誘発確認（${tg.kind==="creature"?"クリーチャーへの攻撃":"プレイヤーへの攻撃"}時）\n${wnames.join("、")}\n\n効果を処理しますか？`,
@@ -6065,6 +6105,7 @@ function fxQuickInit(){
       else if(k==="jd")tgl("fxJD");
       else if(k==="wb"){const e=$("fxBreaks");if(e){e.value=e.value==="2"?"1":"2";toast(`ブレイク数：${e.value}`);}}
       else if(k==="tb"){const e=$("fxBreaks");if(e){e.value=e.value==="3"?"1":"3";toast(`ブレイク数：${e.value}`);}}
+      else if(k==="qb"){const e=$("fxBreaks");if(e){e.value=e.value==="4"?"1":"4";toast(`ブレイク数：${e.value}`);}}
     });
   });
 }
@@ -6102,6 +6143,9 @@ function renderFxEditor(){
   $("fxEscape").checked=!!FXEDIT.escape;
   $("fxTrueEscape").checked=!!FXEDIT.trueEscape;
   $("fxRepShield").checked=!!FXEDIT.repShield;
+  $("fxRepLeave").checked=!!FXEDIT.repLeave;
+  $("fxRepLeaveZone").value=FXEDIT.repLeaveZone||"deck";
+  $("fxRepLeaveN").value=String(FXEDIT.repLeaveN||1);
   $("fxDDD").checked=!!FXEDIT.ddd;
   $("fxDDDCost").value=String(FXEDIT.dddCost||0);
   $("fxDDDCiv").value=FXEDIT.dddCiv||"";
@@ -6325,6 +6369,9 @@ function openFxEditor(key){
     escape:cur?!!cur.escape:false,
     trueEscape:cur?!!cur.trueEscape:false,
     repShield:cur?!!cur.repShield:false,
+    repLeave:cur?!!cur.repLeave:false,
+    repLeaveZone:cur&&cur.repLeaveZone||"deck",
+    repLeaveN:cur&&cur.repLeaveN||1,
     ddd:cur?!!cur.ddd:false,
     dddCost:cur&&(+cur.dddCost||0)||0,
     dddCiv:cur&&cur.dddCiv||"",
@@ -6547,6 +6594,9 @@ $("fxSave").addEventListener("click",async ()=>{
     escape:$("fxEscape").checked,
     trueEscape:$("fxTrueEscape").checked,
     repShield:$("fxRepShield").checked,
+    repLeave:$("fxRepLeave").checked,
+    repLeaveZone:$("fxRepLeaveZone").value,
+    repLeaveN:parseInt($("fxRepLeaveN").value,10)||1,
     ddd:$("fxDDD").checked,
     dddCost:+$("fxDDDCost").value||0,
     dddOff:+$("fxDDDOff").value||0,
@@ -6804,7 +6854,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.seal)attrs.push(`封印${v.seal}`);
     if(v.pa)attrs.push(v.pa>=999999999?"PA+∞":v.pa>=1000000?`PA+${Math.floor(v.pa/10000)}万`:`PA+${v.pa}`);
     if(v.pb)attrs.push(`バトル中+${v.pb}`);
-    if(v.breaks&&v.breaks!=="1")attrs.push(v.breaks==="all"?"ワールドB":`${v.breaks}ブレイク`);
+    if(v.breaks&&v.breaks!=="1")attrs.push(v.breaks==="all"?"ワールドB":v.breaks==="2"?"W・ブレイカー":v.breaks==="3"?"T・ブレイカー":v.breaks==="4"?"Q・ブレイカー":`${v.breaks}ブレイク`);
     if(v.gimmick==="dorma")attrs.push("ドルマゲドン型");
     if(v.gimmick==="zeron")attrs.push("零龍型");
     if(v.cost!=null)attrs.push(`コスト${v.cost}${v.cost2!=null?"/"+v.cost2:""}`);
@@ -6830,6 +6880,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.escape)attrs.push("エスケープ");
     if(v.trueEscape)attrs.push("真エスケープ");
     if(v.repShield)attrs.push("離脱置換：表向き盾→墓地（サッヴァーク型）");
+    if(v.repLeave)attrs.push(`離脱置換：${({deck:"山札の上",hand:"手札",mana:"マナ",shield:"盾",grave:"墓地"}[v.repLeaveZone]||v.repLeaveZone)}から${v.repLeaveN||1}枚→墓地`);
     if(v.ddd)attrs.push(`DDD${v.dddPay>0?`：攻撃時[${v.dddPay}${v.dddMinus?"−攻撃コスト":""}]支払い`:(v.dddOff>0?`：召喚−${v.dddOff}`:"（攻撃時踏み倒し）")}`);
     if(v.uraNinja)attrs.push(`裏NS${v.uraNinja}${v.uraCiv?"("+({light:"光",water:"水",dark:"闇",fire:"火",nature:"自然"}[v.uraCiv]||"")+")":""}`);
     if(v.kirifuda)attrs.push(`キリフダッシュ${v.kirifuda}`);
@@ -7019,6 +7070,30 @@ async function savvarkReplace(pi,c){
   Z2.grave.push(moved);
   sfx("grave");renderAll();
   toast(`🛡✨ 置換：${moved.name} を墓地に置き、${faceNameOf(c)} は場に残った`);
+  return true;
+}
+async function repLeaveReplace(pi,c,reg){
+  const zone=reg.repLeaveZone||"deck";
+  const n=reg.repLeaveN||1;
+  const Z=zonesOf(pi);
+  const arr=Z[zone];
+  const zlbl={deck:"山札の上",hand:"手札",mana:"マナ",shield:"盾",grave:"墓地"}[zone]||zone;
+  if(!arr||arr.length<n){
+    toast(`⚠ ${faceNameOf(c)}：${zlbl}が${arr?arr.length:0}枚しかなく置換できないため、そのまま離れます`);
+    return false;
+  }
+  const yes=await ask(`♻ ${faceNameOf(c)}：バトルゾーンを離れるかわりに、自分の${zlbl}から${n}枚を墓地に置きますか？`);
+  if(!yes)return false;
+  snap();
+  const moved=[];
+  for(let i=0;i<n&&arr.length;i++){
+    const m=arr.shift();
+    m.faceup=true;m.tapped=false;m.sideways=false;m.rot=0;
+    Z.grave.push(m);
+    moved.push(m.name||"カード");
+  }
+  sfx("grave");renderAll();
+  toast(`♻ 置換：${zlbl}から${moved.length}枚（${moved.join("、")}）を墓地に置き、${faceNameOf(c)} は場に残った`);
   return true;
 }
 async function dormaCoreRemove(pi,c,manual){
@@ -8376,7 +8451,7 @@ function cardEl(pi,zone,c){
     ex.title="EXライフの専用シールド";
     el.appendChild(ex);
   }
-  if(showBLab&&c.frozen){
+  if((showBLab||zone==="mana")&&c.frozen){
     const ft=document.createElement("span");ft.className="frztag";ft.textContent="❄凍結";
     el.appendChild(ft);
   }
@@ -9907,6 +9982,14 @@ function openCardSheet(ctx){
   if(ctx.zone==="battle"||ctx.zone==="mana"){
     box.appendChild(actBtn(c.tapped?"アンタップ":"タップ",()=>{c.tapped=!c.tapped;rerender();},"primary"));
   }
+  if(ctx.zone==="mana"){
+    box.appendChild(actBtn(c.frozen?"❄ 凍結を解除":"❄ 凍結（次のアンタップでアンタップしない）",()=>{
+      c.frozen=!c.frozen;
+      if(c.frozen)c.tapped=true;
+      toast(c.frozen?`❄ ${faceNameOf(c)} を凍結（次の自分のアンタップでアンタップしません）`:`凍結を解除：${faceNameOf(c)}`);
+      rerender();
+    },c.frozen?"warn":""));
+  }
   if(link&&link.length>1&&!masked&&c.faceup){
     box.appendChild(actBtn(`変形（${((c.face||0)+1)%link.length+1}/${link.length}面へ）`,()=>{
       c.face=((c.face||0)+1)%link.length;
@@ -10141,6 +10224,31 @@ function openCardSheet(ctx){
       toast(`${faceNameOf(cc)} をバトルゾーンへ（墓地から）`);
       await mugetsuGate(ctx.p,cc.id);
     },"",true));
+  }
+  // マナ／墓地からの召喚（コスト支払い：手札召喚と同じく出た時効果＋自動マナタップが効く）
+  if((ctx.zone==="mana"||ctx.zone==="grave")&&(()=>{const r0=getReg(c);return !r0||r0.ctype!=="spell";})()){
+    const zlbl=ctx.zone==="mana"?"マナ":"墓地";
+    box.appendChild(actBtn(`⚔ 召喚（${zlbl}から・コスト支払い）`,async ()=>{
+      snap();
+      const f2=findCard(ctx.p,ctx.zone,ctx.id);
+      if(!f2)return;
+      f2.arr.splice(f2.idx,1);
+      const cc=f2.card;
+      cc.faceup=true;cc.tapped=false;
+      const rr=getReg(cc);
+      const evoS=rr&&["evo","neoevo","starevo","smaxevo","onismaxevo","gneo","lunatic","ultimate"].includes(rr.ctype);
+      cc.sick=(S.turn>0)&&!evoS&&!(rr&&rr.sa);
+      zonesOf(ctx.p).battle.push(cc);
+      markArrive(cc);
+      if(S.expert&&S.autoTap&&!S.freePlay){
+        MOVE_TAP_CHAIN=MOVE_TAP_CHAIN.then(()=>autoTapCost(ctx.p,cc)).catch(()=>{});
+      }
+      emitEvent(ctx.p,"summon");
+      enqueueFx(ctx.p,cc);
+      closeSheet();closeSel();closeViewer();sfx("ok");renderAll();
+      toast(`⚔ 召喚：${faceNameOf(cc)}（${zlbl}から・コスト支払い）`);
+      await waitFxIdle();renderAll();
+    },"primary",true));
   }
   const isAura=reg&&["aura","gigaaura"].includes(reg.ctype);
   const isCrossG=reg&&(reg.ctype==="crossgear"||reg.soulX);
