@@ -2284,7 +2284,7 @@ function nextTurn(){
     if(S.who===0)S.turn++;
   }else S.turn++;
   const pi=S.vs?S.who:0;
-  if(S.vs&&S.autoSeat)S.seat=pi; // 視点自動切替：ターンが進むたびに手番プレイヤー視点へ
+  if(S.vs&&S.autoSeat&&(S.seat|0)!==pi){S.seat=pi;buildBoards();} // 視点自動切替：手動ボタンと同じく盤面を組み直す
   const Z=S.players[pi].zones;
   // 通しターンカウンタ（プレイヤーターン単位）＋ ターン限定ロック失効処理
   S.pturn=(S.pturn|0)+1;
