@@ -3310,6 +3310,7 @@ const FX_TYPES=[
   ["tapAllOp","相手のクリーチャーをすべてタップ（スパーク型）"],
   ["turnLock","⛔ ターン限定ロックを設定（実行時に対象/種別/条件/期間を指定・5000VT後半効果型）"],
   ["charge","n枚マナ加速（山上→マナ）"],
+  ["chargeTap","n枚マナ加速（山上→タップしてマナに置く）"],
   ["mill","山上n枚を墓地へ"],
   ["millOpp","相手の山札の上からn枚を墓地へ"],
   ["reveal","山上n枚を公開"],
@@ -3471,12 +3472,12 @@ async function autoTapCost(pi,c){
     }
   }
   {
-    const dd=dddDiscount(r,pi);
+    const dd=(paySide==="creature")?dddDiscount(r,pi):0;
     if(dd>0){
       cost=Math.max(0,cost-dd);
       toast(`🌀 D・D・D：召喚コスト−${dd}（残り${cost}）`);
     }
-    if(r.vtCost){
+    if(paySide==="creature"&&r.vtCost){
       const vd=vtDiscount({mode:r.vtMode||"battle",exceptId:c.id,pi});
       if(vd>0){
         cost=Math.max(1,cost-vd);
@@ -3489,7 +3490,7 @@ async function autoTapCost(pi,c){
       toast(`⬆ 相手の常在効果：コスト＋${upN}（計${cost}）`);
     }
   }
-  if(r.sympathy){
+  if(paySide==="creature"&&r.sympathy){
     const w=r.sympathy;
     const toks=String(w).split(/[／\/、,]/).map(x=>x.trim()).filter(Boolean);
     const cnt=Z.battle.filter(b=>{
@@ -3517,7 +3518,7 @@ async function autoTapCost(pi,c){
     }
   }
   // ゲイル・ヴェスパー型：場のgrantDS持ちが手札のクリーチャーにシンパシー付与（複数で重複）
-  {
+  if(paySide==="creature"){
     const granters=Z.battle.filter(b=>{const rb=getReg(b);return rb&&rb.grantDS&&rb.sympathy&&b.id!==c.id;});
     for(const g of granters){
       const rg=getReg(g);
@@ -3550,7 +3551,7 @@ async function autoTapCost(pi,c){
     const ms=Z.battle.filter(b=>{const rb=getReg(b);return rb&&rb.stCostM>0&&b.id!==c.id&&!isSealed(b);});
     for(const m2 of ms){
       const rb=getReg(m2);
-      const tOK=!rb.stCostT||(rb.stCostT==="spell"?(r&&r.ctype==="spell"):(r&&r.ctype!=="spell"));
+      const tOK=!rb.stCostT||(rb.stCostT===paySide);
       if(cost>0&&tOK&&matchF(rb.stCostF)){
         const dec=Math.min(rb.stCostM,cost);
         cost-=dec;
@@ -3839,6 +3840,11 @@ async function runFxList(pi,list,srcCard){
     }else if(f.t==="charge"){
       for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.mana.push(c);markArrive(c);}
       sfx("move");
+    }else if(f.t==="chargeTap"){
+      let cn=0;
+      for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;c.tapped=true;Z.mana.push(c);markArrive(c);cn++;}
+      sfx("move");
+      if(cn>0)toast(`💠 マナ加速（タップイン）：山上${cn}枚をタップしてマナゾーンへ`);
     }else if(f.t==="mill"){
       for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;Z.grave.push(c);}
       sfx("grave");
