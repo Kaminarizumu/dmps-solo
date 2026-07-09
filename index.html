@@ -104,6 +104,12 @@ body.vs .pboard{gap:3px}
   border-radius:7px;font-size:11px;font-weight:700;padding:4px 10px;cursor:pointer;
 }
 .zbtn:active{transform:translateY(1px)}
+body.compact-head .zone-head{min-height:13px;margin-bottom:1px;gap:5px}
+body.compact-head .zone-head .kanji{font-size:9px;letter-spacing:.08em}
+body.compact-head .zbtn{font-size:10px;padding:2px 7px;border-radius:6px}
+body.compact-head #bottombar{gap:5px;padding:5px 8px calc(5px + env(safe-area-inset-bottom))}
+body.compact-head #bottombar .btn{font-size:11px;padding:7px 9px}
+body.compact-head #btnNextTurn{font-size:13px;padding:9px;min-width:110px}
 .cards{
   display:flex;gap:var(--cardgap,5px);min-height:var(--card-h);
   flex-wrap:wrap;overflow:visible;
@@ -125,6 +131,10 @@ body.vs .pboard{gap:3px}
 .resolvebox.droptgt{box-shadow:0 0 0 2px var(--resolve);background:rgba(180,107,255,.16)}
 .resolvebox .rlabel{writing-mode:vertical-rl;font-size:9px;font-weight:800;letter-spacing:.25em;color:var(--resolve);flex:0 0 auto}
 .resolvebox .cards{min-height:calc(var(--card-h) * .96);padding:1px}
+@media (max-width:640px){
+  .resolvebox.rz-empty{min-width:0;padding:2px 3px}
+  .resolvebox.rz-empty .cards{min-width:0;width:0;padding:0}
+}
 
 .card{
   width:var(--card-w);height:var(--card-h);
@@ -270,10 +280,11 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   color:var(--muted);font-weight:800;touch-action:manipulation;
 }
-.pile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.9;pointer-events:none}
-.pile .n{font-size:15px;color:var(--text);position:relative;text-shadow:0 1px 3px #000}
-.pile .lbl{font-size:9px;letter-spacing:.12em;position:relative;text-shadow:0 1px 3px #000;color:#cfd6e4}
-.pile .side{position:absolute;top:2px;left:2px;background:var(--tap);color:#04222a;font-size:9px;font-weight:800;border-radius:4px;padding:0 4px;z-index:1}
+.pile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.62;pointer-events:none}
+.pile::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,10,18,.15),rgba(8,10,18,.62));z-index:0;pointer-events:none}
+.pile .n{font-size:15px;color:#fff;position:relative;z-index:2;background:rgba(6,8,16,.66);border-radius:6px;padding:0 6px;line-height:1.35;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.pile .lbl{font-size:9px;letter-spacing:.1em;position:relative;z-index:2;color:#e6ecf7;text-shadow:0 1px 3px #000;background:rgba(6,8,16,.5);border-radius:4px;padding:0 4px}
+.pile .side{position:absolute;top:2px;left:2px;background:var(--tap);color:#04222a;font-size:9px;font-weight:800;border-radius:4px;padding:0 4px;z-index:3}
 .pile:active{transform:translateY(1px)}
 .pilewrap{display:flex;flex-direction:column;gap:3px;flex:0 0 auto;align-items:center}
 .pmenu{
@@ -282,6 +293,10 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 }
 .gravepile{position:relative}
 .gravepile::after{content:"";position:absolute;inset:0;border-radius:6px;box-shadow:2px 2px 0 -1px #1a2338,4px 4px 0 -2px #151d2e}
+.shieldpile{border:2px solid #38bdf8;background:radial-gradient(circle at 50% 30%,#0e2438,#08131f)}
+.shieldpile .n{font-size:21px;background:rgba(6,8,16,.72);color:#bae6fd;padding:0 8px}
+.shieldpile .lbl{color:#7dd3fc}
+.shieldpile .side{background:#fbbf24;color:#3a2a00}
 .manapile{width:calc(var(--card-h)*.92);height:calc(var(--card-h)*.92);border-radius:50%;border:3px solid #d98b1e;background:radial-gradient(circle at 50% 38%,#3a2a10,#1b1408);box-shadow:0 0 0 2px #7a5210 inset,0 2px 10px rgba(0,0,0,.5)}
 .manapile img{opacity:.5;border-radius:50%}
 .manapile .n{font-size:16px;color:#ffd98a}
@@ -666,20 +681,30 @@ body.shake{animation:bodyShake .4s ease-out}
       </div>
       <div class="hint">コンパクト：丸いゲージにカードをスライドで置ける。ゲージをタップでマナパネルが開き、中でタップ/アンタップ・移動ができます。自動タップは両表示で有効です。</div>
       <div class="row" style="align-items:center;gap:8px">
-        <span style="font-size:12px;font-weight:700">バトル：カード上のラベル</span>
+        <span style="font-size:12px;font-weight:700">カード上のラベル（能力/コスト/マーク）</span>
         <select id="setBattleLabels" style="flex:1">
           <option value="on">表示</option>
           <option value="off">隠す（長押しで確認）</option>
         </select>
       </div>
       <div class="row" style="align-items:center;gap:8px">
-        <span style="font-size:12px;font-weight:700">バトル：カード上の操作ボタン</span>
+        <span style="font-size:12px;font-weight:700">カード上の操作ボタン（⚙⤵⚔）</span>
         <select id="setBattleBtns" style="flex:1">
           <option value="on">表示</option>
           <option value="off">隠す（長押しで操作）</option>
         </select>
       </div>
-      <div class="hint">スマホでカード画像が潰れる場合に。隠しても、カードを長押しすると能力・コスト・攻撃/タップ/効果登録/メニューが大きく表示されます。</div>
+      <div class="hint">スマホでカード画像が潰れる場合に。どちらかを「隠す」にすると効果登録⚙マークも消え、カード画像だけになります。隠しても、カードを長押しすれば能力・コスト・攻撃/タップ/効果登録/メニューが大きく表示されます。盾の重なり枚数や封印など、画像から分からない状態表示は残します。</div>
+      <div class="row" style="align-items:center;gap:8px">
+        <span style="font-size:12px;font-weight:700">盾ゾーンの表示</span>
+        <select id="setShieldMode" style="flex:1">
+          <option value="row">従来（盾を並べる）</option>
+          <option value="compact">コンパクト（大きな枚数のパイル）</option>
+        </select>
+      </div>
+      <div class="row" style="align-items:center;gap:8px">
+        <label><input type="checkbox" id="setCompactHead"> ゾーン見出し・ボタンを小さくする（省スペース）</label>
+      </div>
       <div class="row" style="flex-direction:column;align-items:stretch;gap:4px">
         <span style="font-size:12px;font-weight:700">ゾーンの縦幅（カードの大きさ）比率</span>
         <div id="zoneScaleList" style="display:flex;flex-direction:column;gap:3px"></div>
@@ -8209,7 +8234,7 @@ function cardEl(pi,zone,c){
   }
   {
     const regT0=getReg(c);
-    if(regT0&&regT0.noChoose&&zone==="battle"&&c.faceup){
+    if(showBLab&&regT0&&regT0.noChoose&&zone==="battle"&&c.faceup){
       const nc=document.createElement("span");
       nc.className="auratag";
       nc.style.background="#b45309";
@@ -8220,7 +8245,7 @@ function cardEl(pi,zone,c){
   }
   {
     const regT=getReg(c);
-    if(regT&&(regT.auraTapIn||regT.auraNote)&&zone==="battle"){
+    if(showBLab&&regT&&(regT.auraTapIn||regT.auraNote)&&zone==="battle"){
       const at=document.createElement("span");at.className="auratag";at.textContent="常";
       if(regT.auraNote)at.title=regT.auraNote;
       el.appendChild(at);
@@ -8254,7 +8279,7 @@ function cardEl(pi,zone,c){
     const ft=document.createElement("span");ft.className="frztag";ft.textContent="❄凍結";
     el.appendChild(ft);
   }
-  if(zone==="hand"&&c.faceup&&!hidden&&getReg(c)){
+  if(zone==="hand"&&c.faceup&&!hidden&&getReg(c)&&!(S.battleLabels===false||S.battleBtns===false)){
     const rg0=getReg(c);
     const rd=document.createElement("span");
     rd.className="frztag";
@@ -8271,7 +8296,7 @@ function cardEl(pi,zone,c){
       el.appendChild(sy);
     }
   }
-  if(zone==="hand"&&!hidden&&c.faceup&&(!S.vs||pi===S.seat)&&S.expert){
+  if(zone==="hand"&&!hidden&&c.faceup&&(!S.vs||pi===S.seat)&&S.expert&&S.battleLabels!==false){
     const dc=dispCost(c,pi);
     if(dc){
       const cb2=document.createElement("span");
@@ -8330,7 +8355,7 @@ function cardEl(pi,zone,c){
       el.appendChild(pb);
     }
   }
-  if(zone!=="deck"&&!hidden&&c.faceup&&(!S.vs||pi===S.seat)&&showBBtn){
+  if(zone!=="deck"&&!hidden&&c.faceup&&(!S.vs||pi===S.seat)&&S.battleBtns!==false){
     const gb=document.createElement("button");
     gb.textContent="⚙";
     gb.title="効果を登録/編集";
@@ -8498,7 +8523,17 @@ function renderPlayer(pi){
   row.appendChild(gwrap);
   const dv=document.createElement("div");dv.className="vdiv";row.appendChild(dv);
   const swrap=document.createElement("div");swrap.className="pilewrap";
-  swrap.appendChild(subzone(pi,"shield",Z.shield,"盾"));
+  if(S.shieldMode==="compact"){
+    const faceUp=Z.shield.filter(s=>s.faceup).length;
+    const topImg=(()=>{const fu=Z.shield.find(s=>s.faceup);return fu?imgURL.get(faceKeyOf(fu)):null;})();
+    const sp=pileEl({n:Z.shield.length,label:"盾",dz:"shield",cls:"shieldpile",
+      img:topImg,
+      badge:faceUp?`表${faceUp}`:null,
+      onTap:()=>openShieldViewer(pi)});
+    swrap.appendChild(sp);
+  }else{
+    swrap.appendChild(subzone(pi,"shield",Z.shield,"盾"));
+  }
   const sb=document.createElement("button");sb.className="pmenu";sb.textContent="盾を確認";
   /* peeked印はopenShieldViewer側で付与 */
   sb.addEventListener("click",async e=>{
@@ -8571,6 +8606,12 @@ function renderPlayer(pi){
   };
   fill(`zBattle-${pi}`,"battle");
   fill(`zResolve-${pi}`,"resolve");
+  {
+    const rzc=$(`zResolve-${pi}`);
+    if(rzc&&rzc.parentElement&&rzc.parentElement.classList.contains("resolvebox")){
+      rzc.parentElement.classList.toggle("rz-empty",Z.resolve.length===0);
+    }
+  }
   if(S.manaMode==="compact"){
     const mb=$(`zMana-${pi}`);
     if(mb){
@@ -12103,6 +12144,8 @@ function openSettings(){
   $("setManaMode").value=S.manaMode||"spread";
   $("setBattleLabels").value=(S.battleLabels===false)?"off":"on";
   $("setBattleBtns").value=(S.battleBtns===false)?"off":"on";
+  $("setShieldMode").value=S.shieldMode||"row";
+  $("setCompactHead").checked=!!S.compactHead;
   $("setWidePair").value=S.widePair||"sys,hand";
   renderZoneOrderEditor();
   renderZoneScaleEditor();
@@ -12183,6 +12226,16 @@ $("setBattleBtns").addEventListener("change",async ()=>{
   S.battleBtns=$("setBattleBtns").value!=="off";
   if(db)await idbPut("misc","battleBtns",S.battleBtns);
   renderAll();
+});
+$("setShieldMode").addEventListener("change",async ()=>{
+  S.shieldMode=$("setShieldMode").value||"row";
+  if(db)await idbPut("misc","shieldMode",S.shieldMode);
+  renderAll();
+});
+$("setCompactHead").addEventListener("change",async ()=>{
+  S.compactHead=$("setCompactHead").checked;
+  if(db)await idbPut("misc","compactHead",S.compactHead);
+  document.body.classList.toggle("compact-head",!!S.compactHead);
 });
 $("setCardScale").addEventListener("input",async ()=>{
   S.cardScale=+$("setCardScale").value||100;
@@ -13099,6 +13152,10 @@ if("serviceWorker" in navigator&&location.protocol==="https:"){
   if(bl!==null&&bl!==undefined)S.battleLabels=!!bl;
   const bbt=db?await idbGet("misc","battleBtns"):null;
   if(bbt!==null&&bbt!==undefined)S.battleBtns=!!bbt;
+  const shm=db?await idbGet("misc","shieldMode"):null;
+  if(shm)S.shieldMode=shm;
+  const cph=db?await idbGet("misc","compactHead"):null;
+  if(cph!==null&&cph!==undefined){S.compactHead=!!cph;document.body.classList.toggle("compact-head",!!cph);}
   const nu=db?await idbGet("misc","noUntapMana"):null;
   if(nu!==null&&nu!==undefined)S.noUntapMana=!!nu;
   const tm=db?await idbGet("misc","tapMultiMana"):null;
