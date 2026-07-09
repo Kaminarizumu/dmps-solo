@@ -259,10 +259,8 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 .lbot>.zone.manaslim{flex:0 0 auto}
 .rcol>.zone[data-zone="hand"]{flex:0 0 auto}
 /* ===== スプレッドマナ・ワイド専用：3段組（コンパクトと非共有） ===== */
-body.vs .pboard.spw{flex:1 1 0;min-height:0}
-.pboard.spw>.sprow{display:flex;gap:8px;align-items:stretch}
-.pboard.spw>.sprow.sp1{flex:1 1 auto;min-height:0}
-.pboard.spw>.sprow.sp2{flex:0 0 auto}
+.pboard.spw{min-height:0}
+.pboard.spw>.sprow{display:flex;gap:8px;align-items:stretch;flex:0 0 auto}
 .pboard.spw>.zone[data-zone="mana"]{flex:0 0 auto}
 .sprow>.zone.shieldz{flex:4 1 0;min-width:0}
 .sprow>.zone[data-zone="battle"]{flex:6 1 0;min-width:0;min-height:0}
@@ -715,7 +713,7 @@ body.shake{animation:bodyShake .4s ease-out}
           <option value="hand,mana">手札（左）＋ マナ（右）</option>
         </select>
       </div>
-      <div class="row" style="flex-direction:column;align-items:stretch;gap:4px">
+      <div class="row" style="flex-direction:column;align-items:stretch;gap:4px" id="zoneOrderRow">
         <div class="row" style="align-items:center;gap:8px">
           <span style="font-size:12px;font-weight:700">ゾーンの並び順</span>
           <select id="zoneOrderTarget" style="flex:1">
@@ -12257,6 +12255,7 @@ function openSettings(){
   $("setCompactHead").checked=!!S.compactHead;
   $("setWidePair").value=S.widePair||"sys,battle";
   renderZoneOrderEditor();
+  syncLayoutSettingVis();
   renderZoneScaleEditor();
   $("setKeysOn").checked=!!S.keysOn;
   renderHotkeyEditor();
@@ -12304,10 +12303,16 @@ $("setSheetPos").addEventListener("change",async ()=>{
   applySheetPos();
   toast(`メニュー位置：${{right:"右",left:"左",bottom:"下"}[S.sheetPos]}`);
 });
+function syncLayoutSettingVis(){
+  const wide=(S.layout==="wide");
+  const wp=$("widePairRow");if(wp)wp.style.display=wide?"none":"";
+  const zo=$("zoneOrderRow");if(zo)zo.style.display=wide?"none":"";
+}
 $("setLayout").addEventListener("change",async ()=>{
   S.layout=$("setLayout").value;
   if(db)await idbPut("misc","layout",S.layout);
   renderZoneOrderEditor();
+  syncLayoutSettingVis();
   buildBoards();fitBoard();renderAll();
   toast(`レイアウト：${{stack:"縦積み",cols:"2カラム",wide:"ワイド段組み"}[S.layout]}`);
 });
