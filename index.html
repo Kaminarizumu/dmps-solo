@@ -259,7 +259,7 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 .card.dragging-src{opacity:.35}
 
 .pile{
-  width:var(--card-w);height:var(--card-h);
+  width:calc(var(--card-w)*var(--pilesc,1));height:calc(var(--card-h)*var(--pilesc,1));
   flex:0 0 auto;border-radius:6px;cursor:pointer;position:relative;
   border:1px solid var(--line);overflow:hidden;
   background:repeating-linear-gradient(45deg,#222c46,#222c46 6px,#1a2338 6px,#1a2338 12px);
@@ -278,6 +278,13 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 }
 .gravepile{position:relative}
 .gravepile::after{content:"";position:absolute;inset:0;border-radius:6px;box-shadow:2px 2px 0 -1px #1a2338,4px 4px 0 -2px #151d2e}
+.manapile{width:calc(var(--card-h)*.92);height:calc(var(--card-h)*.92);border-radius:50%;border:3px solid #d98b1e;background:radial-gradient(circle at 50% 38%,#3a2a10,#1b1408);box-shadow:0 0 0 2px #7a5210 inset,0 2px 10px rgba(0,0,0,.5)}
+.manapile img{opacity:.5;border-radius:50%}
+.manapile .n{font-size:16px;color:#ffd98a}
+.manapile .lbl{color:#ffcf7a}
+.manapile.droptgt{box-shadow:0 0 0 3px var(--accent),0 0 16px rgba(245,197,66,.5)}
+.vcard.mtap .thumb{transform:rotate(90deg) scale(.86);opacity:.6}
+.vcard.mtap::after{content:"タップ済";position:absolute;top:3px;left:3px;background:var(--tap);color:#04222a;font-size:9px;font-weight:800;border-radius:4px;padding:0 4px;z-index:3}
 
 #bottombar{
   flex:0 0 auto;display:flex;gap:7px;align-items:center;
@@ -639,6 +646,21 @@ body.shake{animation:bodyShake .4s ease-out}
         <div id="zoneOrderList" style="display:flex;flex-direction:column;gap:3px"></div>
         <div class="hint">相手側が未設定の場合は自分側のミラー配置になります</div>
       </div>
+      <div class="row" style="align-items:center;gap:8px">
+        <span style="font-size:12px;font-weight:700">解決中ゾーンの位置</span>
+        <select id="setResolveSide" style="flex:1">
+          <option value="left">バトルの左</option>
+          <option value="right">バトルの右</option>
+        </select>
+      </div>
+      <div class="row" style="align-items:center;gap:8px">
+        <span style="font-size:12px;font-weight:700">マナゾーンの表示</span>
+        <select id="setManaMode" style="flex:1">
+          <option value="spread">従来（カードを並べる）</option>
+          <option value="compact">コンパクト（丸ゲージ＋パネル）</option>
+        </select>
+      </div>
+      <div class="hint">コンパクト：丸いゲージにカードをスライドで置ける。ゲージをタップでマナパネルが開き、中でタップ/アンタップ・移動ができます。自動タップは両表示で有効です。</div>
       <div class="row" style="flex-direction:column;align-items:stretch;gap:4px">
         <span style="font-size:12px;font-weight:700">ゾーンの縦幅（カードの大きさ）比率</span>
         <div id="zoneScaleList" style="display:flex;flex-direction:column;gap:3px"></div>
@@ -7830,7 +7852,7 @@ function insertSideways(pi,fromZone,id){
 }
 
 /* ================= board DOM ================= */
-const ZONE_LB={battle:"バトルゾーン",sys:"山札/墓地/GR/超次元など",shield:"盾（追加倍率）",mana:"マナ",hand:"手札"};
+const ZONE_LB={battle:"バトルゾーン",sys:"山札/墓地/GR/超次元など",pile:"山札系パイル(山札/墓地/GR/超次元)",shield:"盾（追加倍率）",mana:"マナ",hand:"手札"};
 function renderZoneOrderEditor(){
   const box=$("zoneOrderList");if(!box)return;
   box.innerHTML="";
@@ -7859,15 +7881,15 @@ function renderZoneOrderEditor(){
     box.appendChild(row);
   });
 }
-const ZONE_SCALE_DEF={battle:100,sys:100,shield:100,mana:100,hand:100};
+const ZONE_SCALE_DEF={battle:100,sys:100,shield:100,mana:100,hand:100,pile:100};
 function renderZoneScaleEditor(){
   const box=$("zoneScaleList");if(!box)return;
   box.innerHTML="";
   const zs=Object.assign({},ZONE_SCALE_DEF,S.zoneScale||{});
-  for(const k of ["battle","sys","mana","hand"]){
+  for(const k of ["battle","sys","pile","mana","hand"]){
     const row=document.createElement("div");
     row.style.cssText="display:flex;align-items:center;gap:8px";
-    const lb=document.createElement("span");lb.style.cssText="font-size:12px;width:92px";lb.textContent=ZONE_LB[k];
+    const lb=document.createElement("span");lb.style.cssText="font-size:12px;width:120px";lb.textContent=ZONE_LB[k];
     const rg=document.createElement("input");
     rg.type="range";rg.min="70";rg.max="200";rg.step="5";rg.value=String(zs[k]);rg.style.flex="1";
     const val=document.createElement("span");val.style.cssText="font-size:12px;width:42px;text-align:right";val.textContent=zs[k]+"%";
@@ -7887,6 +7909,8 @@ function applyZoneScales(){
     const k=z.dataset.zone;
     if(zs[k])z.style.setProperty("--zsc",zs[k]/100);
   });
+  // 山札系パイル（山札/墓地/GR/超次元/ゲーム外）だけ別倍率
+  document.querySelectorAll('.zone[data-zone="sys"]').forEach(z=>z.style.setProperty("--pilesc",(zs.pile||100)/100));
 }
 function buildBoards(){
   const board=$("board");board.innerHTML="";
@@ -7922,11 +7946,9 @@ function buildBoards(){
           <span class="spacer"></span>${selBtn("battle")}
         </div>
         <div class="brow">
-          <div class="resolvebox" data-zone="resolve">
-            <span class="rlabel">解決中</span>
-            <div class="cards" id="zResolve-${pi}"></div>
-          </div>
-          <div class="cards" id="zBattle-${pi}"></div>
+          ${(S.resolveSide==="right")
+            ?`<div class="cards" id="zBattle-${pi}"></div><div class="resolvebox" data-zone="resolve"><span class="rlabel">解決中</span><div class="cards" id="zResolve-${pi}"></div></div>`
+            :`<div class="resolvebox" data-zone="resolve"><span class="rlabel">解決中</span><div class="cards" id="zResolve-${pi}"></div></div><div class="cards" id="zBattle-${pi}"></div>`}
         </div>
       </div>`,
       mana:`
@@ -8509,7 +8531,20 @@ function renderPlayer(pi){
   };
   fill(`zBattle-${pi}`,"battle");
   fill(`zResolve-${pi}`,"resolve");
-  fill(`zMana-${pi}`,"mana");
+  if(S.manaMode==="compact"){
+    const mb=$(`zMana-${pi}`);
+    if(mb){
+      mb.innerHTML="";
+      const untap=Z.mana.filter(c=>!c.tapped).length;
+      const top=Z.mana[Z.mana.length-1];
+      const pile=pileEl({n:`${untap}/${Z.mana.length}`,label:"マナ",dz:"mana",cls:"manapile",
+        img:top&&imgURL.get(faceKeyOf(top))||null,
+        onTap:()=>openManaViewer(pi)});
+      mb.appendChild(pile);
+    }
+  }else{
+    fill(`zMana-${pi}`,"mana");
+  }
   fill(`zHand-${pi}`,"hand");
   $(`cBattle-${pi}`).textContent=Z.battle.length;
   $(`cMana-${pi}`).textContent=Z.mana.length;
@@ -9308,6 +9343,7 @@ function attachPointer(el,ctx){
             if(ctx.zone==="grave")renderGraveViewer(ctx.p);
             else if(ctx.zone==="exile")openExileViewer(ctx.p);
             else if(ctx.zone==="hyper")openHyperViewer(ctx.p);
+            else if(ctx.zone==="mana"&&$("viewerOlay").classList.contains("open"))renderManaViewer(ctx.p);
           }
           else if(ctx.tap)ctx.tap(e2);
           else onCardTap(ctx,e2);
@@ -11083,6 +11119,30 @@ function openHyperViewer(pi){
   });
   $("viewerOlay").classList.add("open");
 }
+function openManaViewer(pi){renderManaViewer(pi);}
+function renderManaViewer(pi){
+  const Z=zonesOf(pi);
+  const untap=Z.mana.filter(c=>!c.tapped).length;
+  $("vTitle").textContent=`マナゾーン（使用可 ${untap} / 全 ${Z.mana.length}）　[${S.players[pi].label}]`;
+  $("vHint").textContent="カードをタップ→タップ/アンタップ ／ 横にドラッグで他ゾーンへ移動 ／ もう一度ゲージをタップで閉じる";
+  $("vSearch").style.display="none";
+  $("vOk").style.display="none";$("vStatus").textContent="";
+  const g=$("vGrid");g.innerHTML="";
+  if(!Z.mana.length){
+    g.innerHTML="<div class='hint' style='grid-column:1/-1'>マナゾーンは空です（手札などからカードをドラッグで置けます）</div>";
+  }
+  Z.mana.forEach(c=>{
+    const el=vCardEl(dispName.get(faceKeyOf(c))||c.name);
+    if(c.tapped)el.classList.add("mtap");
+    if(S.msel.some(x=>x.id===c.id))el.classList.add("picked");
+    attachPointer(el,{p:pi,zone:"mana",id:c.id,viewer:true,tap:()=>{
+      c.tapped=!c.tapped;
+      sfx("move");renderAll();renderManaViewer(pi);
+    }});
+    g.appendChild(el);
+  });
+  $("viewerOlay").classList.add("open");
+}
 function openOppHandViewer(op){
   const Z=zonesOf(op);
   $("vTitle").textContent=`👁 ${S.players[op].label}の手札（${Z.hand.length}枚）`;
@@ -11988,6 +12048,8 @@ function openSettings(){
   $("setAutoTap").checked=!!S.autoTap;
   $("setSheetPos").value=S.sheetPos||"right";
   $("setLayout").value=S.layout||"stack";
+  $("setResolveSide").value=S.resolveSide||"left";
+  $("setManaMode").value=S.manaMode||"spread";
   $("setWidePair").value=S.widePair||"sys,hand";
   renderZoneOrderEditor();
   renderZoneScaleEditor();
@@ -12048,6 +12110,16 @@ $("setCardGap").addEventListener("input",async ()=>{
   $("cardGapVal").textContent=S.cardGap+"px";
   document.documentElement.style.setProperty("--cardgap",S.cardGap+"px");
   if(db)await idbPut("misc","cardGap",S.cardGap);
+});
+$("setResolveSide").addEventListener("change",async ()=>{
+  S.resolveSide=$("setResolveSide").value||"left";
+  if(db)await idbPut("misc","resolveSide",S.resolveSide);
+  renderAll();
+});
+$("setManaMode").addEventListener("change",async ()=>{
+  S.manaMode=$("setManaMode").value||"spread";
+  if(db)await idbPut("misc","manaMode",S.manaMode);
+  renderAll();
 });
 $("setCardScale").addEventListener("input",async ()=>{
   S.cardScale=+$("setCardScale").value||100;
@@ -12956,6 +13028,10 @@ if("serviceWorker" in navigator&&location.protocol==="https:"){
   if(wp)S.widePair=wp;
   const zsc=db?await idbGet("misc","zoneScale"):null;
   if(zsc){try{S.zoneScale=JSON.parse(zsc);}catch(e){}}
+  const rsd=db?await idbGet("misc","resolveSide"):null;
+  if(rsd)S.resolveSide=rsd;
+  const mmd=db?await idbGet("misc","manaMode"):null;
+  if(mmd)S.manaMode=mmd;
   const nu=db?await idbGet("misc","noUntapMana"):null;
   if(nu!==null&&nu!==undefined)S.noUntapMana=!!nu;
   const tm=db?await idbGet("misc","tapMultiMana"):null;
