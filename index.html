@@ -2105,6 +2105,9 @@ function startGame(picks){
     const f=$("stFirst")?$("stFirst").value:"random";
     if(f==="p2")S.who=1;
     else if(f==="random")S.who=randInt(2);
+    // オフライン対戦：先行・後攻はランダムのまま、先行プレイヤーを必ず手前（下面）へ着席させる。
+    // これにより先行が上面に来て下面を先に操作→ターンが二重に進むのを防ぐ。オンラインは自席固定のため除外。
+    if(!(ONLINE.conn&&ONLINE.conn.open)){S.seat=S.who;buildBoards();}
   }
   closeSheet();renderAll();
   sfx("ok");
