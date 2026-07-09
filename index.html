@@ -51,6 +51,13 @@ body.vs .pboard{gap:3px}
   box-shadow:0 1px 0 rgba(245,197,66,.15);
   flex:0 0 auto;overflow-x:auto;
 }
+@media (max-width:640px){
+  #topbar{overflow-x:visible;flex-wrap:wrap;gap:5px;row-gap:4px}
+  #topbar .wm{display:none}
+  #topbar h1{font-size:18px}
+  #topbar .btn.small{font-size:11px;padding:4px 8px}
+  #turnBadge{font-size:11px}
+}
 #topbar h1{
   font-size:15px;font-weight:900;letter-spacing:.06em;
   background:linear-gradient(180deg,var(--accent-2),var(--accent));
@@ -110,6 +117,11 @@ body.compact-head .zbtn{font-size:10px;padding:2px 7px;border-radius:6px}
 body.compact-head #bottombar{gap:5px;padding:5px 8px calc(5px + env(safe-area-inset-bottom))}
 body.compact-head #bottombar .btn{font-size:11px;padding:7px 9px}
 body.compact-head #btnNextTurn{font-size:13px;padding:9px;min-width:110px}
+@media (max-width:640px){
+  .zone-head{min-height:12px;margin-bottom:1px;gap:4px}
+  .zone-head .kanji{font-size:9px;letter-spacing:.04em}
+  .zbtn{font-size:10px;padding:3px 7px;border-radius:6px}
+}
 .cards{
   display:flex;gap:var(--cardgap,5px);min-height:var(--card-h);
   flex-wrap:wrap;overflow:visible;
@@ -313,11 +325,15 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
   border-top:1px solid var(--line);flex-wrap:nowrap;overflow-x:auto;
 }
 #btnNextTurn{flex:1;font-size:15px;padding:12px;min-width:130px}
+#btnMore{display:none}
 @media (max-width:640px){
-  #bottombar{flex-wrap:wrap;overflow-x:visible}
-  #bottombar .btn.small{padding:6px 8px;font-size:11px}
+  #bottombar{flex-wrap:wrap;overflow-x:visible;gap:5px;padding:5px 8px calc(5px + env(safe-area-inset-bottom))}
+  #bottombar .btn.small{font-size:11px;padding:6px 8px}
+  #btnMore{display:inline-block}
+  #bottombar .bar-extra{display:none}
+  #bottombar.more-open .bar-extra{display:inline-block}
   #btnPause{order:98}
-  #btnNextTurn{flex:1 1 100%;order:99;min-width:0;padding:11px}
+  #btnNextTurn{flex:1 1 100%;order:99;min-width:0;padding:11px;font-size:14px}
 }
 
 #sheet{
@@ -478,7 +494,7 @@ body.shake{animation:bodyShake .4s ease-out}
 <body>
 
 <div id="topbar">
-  <h1>⚡ DM Re:Vault</h1>
+  <h1><span class="logo">⚡</span><span class="wm"> DM Re:Vault</span></h1>
   <span id="turnBadge">ターン 0</span>
   <button class="btn small ex" id="btnExpert">EX</button>
   <button class="btn small" id="btnDeckMenu">🃏 デッキ</button>
@@ -490,15 +506,16 @@ body.shake{animation:bodyShake .4s ease-out}
 <div id="board"></div>
 
 <div id="bottombar">
-  <button class="btn small" id="btnStart">開始/再試合</button>
+  <button class="btn small bar-extra" id="btnStart">開始/再試合</button>
   <button class="btn small" id="btnEffects">✨ 効果</button>
   <button class="btn small" id="btnUndo">↩ 戻る</button>
   <button class="btn small" id="btnMulti">複数選択</button>
   <button class="btn small" id="btnWho" style="display:none">操作:P1</button>
   <button class="btn small" id="btnSeat" style="display:none">視点:P1</button>
   <button class="btn small warn" id="btnResignBar" style="display:none">🏳 投了</button>
-  <button class="btn small ghost" id="btnLog">📜</button>
-  <button class="btn small" id="btnFreePlay">踏倒:OFF</button>
+  <button class="btn small ghost bar-extra" id="btnLog">📜</button>
+  <button class="btn small bar-extra" id="btnFreePlay">踏倒:OFF</button>
+  <button class="btn small ghost" id="btnMore" title="その他の操作">⋯</button>
   <button class="btn" id="btnPause" title="処理中（誤操作防止ロック）">⏸ 処理中</button>
   <button class="btn primary" id="btnNextTurn">次のターン ▶</button>
 </div>
@@ -655,6 +672,7 @@ body.shake{animation:bodyShake .4s ease-out}
       <div class="row" style="align-items:center;gap:8px" id="widePairRow">
         <span style="font-size:12px;font-weight:700">ワイド時の横並び</span>
         <select id="setWidePair" style="flex:1">
+          <option value="sys,battle">山札/盾（左）＋ バトル（右）</option>
           <option value="sys,hand">山札/盾（左）＋ 手札（右）</option>
           <option value="mana,hand">マナ（左）＋ 手札（右）</option>
           <option value="sys,mana">山札/盾（左）＋ マナ（右）</option>
@@ -8051,7 +8069,7 @@ function buildBoards(){
       }
     }
     if(lay==="wide"){
-      const pair=(S.widePair||"sys,hand").split(",");
+      const pair=(S.widePair||"sys,battle").split(",");
       const a=pb.querySelector(`[data-zone="${pair[0]}"]`);
       const b=pb.querySelector(`[data-zone="${pair[1]}"]`);
       if(a&&b){
@@ -9070,6 +9088,7 @@ $("olDeckSend").addEventListener("click",async ()=>{
 $("olResign").addEventListener("click",doResign);
 $("btnResignBar").addEventListener("click",doResign);
 $("btnLog").addEventListener("click",openGameLog);
+$("btnMore").addEventListener("click",()=>{$("bottombar").classList.toggle("more-open");});
 $("btnFreePlay").addEventListener("click",()=>{
   S.freePlay=!S.freePlay;
   renderAll();
@@ -12169,7 +12188,7 @@ function openSettings(){
   $("setBattleBtns").value=(S.battleBtns===false)?"off":"on";
   $("setShieldMode").value=S.shieldMode||"row";
   $("setCompactHead").checked=!!S.compactHead;
-  $("setWidePair").value=S.widePair||"sys,hand";
+  $("setWidePair").value=S.widePair||"sys,battle";
   renderZoneOrderEditor();
   renderZoneScaleEditor();
   $("setKeysOn").checked=!!S.keysOn;
