@@ -1498,6 +1498,8 @@ body.shake{animation:bodyShake .4s ease-out}
       <div class="row" style="gap:12px;flex-wrap:wrap">
         <label><input type="checkbox" id="fxWide"> 横向きカード（ドルマゲドン等・置いた時に横向き）</label>
         <label><input type="checkbox" id="fxDragonB"> ドラゴン・ブレイカー（ブレイク数ぶん山上を盾へ）</label>
+        <label><input type="checkbox" id="fxShieldBurn"> シールド焼却（このクリーチャーがブレイクした盾は手札に加えず墓地へ・S・トリガー不可／ボルメテウス型）</label>
+        <label><input type="checkbox" id="fxQqqx"> Q.Q.QX型（ブレイクした盾を相手の山札の上から4枚目に横向きで差し込む／相手がその横向きを引くと特殊敗北／相手は自分の山札をシャッフル・確認・表向きにできない／このカードが離れたら自分の山札をシャッフル）</label>
       </div>
       <div class="row" style="gap:12px;flex-wrap:wrap">
         <label><input type="checkbox" id="fxAuraTapIn"> 常在：相手クリーチャーはタップして出る</label>
@@ -1833,6 +1835,20 @@ function isEvoReg(r){
   if((r.twin||r.ctype==="twinpact")&&r.twinTop&&EVO_CTYPES.includes(r.twinTop))return true;
   return false;
 }
+/* Q.Q.QX：相手が場に持つ時、pi は自分の山札をシャッフル/確認/表向きにできない */
+function qqqxOwnerOpp(pi){
+  if(!S.vs)return false;
+  const foe=pi?0:1;
+  return zonesOf(foe).battle.some(x=>{const r=getReg(x);return r&&r.qqqx&&!isSealed(x)&&!isIgnored(x,foe);});
+}
+function qqqxBlock(pi,act){
+  if(qqqxOwnerOpp(pi)){toast(`🚫 Q.Q.QX：${S.players[pi].label} は山札を${act}できません`);return true;}
+  return false;
+}
+function qqqxLeaveShuffle(pi,c){
+  const r=getReg(c);
+  if(r&&r.qqqx&&!c._qqqxShuffled){c._qqqxShuffled=true;shuffleDeck(zonesOf(pi));toast(`🌀 Q.Q.QX（${faceNameOf(c)}）が離れた → ${S.players[pi].label} は自分の山札をシャッフル`);}
+}
 
 /* ================= undo ================= */
 const HIST=[];
@@ -2122,7 +2138,14 @@ function draw(pi,n=1){
       if(S.vs&&S.turn>0)declareWin(pi?0:1,`山札切れ：${S.players[pi].label} はカードを引けない`);
       break;
     }
-    const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.hand.push(c);
+    const c=Z.deck.shift();
+    if(S.vs&&c.qqqxSide&&qqqxOwnerOpp(pi)){
+      c.faceup=true;c.sideways=false;c.qqqxSide=false;Z.hand.push(c);markArrive(c);
+      sfx("draw");emitEvent(pi,"draw");renderAll();
+      declareWin(pi?0:1,`Q.Q.QX：${S.players[pi].label} が横向きのカードを引いてしまった（特殊敗北）`);
+      return;
+    }
+    c.faceup=true;c.sideways=false;c.qqqxSide=false;Z.hand.push(c);
     markArrive(c);
   }
   sfx("draw");
@@ -3774,6 +3797,7 @@ async function destroyCreature(pi,c){
     }
   }
   Z.battle.splice(i,1);
+  qqqxLeaveShuffle(pi,c);
   if(c.gear&&c.gear.length){
     const gs=c.gear.splice(0);
     gs.forEach(g=>gearOut(Z,g));
@@ -4951,7 +4975,24 @@ async function breakShields(op,count,attacker,forceIdx){
   S.brokenTurn=S.brokenTurn||{};
   S.brokenTurn[op]=(S.brokenTurn[op]||0)+shs.length;
   const stackIds=new Set(stack.map(x=>x.id));
-  await processBroken(op,stack,`🛡 ${shs.length>1?"同時ブレイク":"ブレイク"}：${S.players[op].label}のシールド（計${stack.length}枚）`);
+  const aRep=attacker?getReg(attacker):null;
+  if(S.expert&&aRep&&aRep.shieldBurn){
+    // ボルメテウス型：ブレイクした盾は手札に加えるかわりに墓地へ（S・トリガー不可）
+    stack.forEach(c=>{c.tapped=false;c.faceup=true;c.mark=false;c.sideways=false;OZ.grave.push(c);});
+    sfx("grave");renderAll();
+    toast(`🔥 シールド焼却（${faceNameOf(attacker)}）：ブレイクした${stack.length}枚は手札に加えず墓地へ（S・トリガー不可）`);
+  }else if(S.expert&&aRep&&aRep.qqqx){
+    // Q.Q.QX型：ブレイクした盾を相手の山札の上から4枚目に横向きで差し込む
+    stack.forEach(c=>{
+      c.tapped=false;c.faceup=false;c.mark=false;c.sideways=true;c.qqqxSide=true;
+      const pos=Math.min(3,OZ.deck.length);
+      OZ.deck.splice(pos,0,c);
+    });
+    sfx("move");renderAll();
+    toast(`🔀 Q.Q.QX（${faceNameOf(attacker)}）：ブレイクした${stack.length}枚を${S.players[op].label}の山札の上から4枚目に横向きで差し込んだ（引くと特殊敗北）`);
+  }else{
+    await processBroken(op,stack,`🛡 ${shs.length>1?"同時ブレイク":"ブレイク"}：${S.players[op].label}のシールド（計${stack.length}枚）`);
+  }
   // G・ストライク：手札に加わったGS持ちを確認
   if(S.expert){
     const gsCards=OZ.hand.filter(x=>stackIds.has(x.id)&&(()=>{const r2=getReg(x);return r2&&r2.gs;})());
@@ -6362,6 +6403,8 @@ function renderFxEditor(){
   $("fxMonsho").checked=!!FXEDIT.monsho;
   $("fxWide").checked=!!FXEDIT.wide;
   $("fxDragonB").checked=!!FXEDIT.dragonB;
+  $("fxShieldBurn").checked=!!FXEDIT.shieldBurn;
+  $("fxQqqx").checked=!!FXEDIT.qqqx;
   $("fxAuraTapIn").checked=!!FXEDIT.auraTapIn;
   $("fxAuraNote").value=FXEDIT.auraNote||"";
   $("fxModeN").value=String(FXEDIT.modeN||0);
@@ -6571,6 +6614,8 @@ function openFxEditor(key){
     monsho:cur?!!cur.monsho:false,
     wide:cur?!!cur.wide:false,
     dragonB:cur?!!cur.dragonB:false,
+    shieldBurn:cur?!!cur.shieldBurn:false,
+    qqqx:cur?!!cur.qqqx:false,
     auraTapIn:cur?!!cur.auraTapIn:false,
     auraNote:cur&&cur.auraNote||"",
     modeN:cur&&cur.modeN||0,
@@ -6798,6 +6843,8 @@ $("fxSave").addEventListener("click",async ()=>{
     monsho:$("fxMonsho").checked,
     wide:$("fxWide").checked,
     dragonB:$("fxDragonB").checked,
+    shieldBurn:$("fxShieldBurn").checked,
+    qqqx:$("fxQqqx").checked,
     auraTapIn:$("fxAuraTapIn").checked,
     auraNote:$("fxAuraNote").value.trim(),
     modeN:+$("fxModeN").value||0,
@@ -6918,6 +6965,8 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.monsho)attrs.push("裁きの紋章");
     if(v.wide)attrs.push("横向き");
     if(v.dragonB)attrs.push("ドラゴンB");
+    if(v.shieldBurn)attrs.push("シールド焼却");
+    if(v.qqqx)attrs.push("Q.Q.QX型");
     if(v.auraTapIn||v.auraNote)attrs.push("常在");
     if(v.machf)attrs.push("マッハファイター");
     if(v.noBlock)attrs.push("ブロックされない");
@@ -7970,6 +8019,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
     }
   }
   if(S.expert&&fromZone==="battle"&&toZone!=="battle"){
+    qqqxLeaveShuffle(pFrom,c);
     const rML=getReg(c);
     if(rML&&rML.megaLB&&["hand","mana","grave"].includes(toZone))toast(`💥 メガ・ラストバースト：呪文側を唱えられます（${faceNameOf(c)}）`);
     if(rML&&rML.ctype==="exile"&&(c.face||0)>0){c.face=0;toast(`エグザイル：${c.name} は元の状態（1面目）に戻った`);}
@@ -11024,6 +11074,7 @@ function openDeckMenu(pi){
   const box=$("sheetActions");box.innerHTML="";
   box.appendChild(actBtn("1枚ドロー",()=>{draw(pi,1);closeSheet();},"primary"));
   box.appendChild(actBtn("シャッフル（横差し解除）",()=>{
+    if(qqqxBlock(pi,"シャッフル"))return;
     shuffleDeck(Z);renderAll();toast("シャッフルしました（横差しは解除）");closeSheet();
   }));
   box.appendChild(actBtn("🔍 すべて見る（上から順・パネル）",()=>{closeSheet();openDeckViewer(pi);}));
@@ -11031,6 +11082,7 @@ function openDeckMenu(pi){
   box.appendChild(actBtn("🔎 超探索（条件を指定→5種提示）",()=>{closeSheet();searchZone(pi,"deck",5);}));
   box.appendChild(actBtn("🔍 条件でカードを探す（文明/パワー/コスト・全一致表示）",()=>{closeSheet();findByCond(pi);},"",true));
   box.appendChild(actBtn("上からn枚 見る（非公開）",async ()=>{
+    if(qqqxBlock(pi,"確認"))return;
     const n=await askNumber(`上から何枚 見ますか？（1〜${Z.deck.length}）`,3,Z.deck.length);
     if(!n||n<1)return;
     snap();
@@ -11038,10 +11090,12 @@ function openDeckMenu(pi){
     closeSheet();renderAll();openRevealPanel(pi,"look");
   },"",true));
   box.appendChild(actBtn("上を1枚 公開",()=>{
+    if(qqqxBlock(pi,"表向きに"))return;
     if(Z.deck.length){const c=Z.deck.shift();c.faceup=true;Z.reveal.push(c);}
     closeSheet();renderAll();openRevealPanel(pi,"reveal");
   }));
   box.appendChild(actBtn("上からn枚 公開",async ()=>{
+    if(qqqxBlock(pi,"表向きに"))return;
     const n=await askNumber(`上から何枚 表向きに公開しますか？（1〜${Z.deck.length}）`,3,Z.deck.length);
     if(!n||n<1)return;
     snap();
@@ -11797,6 +11851,7 @@ function openZeronPanel(pi,c){
   document.body.appendChild(ol);
 }
 function openDeckViewer(pi){
+  if(qqqxBlock(pi,"確認"))return;
   const Z=zonesOf(pi);
   let dvMode=false;
   const dvSel=new Set();
