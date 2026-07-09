@@ -248,16 +248,17 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 .zpair .zone{flex:1 1 0;min-width:0}
 .zpair.mhpair .zone[data-zone="mana"]{flex:0 0 auto;min-width:0}
 .zpair.mhpair .zone[data-zone="hand"]{flex:1 1 auto;min-width:0}
-/* ワイド・コンパクトマナ：上段バトル、下段 山札(左)｜盾(中央)｜手札(右)｜マナ(右端) */
-.zpair.resrow{display:flex;gap:8px;align-items:flex-start}
-.zpair.resrow>.zone[data-zone="sys"]{flex:0 1 auto;min-width:0}
-.zpair.resrow>.zone.shieldz{flex:0 1 auto;min-width:0}
-.zpair.resrow>.zone[data-zone="hand"]{flex:1 1 0;min-width:0}
-.zpair.resrow>.zone.manaslim{flex:0 0 auto}
+/* ワイド・コンパクトマナ：左列=盾(上)/山札(下)、右列=バトル(上)/マナ+手札(下) */
+.zpair.cmwide{display:flex;gap:8px;align-items:stretch}
+.zpair.cmwide>.lcol{flex:0 1 auto;min-width:0;display:flex;flex-direction:column;gap:4px;justify-content:space-between}
+.zpair.cmwide>.rcol{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:4px}
+.lcol>.zone{flex:0 0 auto}
+.rcol>.zone[data-zone="battle"]{flex:1 1 auto;min-height:0}
+.rcol>.mhrow{display:flex;gap:8px;align-items:flex-start;flex:0 0 auto}
+.mhrow>.zone.manaslim{flex:0 0 auto}
+.mhrow>.zone[data-zone="hand"]{flex:1 1 0;min-width:0}
 .zone.shieldz .zone-head .kanji{color:#7dd3fc}
 body.vs .pboard.cmw{flex:1 1 0;min-height:0}
-.pboard.cmw>.zone[data-zone="battle"]{flex:1 1 auto;min-height:0}
-.pboard.cmw>.zpair.resrow{flex:0 0 auto}
 .zpair .zone.manaslim{flex:0 0 auto;min-width:0}
 .manaslim .zone-head{flex-wrap:wrap;gap:4px}
 .manaslim>.cards{justify-content:center;min-width:calc(var(--card-h)*.92)}
@@ -8099,7 +8100,7 @@ function buildBoards(){
     }
     if(lay==="wide"){
       if(S.manaMode==="compact"){
-        // 理想レイアウト：上段＝バトルゾーン、下段＝ 山札(左)｜盾(中央)｜手札(右)｜マナ(右端)
+        // 理想：左列＝盾(上)/山札(下)、右列＝バトル(上)/マナ+手札(下、マナが手札の左)
         const sysEl=pb.querySelector('[data-zone="sys"]');
         const battleEl=pb.querySelector('[data-zone="battle"]');
         const manaEl=pb.querySelector('[data-zone="mana"]');
@@ -8108,11 +8109,20 @@ function buildBoards(){
           const shz=document.createElement("div");
           shz.className="zone shieldz";shz.setAttribute("data-zone","shieldz");
           shz.innerHTML=`<div class="zone-head"><span class="kanji">盾</span></div><div class="cards" id="shieldrow-${pi}"></div>`;
-          const res=document.createElement("div");res.className="zpair resrow";
-          res.appendChild(sysEl);res.appendChild(shz);res.appendChild(handEl);res.appendChild(manaEl);
-          pb.innerHTML="";
-          if(pi===seat){pb.appendChild(battleEl);pb.appendChild(res);}
-          else{pb.appendChild(res);pb.appendChild(battleEl);}
+          const lcol=document.createElement("div");lcol.className="lcol";
+          const rcol=document.createElement("div");rcol.className="rcol";
+          const mh=document.createElement("div");mh.className="mhrow";
+          mh.appendChild(manaEl);mh.appendChild(handEl);
+          if(pi===seat){
+            lcol.appendChild(shz);lcol.appendChild(sysEl);
+            rcol.appendChild(battleEl);rcol.appendChild(mh);
+          }else{
+            lcol.appendChild(sysEl);lcol.appendChild(shz);
+            rcol.appendChild(mh);rcol.appendChild(battleEl);
+          }
+          const row=document.createElement("div");row.className="zpair cmwide";
+          row.appendChild(lcol);row.appendChild(rcol);
+          pb.innerHTML="";pb.appendChild(row);
           pb.classList.add("cmw");
         }
       }else{
