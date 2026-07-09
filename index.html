@@ -152,8 +152,7 @@ body.compact-head #btnNextTurn{font-size:13px;padding:9px;min-width:110px}
 }
 
 .card{
-  width:var(--card-w);height:var(--card-h);
-  flex:0 0 auto;border-radius:6px;
+  height:var(--card-h);width:auto;aspect-ratio:63/88;flex:0 0 auto;border-radius:6px;
   border:1px solid #3a4560;background:#0d1119;
   position:relative;overflow:hidden;cursor:pointer;
   transition:transform .14s ease, box-shadow .14s ease;
@@ -239,7 +238,7 @@ body.compact-head #btnNextTurn{font-size:13px;padding:9px;min-width:110px}
 body.lay-cols #board{display:flex;flex-direction:row;gap:8px;align-items:flex-start}
 body.lay-cols .pboard{flex:1 1 0;min-width:0}
 .zpair{display:flex;gap:6px}
-.zone[data-zone] .card{width:calc(var(--card-w)*var(--zsc,1));height:calc(var(--card-h)*var(--zsc,1))}
+.zone[data-zone] .card{height:calc(var(--card-h)*var(--zsc,1));width:auto;aspect-ratio:63/88}
 .zpair .zone{flex:1 1 0;min-width:0}
 .zpair.mhpair .zone[data-zone="mana"]{flex:0 0 auto;min-width:0}
 .zpair.mhpair .zone[data-zone="hand"]{flex:1 1 auto;min-width:0}
@@ -8114,6 +8113,11 @@ function buildBoards(){
           }
         }
       }
+      // スプレッドマナ：自分の盤面はマナを最下段へ（手札をバトルの真下に近づける）
+      if(S.manaMode!=="compact"&&pi===seat){
+        const manaB=pb.querySelector('[data-zone="mana"]');
+        if(manaB&&manaB.parentNode===pb)pb.appendChild(manaB);
+      }
       // スプレッドマナ等で手札が単独行のときは右半分に収める（マナは全幅の1列のまま）
       const handSolo=pb.querySelector('[data-zone="hand"]');
       if(handSolo&&handSolo.parentNode===pb){
@@ -8798,7 +8802,7 @@ function baseCardH(){
   const lay=S.layout||"stack";
   let b;
   if(S.vs&&lay==="cols")b=Math.min(205,Math.max(56,(H-215)/4.5));
-  else if(lay==="wide")b=S.vs?Math.min(158,Math.max(56,(H-230)/6.4)):Math.min(172,Math.max(66,(H-170)/3.2));
+  else if(lay==="wide")b=S.vs?Math.min(128,Math.max(52,(H-230)/7.8)):Math.min(146,Math.max(60,(H-170)/3.8));
   else b=S.vs
     ? Math.min(175,Math.max(56,(H-230)/6.6))
     : Math.min(185,Math.max(66,(H-170)/3.5));
