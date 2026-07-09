@@ -126,7 +126,7 @@ body.compact-head #btnNextTurn{font-size:13px;padding:9px;min-width:110px}
   .zbtn{font-size:10px;padding:3px 7px;border-radius:6px}
 }
 .cards{
-  display:flex;gap:var(--cardgap,5px);min-height:var(--card-h);
+  display:flex;gap:var(--cardgap,5px);row-gap:calc(var(--cardgap,5px) + 4px);min-height:var(--card-h);
   flex-wrap:wrap;overflow:visible;
   -webkit-overflow-scrolling:touch;
   align-items:flex-start;padding:2px 1px;scrollbar-width:thin;
@@ -243,6 +243,11 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 .zpair .zone{flex:1 1 0;min-width:0}
 .zpair.mhpair .zone[data-zone="mana"]{flex:0 0 auto;min-width:0}
 .zpair.mhpair .zone[data-zone="hand"]{flex:1 1 auto;min-width:0}
+/* ワイド：マナ(左半分)｜手札(右半分)。手札は右半分に収める */
+.zpair.mhwide{gap:6px}
+.zpair.mhwide .zone{flex:1 1 0;min-width:0}
+.zpair.mhwide .zone[data-zone="mana"]>.cards{justify-content:flex-end}
+body.lay-wide .zone[data-zone="hand"].wide-hand-half{width:50%;margin-left:auto;box-sizing:border-box}
 .zpair .zone.manaslim{flex:0 0 auto;min-width:0}
 .manaslim .zone-head{flex-wrap:wrap;gap:4px}
 .manaslim>.cards{justify-content:center;min-width:calc(var(--card-h)*.92)}
@@ -329,7 +334,7 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 }
 #barScroll{flex:0 0 auto;display:flex;gap:7px;align-items:center;min-width:0;flex-wrap:nowrap}
 #btnNextTurn{flex:1;font-size:15px;padding:12px;min-width:130px}
-#btnMore{display:none}
+#btnMore{display:none;flex:0 0 auto}
 @media (max-width:640px){
   #bottombar{gap:5px;padding:5px 8px calc(5px + env(safe-area-inset-bottom))}
   #barScroll{flex:1 1 auto;overflow-x:auto;scrollbar-width:thin}
@@ -512,17 +517,17 @@ body.shake{animation:bodyShake .4s ease-out}
 <div id="board"></div>
 
 <div id="bottombar">
+  <button class="btn small ghost" id="btnMore" title="その他の操作">⋯</button>
   <div id="barScroll">
-    <button class="btn small bar-extra" id="btnStart">開始/再試合</button>
-    <button class="btn small" id="btnEffects">✨ 効果</button>
+    <button class="btn small" id="btnStart">開始/再試合</button>
     <button class="btn small" id="btnUndo">↩ 戻る</button>
     <button class="btn small" id="btnMulti">複数選択</button>
-    <button class="btn small" id="btnWho" style="display:none">操作:P1</button>
-    <button class="btn small" id="btnSeat" style="display:none">視点:P1</button>
-    <button class="btn small warn" id="btnResignBar" style="display:none">🏳 投了</button>
+    <button class="btn small bar-extra" id="btnEffects">✨ 効果</button>
+    <button class="btn small bar-extra" id="btnWho" style="display:none">操作:P1</button>
+    <button class="btn small bar-extra" id="btnSeat" style="display:none">視点:P1</button>
+    <button class="btn small warn bar-extra" id="btnResignBar" style="display:none">🏳 投了</button>
     <button class="btn small ghost bar-extra" id="btnLog">📜</button>
     <button class="btn small bar-extra" id="btnFreePlay">踏倒:OFF</button>
-    <button class="btn small ghost" id="btnMore" title="その他の操作">⋯</button>
     <button class="btn" id="btnPause" title="処理中（誤操作防止ロック）">⏸ 処理中</button>
   </div>
   <button class="btn primary" id="btnNextTurn">次のターン ▶</button>
@@ -728,6 +733,7 @@ body.shake{animation:bodyShake .4s ease-out}
         </select>
       </div>
       <div class="hint">スマホでカード画像が潰れる場合に。どちらかを「隠す」にすると効果登録⚙マークも消え、カード画像だけになります。隠しても、カードを長押しすれば能力・コスト・攻撃/タップ/効果登録/メニューが大きく表示されます。盾の重なり枚数や封印など、画像から分からない状態表示は残します。</div>
+      <div class="row"><label><input type="checkbox" id="setAutoSeat"> 対戦：ターンが進むたびに視点を手番プレイヤーへ自動切り替え（必要な時だけ手動で切替。スマホは「視点」ボタンを隠せます）</label></div>
       <div class="row" style="align-items:center;gap:8px">
         <span style="font-size:12px;font-weight:700">盾ゾーンの表示</span>
         <select id="setShieldMode" style="flex:1">
@@ -2278,6 +2284,7 @@ function nextTurn(){
     if(S.who===0)S.turn++;
   }else S.turn++;
   const pi=S.vs?S.who:0;
+  if(S.vs&&S.autoSeat)S.seat=pi; // 視点自動切替：ターンが進むたびに手番プレイヤー視点へ
   const Z=S.players[pi].zones;
   // 通しターンカウンタ（プレイヤーターン単位）＋ ターン限定ロック失効処理
   S.pturn=(S.pturn|0)+1;
@@ -2760,6 +2767,9 @@ async function mekureidoRun(count){
   await mekureidoRest(Z,top);
   renderAll();sfx("ok");
 }
+// 効果のコントローラー（カード登録効果はrunFxListから設定。手札メニュー等はnull＝ターンプレイヤー基準）
+let FX_PI=null;
+function fxActor(){return (FX_PI!=null)?FX_PI:(S.vs?S.who:0);}
 const EFFECTS=[
   {name:"🔢 数字を宣言（ラッキーナンバー／シャッフ型）",cat:"✨ その他",
    desc:"宣言者と数字を選び、画面上部に常時表示（宣言者の次のターン開始まで）。効果の強制はなし・手動運用。該当コストのカード使用時に警告を表示",
@@ -2814,7 +2824,7 @@ const EFFECTS=[
      closeSheet();
      const j=await askChoice("対象と操作を選択",["自分のマナをタップ","自分のマナをアンタップ","相手のマナをタップ","相手のマナをアンタップ"]);
      if(j===null)return;
-     const me=S.vs?S.who:0, opp=me===0?1:0;
+     const me=fxActor(), opp=me===0?1:0;
      const pi=(j<2)?me:opp;
      const tap=(j%2===0);
      const Z2=zonesOf(pi);
@@ -2835,7 +2845,7 @@ const EFFECTS=[
    desc:"相手のマナゾーンからランダムに選んだカードを墓地に置きます（ランド・ハンデス系）",
    async run(){
      closeSheet();
-     const me=S.vs?S.who:0, opp=me===0?1:0;
+     const me=fxActor(), opp=me===0?1:0;
      const OZ2=zonesOf(opp);
      if(!OZ2.mana.length){toast("相手のマナがありません");return;}
      const n=await askNumber("💥 ランダムに破壊するマナの枚数",1,OZ2.mana.length);
@@ -2856,7 +2866,7 @@ const EFFECTS=[
    desc:"このターン、次に召喚する1体のコストを−n。文明を指定するとその文明のみ対象（重ね掛け可）",
    async run(){
      closeSheet();
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      const n=await askNumber("コスト−いくつ？",5);
      if(n==null||n<=0)return;
      const j=await askChoice("対象文明を選択",["指定なし","光","水","闇","火","自然","ゼロ"]);
@@ -2873,14 +2883,14 @@ const EFFECTS=[
    desc:"特殊勝利条件を満たした時に。確認のうえ自分の勝ちでゲームを終了します",
    async run(){
      closeSheet();
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      await declareWin(pi,`エクストラウィン！（${S.players[pi].label}の特殊勝利）`);
    }},
   {name:"強制敗北（自分の負け）",cat:"⏭ ターン",
    desc:"敗北効果の処理用。確認のうえ自分の負けでゲームを終了します",
    async run(){
      closeSheet();
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      const op2=pi===0?1:0;
      await declareWin(op2,`強制敗北（${S.players[pi].label}は敗北効果によりゲームに負けた）`);
    }},
@@ -2888,7 +2898,7 @@ const EFFECTS=[
    desc:"指定したターン切替回数の間、敗北確定の場面で警告が出ます（自分＋相手で1往復＝2）",
    async run(){
      closeSheet();
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      const n=await askNumber("何ターン（切替回数）の間 負けない？（1往復＝2）",2);
      if(n==null||n<=0)return;
      S.noLoseCnt=S.noLoseCnt||{};
@@ -2899,7 +2909,7 @@ const EFFECTS=[
   {name:"パワー指定でクリーチャーを移動（戻す/破壊/マナ/盾）",cat:"⚔ バトルゾーン",
    desc:"出た時などに、パワーが指定値 以上/以下 のクリーチャーを 手札に戻す/破壊/マナ送り/シールド送り（陣営とパワー未登録の扱いはプレイヤー判断・cip誘発時に手動で実行）",
    async run(){
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      closeSheet();
      const sideJ=await askChoice("対象の陣営",["相手","自分","両方"]);
      if(sideJ===null)return;
@@ -2948,7 +2958,7 @@ const EFFECTS=[
      const j=await askChoice("💥 全体破壊：対象を選択",["相手のクリーチャー全て","自分のクリーチャー全て","両方すべて"]);
      if(j===null)return;
      snap();
-     const me=S.vs?S.who:0, opp=me===0?1:0;
+     const me=fxActor(), opp=me===0?1:0;
      const sides=j===0?[opp]:j===1?[me]:[me,opp];
      for(const pi of sides){
        const arr=zonesOf(pi).battle.slice();
@@ -2960,7 +2970,7 @@ const EFFECTS=[
   {name:"山札からカードを探して手札へ（シャッフル）",cat:"🎴 山札",
    desc:"山札の中から好きなカードを選んで手札に加え、山札をシャッフルします",
    async run(){
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      closeSheet();
      const Z=zonesOf(pi);
      if(!Z.deck.length){toast("山札がありません");return;}
@@ -2977,7 +2987,7 @@ const EFFECTS=[
   {name:"マナを2倍にする（このターン）",cat:"💎 マナ",
    desc:"このターン、マナ1枚が2マナぶんになります（自動タップが必要数の半分＝切り上げでタップ）。ターン終了で解除",
    async run(){
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      closeSheet();
      S.manaX2=S.manaX2||{};
      S.manaX2[pi]=true;
@@ -2993,7 +3003,7 @@ const EFFECTS=[
   {name:"相手のクリーチャーをランダムでn体、指定ゾーンへ",
    desc:"手札/マナ/墓地/山札の上/山札の下/シールドから行き先を選び、ランダムに移動（スタックはまとめて移動）",
    async run(){
-     const pi=S.vs?S.who:0;const op=pi?0:1;
+     const pi=fxActor();const op=pi?0:1;
      closeSheet();
      const OZ=zonesOf(op);
      if(!OZ.battle.length){toast("相手のバトルゾーンにクリーチャーがいません");return;}
@@ -3024,7 +3034,7 @@ const EFFECTS=[
   {name:"相手の山札を上から墓地に置く（山札破壊）",
    desc:"枚数を指定して、相手（対面）の山札の上から墓地へ置く",
    async run(){
-     const pi=S.vs?S.who:0;const op=pi?0:1;
+     const pi=fxActor();const op=pi?0:1;
      closeSheet();
      const n=await askNumber("相手の山札の上から何枚墓地に置く？",3,99);
      if(n===null)return;
@@ -3039,7 +3049,7 @@ const EFFECTS=[
   {name:"探索/超探索（山札・墓地・マナ）",
    desc:"ゾーンと条件を指定→条件に合うカードから3種（超探索は5種）をランダム提示",
    async run(){
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      closeSheet();
      const z=await askChoice("探索するゾーン",["山札","墓地","マナゾーン"]);
      if(z===null)return;
@@ -3051,7 +3061,7 @@ const EFFECTS=[
    desc:"相手の手札からコスト最大と最小のカードを公開ゾーンへ（コスト登録カードのみ対象）",
    async run(){
      if(!S.vs){toast("対戦モードのみ使用できます");closeSheet();return;}
-     const pi=S.vs?S.who:0, op=pi===0?1:0;
+     const pi=fxActor(), op=pi===0?1:0;
      closeSheet();
      revealMaxMin(op,false);
    }},
@@ -3059,20 +3069,20 @@ const EFFECTS=[
    desc:"相手の手札の呪文からコスト最大と最小を公開ゾーンへ（コスト＋タイプ登録カードのみ対象）",
    async run(){
      if(!S.vs){toast("対戦モードのみ使用できます");closeSheet();return;}
-     const pi=S.vs?S.who:0, op=pi===0?1:0;
+     const pi=fxActor(), op=pi===0?1:0;
      closeSheet();
      revealMaxMin(op,true);
    }},
   {name:"手札を1枚見せる（対面に公開）",
    desc:"自分の手札を1枚選んで、相手に見せる（公開ゾーンに一時的に表示）",
    async run(){
-     const Z=zonesOf(S.vs?S.who:0);
+     const Z=zonesOf(fxActor());
      if(!Z.hand.length){toast("手札がありません");closeSheet();return;}
      const j=await askChoice("見せるカードを選択",Z.hand.map(c=>faceNameOf(c)));
      if(j===null){closeSheet();return;}
      const c=Z.hand[j];
      c.faceup=true;
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      const op=pi===0?1:0;
      const Z2=zonesOf(op);
      Z2.reveal.push({...c,id:nextId++});
@@ -3084,7 +3094,7 @@ const EFFECTS=[
    desc:"自分の手札を全て相手に見せる",
    async run(){
      if(!S.vs){toast("対戦モードのみ使用できます");closeSheet();return;}
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      const op=pi===0?1:0;
      const Z=zonesOf(pi),Z2=zonesOf(op);
      Z.hand.forEach(c=>{c.faceup=true;Z2.reveal.push({...c,id:nextId++});});
@@ -3095,7 +3105,7 @@ const EFFECTS=[
    desc:"相手の手札を全て墓地へ（ハンデス保護があればスキップ・マッドネス等は誘発）",
    async run(){
      if(!S.vs){toast("対戦モードのみ使用できます");closeSheet();return;}
-     const pi=S.vs?S.who:0, op=pi===0?1:0;
+     const pi=fxActor(), op=pi===0?1:0;
      closeSheet();
      if(typeof handesBlockedBy==="function"){
        const hb=handesBlockedBy(op);
@@ -3109,7 +3119,7 @@ const EFFECTS=[
   {name:"自分の手札をすべて捨てる",
    desc:"自分の手札を全て墓地へ（マッドネス等は誘発）",
    async run(){
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      closeSheet();
      const Z=zonesOf(pi);const cnt=Z.hand.length;
      while(Z.hand.length){const c=Z.hand.shift();c.faceup=true;Z.grave.push(c);if(typeof afterHandDiscard==="function")afterHandDiscard(pi,c);}
@@ -3119,7 +3129,7 @@ const EFFECTS=[
   {name:"お互いの手札をすべて捨てさせる",
    desc:"両プレイヤーの手札を全て墓地へ（相手はハンデス保護尊重・マッドネス等は誘発）",
    async run(){
-     const pi=S.vs?S.who:0, op=pi===0?1:0;
+     const pi=fxActor(), op=pi===0?1:0;
      closeSheet();
      const sides=S.vs?[op,pi]:[pi];
      for(const sp of sides){
@@ -3160,7 +3170,7 @@ const EFFECTS=[
   {name:"エクストラターン（追加ターン）",
    desc:"次に「次のターン」を押しても手番が同じプレイヤーのまま続く",
    run(){
-     const pi=S.vs?S.who:0;
+     const pi=fxActor();
      S.extra[pi]=(S.extra[pi]||0)+1;
      closeSheet();
      toast(`${S.players[pi].label} はエクストラターンを獲得（累計${S.extra[pi]}回）`);
@@ -3731,7 +3741,7 @@ async function runFxList(pi,list,srcCard){
     if(f.t&&f.t.startsWith("sp:")){
       const nm=f.t.slice(3);
       const ef=(typeof EFFECTS!=="undefined")&&EFFECTS.find(e=>e.name===nm);
-      if(ef){toast(`⚡特殊効果：${nm}`);await ef.run();}
+      if(ef){toast(`⚡特殊効果：${nm}`);const _fp=FX_PI;FX_PI=pi;try{await ef.run();}finally{FX_PI=_fp;}}
       renderAll();continue;
     }
     if(f.t==="draw"){
@@ -8097,12 +8107,17 @@ function buildBoards(){
           if(wrapEl&&wrapEl.contains(handEl)){
             if(manaEl.parentNode!==wrapEl)wrapEl.appendChild(manaEl); // sys | 手札 | マナ
           }else if(handEl.parentNode===pb){
-            // 手札が単独行のとき：マナ（左）｜手札（右）でペアにする
-            const w2=document.createElement("div");w2.className="zpair mhpair";
+            // 手札が単独行のとき：マナ（左半分）｜手札（右半分）で50/50ペア
+            const w2=document.createElement("div");w2.className="zpair mhwide";
             pb.insertBefore(w2,handEl);
             w2.appendChild(manaEl);w2.appendChild(handEl);
           }
         }
+      }
+      // スプレッドマナ等で手札が単独行のときは右半分に収める（マナは全幅の1列のまま）
+      const handSolo=pb.querySelector('[data-zone="hand"]');
+      if(handSolo&&handSolo.parentNode===pb){
+        handSolo.classList.add("wide-hand-half");
       }
     }
     {
@@ -8350,6 +8365,7 @@ function cardEl(pi,zone,c){
     const dc=dispCost(c,pi);
     if(dc){
       const cb2=document.createElement("span");
+      cb2.className="cost-badge";
       cb2.textContent="💎"+dc.cost;
       cb2.title=`${dc.up?"増加":"軽減"}後コスト（元${dc.base}）`;
       cb2.style.cssText=`position:absolute;left:2px;top:2px;z-index:6;background:${dc.up?"#3a0d0d":"#0d2a16"};color:${dc.up?"#f87171":"#4ade80"};font-size:11px;font-weight:900;border-radius:6px;padding:0 5px;line-height:1.5;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.5)`;
@@ -8397,6 +8413,7 @@ function cardEl(pi,zone,c){
     const pw=dispPower(c);
     if(pw!=null){
       const pb=document.createElement("span");
+      pb.className="pw-badge";
       pb.textContent=pw>=10000?(pw/1000)+"k":pw;
       pb.title="現在のパワー";
       const base=(getReg(c)&&+getReg(c).power)||0;
@@ -8781,7 +8798,7 @@ function baseCardH(){
   const lay=S.layout||"stack";
   let b;
   if(S.vs&&lay==="cols")b=Math.min(205,Math.max(56,(H-215)/4.5));
-  else if(lay==="wide")b=S.vs?Math.min(190,Math.max(56,(H-230)/5.2)):Math.min(200,Math.max(66,(H-170)/2.8));
+  else if(lay==="wide")b=S.vs?Math.min(158,Math.max(56,(H-230)/6.4)):Math.min(172,Math.max(66,(H-170)/3.2));
   else b=S.vs
     ? Math.min(175,Math.max(56,(H-230)/6.6))
     : Math.min(185,Math.max(66,(H-170)/3.5));
@@ -12196,6 +12213,7 @@ function openSettings(){
   $("setManaMode").value=S.manaMode||"spread";
   $("setBattleLabels").value=(S.battleLabels===false)?"off":"on";
   $("setBattleBtns").value=(S.battleBtns===false)?"off":"on";
+  $("setAutoSeat").checked=!!S.autoSeat;
   $("setShieldMode").value=S.shieldMode||"row";
   $("setCompactHead").checked=!!S.compactHead;
   $("setWidePair").value=S.widePair||"sys,battle";
@@ -12279,6 +12297,11 @@ $("setBattleBtns").addEventListener("change",async ()=>{
   S.battleBtns=$("setBattleBtns").value!=="off";
   if(db)await idbPut("misc","battleBtns",S.battleBtns);
   renderAll();
+});
+$("setAutoSeat").addEventListener("change",async ()=>{
+  S.autoSeat=$("setAutoSeat").checked;
+  if(db)await idbPut("misc","autoSeat",S.autoSeat);
+  toast(S.autoSeat?"視点の自動切り替え：ON":"視点の自動切り替え：OFF");
 });
 $("setShieldMode").addEventListener("change",async ()=>{
   S.shieldMode=$("setShieldMode").value||"row";
@@ -13212,6 +13235,8 @@ if("serviceWorker" in navigator&&location.protocol==="https:"){
   if(bl!==null&&bl!==undefined)S.battleLabels=!!bl;
   const bbt=db?await idbGet("misc","battleBtns"):null;
   if(bbt!==null&&bbt!==undefined)S.battleBtns=!!bbt;
+  const ass=db?await idbGet("misc","autoSeat"):null;
+  if(ass!==null&&ass!==undefined)S.autoSeat=!!ass;
   const shm=db?await idbGet("misc","shieldMode"):null;
   if(shm)S.shieldMode=shm;
   const cph=db?await idbGet("misc","compactHead"):null;
