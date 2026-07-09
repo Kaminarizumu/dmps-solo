@@ -991,6 +991,14 @@ body.shake{animation:bodyShake .4s ease-out}
     <label><input type="checkbox" id="fxTwin"> ツインパクト（上面/下面それぞれに登録し、置いた時に選択）</label>
     <section>
       <h3 id="fxFace0Title">効果（出た時/解決時）</h3>
+      <div class="row" id="fxTwinTopRow" style="display:none;gap:6px;align-items:center;margin:-2px 0 4px">
+        <span style="font-size:12px;font-weight:700">上面クリーチャー種別</span>
+        <select id="fxTwinTop" style="width:auto;flex:0 0 210px">
+          <option value="creature">通常クリーチャー</option>
+          <option value="evo">進化クリーチャー</option>
+          <option value="neoevo">NEO進化クリーチャー</option>
+        </select>
+      </div>
       <div id="fxList0"></div>
       <div class="row"><button class="btn small" id="fxAdd0">＋効果を追加</button></div>
     </section>
@@ -1090,13 +1098,13 @@ body.shake{animation:bodyShake .4s ease-out}
         <input type="text" id="fxRace5" list="raceList" placeholder="種族5" style="flex:1;min-width:110px">
         <datalist id="raceList">
           <option value="S級侵略者"><option value="アーク・セラフィム"><option value="アース・ドラゴン"><option value="アースイーター"><option value="アーマード"><option value="アーマード・ドラゴン"><option value="アーマード・ファイアーバード"><option value="アーマード・ワイバーン"><option value="アーマロイド"><option value="アイドル">
-          <option value="アウトレイジ"><option value="アウトレイジ・コマンドMAX"><option value="アウトレイジMAX"><option value="アビス"><option value="アビスロイヤル"><option value="アポロニア・ドラゴン"><option value="アンノイズ"><option value="アンノウン"><option value="イニシエート"><option value="イニシャルズ">
+          <option value="アウトレイジ"><option value="アウトレイジ・コマンドMAX"><option value="アウトレイジMAX"><option value="アビス"><option value="アビスへの誘い"><option value="アビスロイヤル"><option value="アポロニア・ドラゴン"><option value="アンノイズ"><option value="アンノウン"><option value="イニシエート"><option value="イニシャルズ">
           <option value="イニシャルズX"><option value="ウェーブストライカー"><option value="エイリアン"><option value="エグザイル・クリーチャー"><option value="エクストリーマー"><option value="エレメンタル"><option value="エンジェル・コマンド"><option value="エンジェル・コマンド・ドラゴン"><option value="オラクル"><option value="オリジン">
           <option value="ガーゴイル"><option value="ガーディアン"><option value="ガイア・コマンド"><option value="ガイア・コマンド・ドラゴン"><option value="カレンダー"><option value="キカイヒーロー"><option value="キマイラ"><option value="ギャング・ビート"><option value="グラディエーター"><option value="グランセクト">
           <option value="グランセクト・ワード"><option value="グランド・デビル"><option value="グリーン・コマンド・ドラゴン"><option value="クリスタル・コマンド・ドラゴン"><option value="グレートメカオー"><option value="グレンモルト"><option value="ゲル・フィッシュ"><option value="ゴースト"><option value="コスモ・ウォーカー"><option value="ゴッド">
           <option value="ゴッド・ノヴァ"><option value="ゴッド・ノヴァOMG"><option value="コマンド・ドラゴン"><option value="コロニー・ビートル"><option value="サイバー・ウイルス"><option value="サイバー・コマンド"><option value="サイバー・ドラゴン"><option value="サイバー・ムーン"><option value="サイバーロード"><option value="サバイバー">
           <option value="サムライ"><option value="シノビ"><option value="ジャイアント"><option value="ジャイアント・インセクト"><option value="ジャイアント・スキル"><option value="ジャイアント・スノーフェアリー"><option value="ジャイアント・ドラゴン"><option value="ジャスティス・ウイング"><option value="ジャッジメント・エンブレム"><option value="ジュラシック・コマンド・ドラゴン">
-          <option value="ジョーカーズ"><option value="ジョーカーズ・ドラゴン"><option value="ジョーカーズZ"><option value="スターライト・ツリー"><option value="スチーム・ナイト"><option value="スノーフェアリー"><option value="スノーフェアリー風"><option value="スピリット・クォーツ"><option value="スプラッシュ・クイーン"><option value="スペース・サーパント">
+          <option value="ジョーカーズ"><option value="ジョーカーズ・ドラゴン"><option value="ジョーカーズZ"><option value="スーパーカードラゴン"><option value="スターライト・ツリー"><option value="スチーム・ナイト"><option value="スノーフェアリー"><option value="スノーフェアリー風"><option value="スピリット・クォーツ"><option value="スプラッシュ・クイーン"><option value="スペース・サーパント">
           <option value="スペシャルズ"><option value="ゼニス"><option value="ゼノパーツ"><option value="セラフィム"><option value="ソニック・コマンド"><option value="ソルトルーパー"><option value="ダークロード"><option value="ダイナモ"><option value="チームACE"><option value="チームウェイブ">
           <option value="チームボンバー"><option value="チーム銀河"><option value="チーム切札"><option value="チーム零"><option value="ツリーフォーク"><option value="ディープ・マリーン"><option value="ディスタス"><option value="ディスペクター"><option value="ティラノ・ドレイク"><option value="デーモン・コマンド">
           <option value="デーモン・コマンド・ドラゴン"><option value="テクノ・サムライ"><option value="デスパペット"><option value="デビルマスク"><option value="デモニオ"><option value="デモンズ・レガシー"><option value="デリートロン"><option value="ドラグナー"><option value="ドラゴノイド"><option value="ドラゴノイド号">
@@ -1810,12 +1818,20 @@ function markArrive(c){
       const pOwn=[0,1].find(p=>zonesOf(p).battle.includes(c));
       if(pOwn!=null){S.playedTurn=S.playedTurn||{};S.playedTurn[pOwn]=(S.playedTurn[pOwn]||0)+1;}
       const r=getReg(c);
-      const evo=r&&["evo","neoevo","starevo","smaxevo","onismaxevo","gneo","lunatic","ultimate"].includes(r.ctype);
+      const evo=isEvoReg(r);
       c.sick=!evo&&!(r&&r.sa);
     }
   }catch(e){}
 }
 function getReg(c){return FXDB.get(faceKeyOf(c))||FXDB.get(normName(c.name))||null;}
+/* 進化系タイプの共通判定。ツインパクトは上面＝クリーチャー面なので twinTop（進化/NEO進化）で判定に含める */
+const EVO_CTYPES=["evo","neoevo","starevo","smaxevo","onismaxevo","gneo","lunatic","ultimate"];
+function isEvoReg(r){
+  if(!r)return false;
+  if(EVO_CTYPES.includes(r.ctype))return true;
+  if((r.twin||r.ctype==="twinpact")&&r.twinTop&&EVO_CTYPES.includes(r.twinTop))return true;
+  return false;
+}
 
 /* ================= undo ================= */
 const HIST=[];
@@ -5344,7 +5360,7 @@ async function execAttack(pi,id,tg){
         arr0.splice(hi,1);
         const r2=getReg(h);
         h.faceup=true;h.tapped=false;
-        const isEvo=r2&&["evo","neoevo","starevo","smaxevo","onismaxevo","gneo","twinpact"].includes(r2.ctype)&&r2.ctype!=="twinpact";
+        const isEvo=isEvoReg(r2);
         let dddAsEvo=false;
         if(!(r2&&r2.ctype==="spell")&&isEvo&&Z.battle.length){
           const evMode=await askChoice(`《${faceNameOf(h)}》の出し方を選択`,["進化として重ねる","そのまま出す（進化元なし・非進化扱い）"]);
@@ -6124,6 +6140,8 @@ function renderFxEditor(){
   $("fxTwin").checked=FXEDIT.twin;
   $("fxFace0Title").textContent=FXEDIT.twin?"上面（クリーチャー面）の効果":"効果（出た時/解決時）";
   $("fxFace1Box").style.display=FXEDIT.twin?"":"none";
+  {const row=document.getElementById("fxTwinTopRow");if(row)row.style.display=FXEDIT.twin?"":"none";}
+  {const s=document.getElementById("fxTwinTop");if(s)s.value=FXEDIT.twinTop||"creature";}
   for(const idx of [0,1]){
     const box=$("fxList"+idx);box.innerHTML="";
     FXEDIT.faces[idx].forEach((_,i)=>box.appendChild(fxRowEl(idx,i)));
@@ -6357,6 +6375,7 @@ function openFxEditor(key){
   FXEDIT={
     key, name:dispName.get(key)||key,
     twin:cur?!!cur.twin:false,
+    twinTop:cur&&cur.twinTop||"creature",
     faces:cur?[(cur.faces[0]||[]).map(f=>({...f})),(cur.faces[1]||[]).map(f=>({...f}))]:[[],[]],
     power:cur&&cur.power!=null?cur.power:null,
     dest:cur&&cur.dest||"grave",
@@ -6575,6 +6594,7 @@ function fxBackToSettings(){$("fxOlay").classList.remove("open");openDeckPanel()
   }
 })();
 $("fxTwin").addEventListener("change",()=>{FXEDIT.twin=$("fxTwin").checked;renderFxEditor();});
+{const s=document.getElementById("fxTwinTop");if(s)s.addEventListener("change",()=>{if(FXEDIT)FXEDIT.twinTop=s.value;});}
 $("fxAdd0").addEventListener("click",()=>{FXEDIT.faces[0].push({t:"draw",n:1});renderFxEditor();});
 $("fxTrigAdd").addEventListener("click",()=>{if(!FXEDIT)return;FXEDIT.watchFx.push({ev:"turnEnd",t:"draw",n:1});renderFxEditor();});
 $("fxAdd1").addEventListener("click",()=>{FXEDIT.faces[1].push({t:"draw",n:1});renderFxEditor();});
@@ -6583,6 +6603,7 @@ $("fxSave").addEventListener("click",async ()=>{
   const p=$("fxPower").value.trim();
   FXDB.set(FXEDIT.key,{
     twin:FXEDIT.twin,faces:[FXEDIT.faces[0],FXEDIT.faces[1]],
+    twinTop:(document.getElementById("fxTwinTop")?$("fxTwinTop").value:(FXEDIT&&FXEDIT.twinTop))||"creature",
     power:p===""?null:+p,
     dest:$("fxDest").value,
     blocker:$("fxBlocker").checked,
@@ -6991,7 +7012,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.seiba)attrs.push(v.seibaF?`セイバー：${v.seibaF}`:"セイバー");
     if(v.watchFx&&v.watchFx.length)attrs.push(`誘発処理${v.watchFx.length}`);
     if(v.modeN)attrs.push(`選択効果${v.modeN}回`);
-    nm.textContent=(dispName.get(k)||k)+(v.twin?"（ツインパクト）":"")+(attrs.length?" ["+attrs.join("/")+"]":"");
+    nm.textContent=(dispName.get(k)||k)+(v.twin?(v.twinTop==="evo"?"（ツインパクト・進化）":v.twinTop==="neoevo"?"（ツインパクト・NEO進化）":"（ツインパクト）"):"")+(attrs.length?" ["+attrs.join("/")+"]":"");
     if(imgURL.has(k)){
       const th=document.createElement("img");
       th.src=imgURL.get(k);
@@ -7752,7 +7773,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   }
   if(toZone==="battle"&&S.turn>0){
     const rS=getReg(c);
-    const evoS=rS&&["evo","neoevo","starevo","smaxevo","onismaxevo","gneo","lunatic","ultimate"].includes(rS.ctype);
+    const evoS=isEvoReg(rS);
     if(c.sick==null)c.sick=!evoS&&!(rS&&rS.sa);
     // ペテンシー着地カウント：markArriveは配置前に呼ばれ「バトルゾーンにいるか」判定が偽になるため、確定配置後のここで加算（通常のドラッグ召喚もこれで確実にカウント）
     if(fromZone!=="battle"){ENTERED_CNT++;c.bornTurn=S.turn;}
@@ -10249,7 +10270,7 @@ function openCardSheet(ctx){
       const cc=f2.card;
       cc.faceup=true;cc.tapped=false;
       const rr=getReg(cc);
-      const evoS=rr&&["evo","neoevo","starevo","smaxevo","onismaxevo","gneo","lunatic","ultimate"].includes(rr.ctype);
+      const evoS=isEvoReg(rr);
       cc.sick=(S.turn>0)&&!evoS&&!(rr&&rr.sa);
       zonesOf(ctx.p).battle.push(cc);
       markArrive(cc);
