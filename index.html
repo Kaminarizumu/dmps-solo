@@ -216,6 +216,10 @@ body.lay-cols .pboard{flex:1 1 0;min-width:0}
 .zpair{display:flex;gap:6px}
 .zone[data-zone] .card{width:calc(var(--card-w)*var(--zsc,1));height:calc(var(--card-h)*var(--zsc,1))}
 .zpair .zone{flex:1 1 0;min-width:0}
+.zpair.mhpair .zone[data-zone="mana"]{flex:0 0 auto;min-width:0}
+.zpair.mhpair .zone[data-zone="hand"]{flex:1 1 auto;min-width:0}
+.manaslim .zone-head{flex-wrap:wrap;gap:4px}
+.manaslim>.cards{justify-content:center;min-width:calc(var(--card-h)*.92)}
 .pboard>*{position:relative;z-index:1}
 .matbg{position:absolute;inset:0;z-index:0;opacity:.5;background-size:cover;background-position:center;pointer-events:none;border-radius:12px;filter:saturate(1.1)}
 .pboard.hasmat .zone{background:rgba(13,17,25,.42)!important}
@@ -7951,7 +7955,11 @@ function buildBoards(){
             :`<div class="resolvebox" data-zone="resolve"><span class="rlabel">解決中</span><div class="cards" id="zResolve-${pi}"></div></div><div class="cards" id="zBattle-${pi}"></div>`}
         </div>
       </div>`,
-      mana:`
+      mana:(S.manaMode==="compact")?`
+      <div class="zone manaslim" data-zone="mana">
+        <div class="zone-head"><span class="kanji">マナ</span><span class="count" id="cMana-${pi}">0</span><span class="sub" id="manaFree-${pi}"></span></div>
+        <div class="cards" id="zMana-${pi}"></div>
+      </div>`:`
       <div class="zone" data-zone="mana">
         <div class="zone-head"><span class="kanji">マナ</span><span class="count" id="cMana-${pi}">0</span>
           <span class="sub" id="manaFree-${pi}"></span>
@@ -7980,6 +7988,21 @@ function buildBoards(){
     }
     else seq=own||["battle","sys","mana","hand"];
     pb.innerHTML=seq.map(k=>rows[k]).join("");
+    if(S.manaMode==="compact"&&lay!=="wide"){
+      const a=pb.querySelector('[data-zone="mana"]');
+      const b=pb.querySelector('[data-zone="hand"]');
+      if(a&&b&&a.parentNode===pb&&b.parentNode===pb){
+        const ai=Array.prototype.indexOf.call(pb.children,a);
+        const bi=Array.prototype.indexOf.call(pb.children,b);
+        if(Math.abs(ai-bi)===1){
+          const first=ai<bi?a:b, second=ai<bi?b:a;
+          const wrap=document.createElement("div");
+          wrap.className="zpair mhpair";
+          pb.insertBefore(wrap,first);
+          wrap.appendChild(first);wrap.appendChild(second);
+        }
+      }
+    }
     if(lay==="wide"){
       const pair=(S.widePair||"sys,hand").split(",");
       const a=pb.querySelector(`[data-zone="${pair[0]}"]`);
@@ -11128,8 +11151,19 @@ function renderManaViewer(pi){
   $("vSearch").style.display="none";
   $("vOk").style.display="none";$("vStatus").textContent="";
   const g=$("vGrid");g.innerHTML="";
+  const bar=document.createElement("div");
+  bar.style.cssText="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px";
+  const mkb=(lb,fn)=>{const b=document.createElement("button");b.className="btn small";b.textContent=lb;b.addEventListener("click",e=>{e.stopPropagation();fn();});bar.appendChild(b);};
+  mkb("全T",()=>{snap();Z.mana.forEach(c=>c.tapped=true);sfx("move");renderAll();renderManaViewer(pi);});
+  mkb("全U",()=>{snap();Z.mana.forEach(c=>c.tapped=false);sfx("move");renderAll();renderManaViewer(pi);});
+  mkb(S.noUntapMana?"自動U:OFF":"自動U:ON",()=>{S.noUntapMana=!S.noUntapMana;if(db)idbPut("misc","noUntapMana",S.noUntapMana);toast(S.noUntapMana?"ターン開始時のマナ自動アンタップ：OFF":"ターン開始時のマナ自動アンタップ：ON");renderAll();renderManaViewer(pi);});
+  mkb("山上→マナ",()=>{if(!Z.deck.length){toast("山札がありません");return;}snap();const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.mana.push(c);markArrive(c);sfx("move");renderAll();renderManaViewer(pi);toast(`マナチャージ：${c.name}`);});
+  mkb("全選択",()=>{if(!Z.mana.length){toast("カードがありません");return;}S.multi=true;S.msel=Z.mana.map(c=>({p:pi,zone:"mana",id:c.id}));renderAll();renderManaViewer(pi);toast("選択しました。下部バーの「操作」から一括処理できます");});
+  g.appendChild(bar);
   if(!Z.mana.length){
-    g.innerHTML="<div class='hint' style='grid-column:1/-1'>マナゾーンは空です（手札などからカードをドラッグで置けます）</div>";
+    const em=document.createElement("div");em.className="hint";em.style.cssText="grid-column:1/-1";
+    em.textContent="マナゾーンは空です（手札などからカードをドラッグで置けます）";
+    g.appendChild(em);
   }
   Z.mana.forEach(c=>{
     const el=vCardEl(dispName.get(faceKeyOf(c))||c.name);
