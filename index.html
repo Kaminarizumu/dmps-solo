@@ -121,9 +121,9 @@ body.compact-head #bottombar{gap:5px;padding:5px 8px calc(5px + env(safe-area-in
 body.compact-head #bottombar .btn{font-size:11px;padding:7px 9px}
 body.compact-head #btnNextTurn{font-size:13px;padding:9px;min-width:110px}
 @media (max-width:640px){
-  .zone-head{min-height:12px;margin-bottom:1px;gap:4px}
+  .zone-head{min-height:11px;margin-bottom:0;gap:4px}
   .zone-head .kanji{font-size:9px;letter-spacing:.04em}
-  .zbtn{font-size:10px;padding:3px 7px;border-radius:6px}
+  .zbtn{font-size:9px;padding:2px 6px;border-radius:6px;white-space:nowrap;line-height:1.3}
 }
 .cards{
   display:flex;gap:var(--cardgap,5px);row-gap:calc(var(--cardgap,5px) + 4px);min-height:var(--card-h);
@@ -8802,7 +8802,7 @@ function baseCardH(){
   const lay=S.layout||"stack";
   let b;
   if(S.vs&&lay==="cols")b=Math.min(205,Math.max(56,(H-215)/4.5));
-  else if(lay==="wide")b=S.vs?Math.min(128,Math.max(52,(H-230)/7.8)):Math.min(146,Math.max(60,(H-170)/3.8));
+  else if(lay==="wide")b=S.vs?Math.min(190,Math.max(56,(H-230)/5.2)):Math.min(200,Math.max(66,(H-170)/2.8));
   else b=S.vs
     ? Math.min(175,Math.max(56,(H-230)/6.6))
     : Math.min(185,Math.max(66,(H-170)/3.5));
