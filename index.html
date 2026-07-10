@@ -6320,7 +6320,7 @@ function fxUiPolish(){
     }catch(e){console.warn("tabs",e);}
     // 項目検索フィルタ（入力欄・タイプで絞り込み）
     try{
-      const panel=ol.querySelector(".panel")||ol;
+      const panel=ol.querySelector(".panelbox")||ol;
       const firstH3=panel.querySelector("h3");
       if(firstH3&&!document.getElementById("fxFinder")){
         const bar=document.createElement("div");
@@ -6375,7 +6375,7 @@ function fxUiPolish(){
           "5000vt":["ターン限定ロック"],"vt":["ターン限定ロック"],"ボルメテウス":["焼却"],
           "マンハッタン":["ターン限定","何体"],"横差し":["4枚目","Q.Q.QX"],"qqqx":["Q.Q.QX","4枚目"]
         };
-        inp.addEventListener("input",()=>{
+        window.__applyFxFinder=()=>{const inp=document.getElementById("fxFinder");if(!inp)return;
           const toks=inp.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
           const cnt=document.getElementById("fxFinderN");
           const matchTxt=(txt)=>{
@@ -6414,7 +6414,12 @@ function fxUiPolish(){
             }
           });
           if(cnt)cnt.textContent=hit?`${hit}件`:"0件 — 見つからない能力は「誘発処理」＋汎用効果の組み合わせ、または覚え書き欄で代用できます";
-        });
+        };
+      }
+      // renderのたびに最新ロジックで再バインドし、現在の入力で即再適用（再構築された行にも効かせる）
+      {
+        const fInp=document.getElementById("fxFinder");
+        if(fInp&&window.__applyFxFinder){fInp.oninput=window.__applyFxFinder;window.__applyFxFinder();}
       }
     }catch(e){console.warn("finder",e);}
     // 関連項目を近接配置（裏NS→NS直下／龍マナ武装・マナドライブ→マナ武装直下／Sバック→ST直下／ドラゴンB→ブレイク数直下）
