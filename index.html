@@ -6741,6 +6741,14 @@ function condExprFrom(clause){
   if(/(\d+)枚以下/.test(c)){const mm=c.match(/(\d+)枚以下/);return `${zone}${filt?":"+filt:""}<=${mm[1]}`;}
   return "";
 }
+/* 種族辞書：datalist#raceList の値から生成（長い順で貪欲分割に使う） */
+let KNOWN_RACES=[];
+function buildKnownRaces(){
+  try{
+    const dl=document.getElementById("raceList");
+    if(dl)KNOWN_RACES=[...dl.querySelectorAll("option")].map(o=>o.value).filter(Boolean).sort((a,b)=>b.length-a.length);
+  }catch(e){}
+}
 function extractEffects(text,mode){
   if(!text)return [];
   const fx=[];
@@ -6823,6 +6831,39 @@ function parseCardText(txt,mode){
   if(/D2フィールド/.test(t))out.set.ctype="d2";
   else if(/クロスギア/.test(t))out.set.ctype="crossgear";
   else if(/タマシード/.test(t))out.set.ctype="tamaseed";
+  // 文明（本文中の「文明」ラベル付近＋単独の文明語を検出）
+  {
+    const civMap2=[["光","light"],["水","water"],["闇","dark"],["火","fire"],["自然","nature"],["ゼロ","zero"],["無色","zero"]];
+    const civs=[];
+    // 「文明 … 水」形式：文明ラベル以降30字から拾う
+    const seg=(t.split(/文明/)[1]||"").slice(0,30);
+    for(const [jp,en] of civMap2)if(seg.includes(jp)&&!civs.includes(en))civs.push(en);
+    if(civs.length)out.set.civs=civs;
+  }
+  // 種族（表形式「種族 タイプ <種族> クリーチャー…」/ インライン両対応。連結種族を辞書で分割）
+  {
+    let rseg=null;
+    // 表形式：種族(＋タイプヘッダ)の後、タイプ語の手前までを種族とみなす
+    let mR=t.match(/種族(?:\s*タイプ)?\s*([ァ-ヶ一-龠ーヴ・／\/]+?)-?\s*(?:クリーチャー|呪文|進化|NEO|フィールド|クロスギア|タマシード|D2|サイキック)/);
+    if(mR)rseg=mR[1];
+    if(rseg){
+      rseg=rseg.replace(/[-−―\s　]/g,"").trim();
+      if(rseg.length>=2&&rseg.length<=40){
+        let races=[];
+        if(/[・／\/]/.test(rseg)){
+          races=rseg.split(/[・／\/]/).map(s=>s.trim()).filter(Boolean);
+        }else if(typeof KNOWN_RACES!=="undefined"&&KNOWN_RACES.length){
+          let rest=rseg;
+          while(rest.length){
+            const hit=KNOWN_RACES.filter(r=>rest.startsWith(r)).sort((a,b)=>b.length-a.length)[0];
+            if(hit){races.push(hit);rest=rest.slice(hit.length);}else break;
+          }
+          if(rest.length)races=[rseg];
+        }else races=[rseg];
+        if(races.length)out.set.races=races.slice(0,5).concat(["","","","",""]).slice(0,5);
+      }
+    }
+  }
   // キーワード能力（付与文を除外したtSelfで判定）
   const KW=[
     [/スピードアタッカー/,"sa"],[/ブロッカー/,"blocker"],[/スレイヤー/,"slayer"],
@@ -6983,6 +7024,7 @@ function fxKeyLabel(k){
   return M[k]||k;
 }
 async function autoFillFromText(){
+  if(typeof buildKnownRaces==="function")buildKnownRaces();
   const grab=async(label)=>{
     const src=await askChoice(`📋 ${label}の取り込み方法`,["テキストを貼り付け","スクショ画像から読み取り（公式サイトのカード詳細など）"]);
     if(src===null)return null;
