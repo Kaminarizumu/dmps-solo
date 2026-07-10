@@ -245,6 +245,7 @@ body.lay-cols #board{display:flex;flex-direction:row;gap:8px;align-items:flex-st
 body.lay-cols .pboard{flex:1 1 0;min-width:0}
 .zpair{display:flex;gap:6px}
 .zone[data-zone] .card{height:calc(var(--card-h)*var(--zsc,1));width:auto;aspect-ratio:63/88}
+.zone[data-zone] .cards{min-height:calc(var(--card-h)*var(--zsc,1))}
 .zpair .zone{flex:1 1 0;min-width:0}
 .zpair.mhpair .zone[data-zone="mana"]{flex:0 0 auto;min-width:0}
 .zpair.mhpair .zone[data-zone="hand"]{flex:1 1 auto;min-width:0}
