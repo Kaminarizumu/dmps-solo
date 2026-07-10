@@ -1190,6 +1190,7 @@ body.shake{animation:bodyShake .4s ease-out}
       <div class="row" style="gap:12px;flex-wrap:wrap">
         <label><input type="checkbox" id="fxInvade"> 侵略（攻撃時、手札から重ねて進化）</label>
         <label><input type="checkbox" id="fxKakumei"> 革命チェンジ（攻撃時、手札と入れ替え）</label>
+        <label><input type="checkbox" id="fxJChange"> J・チェンジ（攻撃時、手札と入れ替え）：自分のコスト<input type="number" id="fxJChangeN" min="0" style="width:60px" placeholder="以上">以上のクリーチャーが攻撃した時</label>
         <span style="font-size:12px;font-weight:700">ニンジャ・ストライク</span>
         <select id="fxNinja" style="width:auto;flex:0 0 90px">
           <option value="0">なし</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option>
@@ -1402,6 +1403,7 @@ body.shake{animation:bodyShake .4s ease-out}
         </div>
         <label><input type="checkbox" id="fxStUnblock"> 自分のクリーチャー全てブロックされない（攻撃時アナウンス）</label>
         <label><input type="checkbox" id="fxStOriotis"> オリオティス（相手のマナ枚数よりコストが大きい相手クリーチャーが出たら山札の下へ）</label>
+        <label>🌀 相手ターン開始時、相手マナのアンタップを <input type="number" id="fxManaUntapN" min="0" max="99" style="width:58px" value="0"> 枚までに制限（0=制限なし・ガ・リュザーク型は3）</label>
         <label><input type="checkbox" id="fxNoUntap"> 常在：ターン開始時にアンタップしない（自身）</label>
         <label><input type="checkbox" id="fxStNoHandes"> 常在：自分の手札は相手のカードの効果によって捨てられない</label>
         <label><input type="checkbox" id="fxLibWin"> 常在：自分の山札が0枚になったら、負けるかわりに勝利する（シャコガイル型）</label>
@@ -1902,6 +1904,12 @@ function isNeoReg(r){
   if(r.ctype==="neoevo")return true;
   if((r.twin||r.ctype==="twinpact")&&r.twinTop==="neoevo")return true;
   return false;
+}
+/* クリーチャー種別判定（呪文/クロスギア/タマシード/D2フィールド/城/オーラ等は非クリーチャー）。未設定は通常クリーチャー扱い */
+const CRE_CTYPES=["creature","evo","neoevo","starevo","smaxevo","onismaxevo","gneo","twinpact","lunatic","ultimate","exile"];
+function isCreatureReg(r){
+  if(!r||!r.ctype)return true;
+  return CRE_CTYPES.includes(r.ctype);
 }
 /* 現在この場のカードがNEO進化として扱われているか（進化元を持つ or フラグ） */
 function isNeoEvoInstance(c){return !!(c&&(c.neoEvo||(c.under&&c.under.length)));}
@@ -2647,7 +2655,31 @@ function nextTurn(){
     })();
   }
   if(S.noUntapMana)toast("（設定：マナは自動アンタップしません）");
-  else Z.mana.forEach(c=>{if(c.frozen){c.frozen=false;frz.push("マナ:"+faceNameOf(c));}else c.tapped=false;});
+  else{
+    // 相手（このターンのプレイヤーpi）の場に「相手のマナ回復を制限」する敵クリーチャーがいれば、アンタップ枚数を上限に制限（ガ・リュザーク型）
+    let untapCap=null;
+    if(S.vs){
+      const opp=pi?0:1;
+      for(const b of zonesOf(opp).battle){
+        const rb=getReg(b);
+        if(rb&&rb.manaUntapN>0&&!isSealed(b)){
+          untapCap=(untapCap==null)?rb.manaUntapN:Math.min(untapCap,rb.manaUntapN);
+        }
+      }
+    }
+    if(untapCap==null){
+      Z.mana.forEach(c=>{if(c.frozen){c.frozen=false;frz.push("マナ:"+faceNameOf(c));}else c.tapped=false;});
+    }else{
+      let done=0;
+      Z.mana.forEach(c=>{
+        if(c.frozen){c.frozen=false;frz.push("マナ:"+faceNameOf(c));return;} // フリーズは解除するがアンタップしない・上限にも数えない
+        if(!c.tapped)return;                 // 既にアンタップ済みは対象外
+        if(done>=untapCap)return;            // 上限に達したらそれ以上アンタップしない
+        c.tapped=false;done++;
+      });
+      toast(`🌀 マナ回復制限：${S.players[pi].label} のマナは${untapCap}枚までしかアンタップしません（${done}枚回復）`);
+    }
+  }
   if(frz.length)toast(`❄ フリーズ：${frz.join("、")} はアンタップしない`);
   let jdN=[];
   Z.battle.forEach(c=>{if(c.jd){c.jd=false;jdN.push(faceNameOf(c));}});
@@ -2767,7 +2799,7 @@ function emitEvent(actor,type){
       const defO=actor===0?1:0;
       if(zonesOf(defO).battle.some(b=>{const rb=getReg(b);return rb&&rb.stOriotis;})||(S.oriotisTurn&&S.oriotisTurn[defO])){
         const manaN=AZ0.mana.length;
-        const hits=AZ0.battle.filter(x=>arrived.has(x.id)&&!x._oriChk&&(()=>{const rx=getReg(x);return rx&&rx.cost!=null&&rx.cost>manaN;})());
+        const hits=AZ0.battle.filter(x=>arrived.has(x.id)&&!x._oriChk&&(()=>{const rx=getReg(x);return rx&&isCreatureReg(rx)&&rx.cost!=null&&rx.cost>manaN;})());
         for(const hc of hits){
           hc._oriChk=true;
           (async()=>{
@@ -2853,12 +2885,13 @@ async function findByCond(pi){
   if(idx<0)return;
   snap();
   const c=Z.deck.splice(idx,1)[0];
-  const dst=await askChoice(`《${c.name}》の行き先`,["手札へ","バトルへ","マナへ","墓地へ","シールドへ（表向き）"]);
+  const dst=await askChoice(`《${c.name}》の行き先`,["手札へ","バトルへ","マナへ","墓地へ","シールドへ（裏）","シールドへ（表向き）"]);
   c.faceup=true;c.tapped=false;
   if(dst===1){if(!battleEntryOk(pi,c)){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}else{Z.battle.push(c);markArrive(c);emitEvent(pi,"summon");enqueueFx(pi,c);}}
   else if(dst===2)Z.mana.push(c);
   else if(dst===3)Z.grave.push(c);
-  else if(dst===4){c.mark=S.turn>0;Z.shield.push(c);}
+  else if(dst===4){c.faceup=false;c.mark=S.turn>0;Z.shield.push(c);}
+  else if(dst===5){c.faceup=true;c.mark=S.turn>0;Z.shield.push(c);}
   else{Z.hand.push(c);markArrive(c);}
   shuffleDeck(Z);
   toast(`サーチ：${c.name} → 山札をシャッフル`);
@@ -2904,12 +2937,13 @@ async function searchZone(pi,zone,kinds){
   if(idx<0)return;
   snap();
   const c=src.splice(idx,1)[0];
-  const dst=await askChoice(`《${c.name}》の行き先`,["手札へ","バトルへ","マナへ","墓地へ","シールドへ（表向き）"]);
+  const dst=await askChoice(`《${c.name}》の行き先`,["手札へ","バトルへ","マナへ","墓地へ","シールドへ（裏）","シールドへ（表向き）"]);
   c.faceup=true;c.tapped=false;
   if(dst===1){if(!battleEntryOk(pi,c)){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}else{Z.battle.push(c);markArrive(c);emitEvent(pi,"summon");enqueueFx(pi,c);}}
   else if(dst===2)Z.mana.push(c);
   else if(dst===3)Z.grave.push(c);
-  else if(dst===4){c.mark=S.turn>0;Z.shield.push(c);}
+  else if(dst===4){c.faceup=false;c.mark=S.turn>0;Z.shield.push(c);}
+  else if(dst===5){c.faceup=true;c.mark=S.turn>0;Z.shield.push(c);}
   else{Z.hand.push(c);markArrive(c);}
   if(zone==="deck"){shuffleDeck(Z);toast(`探索：${c.name} → 山札をシャッフル`);}
   else toast(`探索：${c.name}`);
@@ -3790,7 +3824,11 @@ async function autoTapCost(pi,c){
   if(S.nextPlay&&S.nextPlay[pi]&&S.nextPlay[pi].length&&cost>0){
     const rest=[];
     for(const g of S.nextPlay[pi]){
-      const wOK=!g.word||String(g.word).split(/[／\/、,]/).some(tk=>tk&&((r&&raceMatch(r,tk))||faceNameOf(c).includes(tk)));
+      const wOK=!g.word||String(g.word).split(/[／\/、,]/).map(x=>x.trim()).filter(Boolean).some(tk=>{
+        const cm={"光":"light","水":"water","闇":"dark","火":"fire","自然":"nature","ゼロ":"zero"};
+        if(cm[tk])return r&&r.civs&&r.civs.includes(cm[tk]);
+        return (r&&raceMatch(r,tk))||faceNameOf(c).includes(tk);
+      });
       if(cost>0&&(!g.civ||(r.civs&&r.civs.includes(g.civ)))&&wOK){
         const dec=Math.min(g.n,cost);
         cost-=dec;
@@ -4051,7 +4089,7 @@ async function runFxList(pi,list,srcCard){
   for(const f of list){
     const Z=zonesOf(pi), OZ=zonesOf(op);
     const n=Math.max(1,f.n|0);
-    if(f.cond&&!zoneCondOk(f.cond,pi)){
+    if(f.cond&&f.t!=="nextCost"&&!zoneCondOk(f.cond,pi)){
       toast(`条件未達（${f.cond}）：効果をスキップ`);
       continue;
     }
@@ -4326,14 +4364,20 @@ async function runFxList(pi,list,srcCard){
         },200);
       });
     }else if(f.t==="nextCost"){
-      const j=await askChoice(`✨ コスト−${n}の対象文明を選択`,["指定なし","光","水","闇","火","自然","ゼロ"]);
-      if(j===null)continue;
-      const civ=["","light","water","dark","fire","nature","zero"][j];
-      const word=(window.prompt("種族/名前の指定（空欄＝指定なし・「／」区切りOK）","")||"").trim();
+      let civ="", word="";
+      if(f.cond){
+        // 条件欄を対象フィルタ（種族/名前/文明・「／」区切り）として使用（プレリュード対象指定）
+        word=String(f.cond).trim();
+      }else{
+        const j=await askChoice(`✨ コスト−${n}の対象文明を選択`,["指定なし","光","水","闇","火","自然","ゼロ"]);
+        if(j===null)continue;
+        civ=["","light","water","dark","fire","nature","zero"][j];
+        word=(window.prompt("種族/名前の指定（空欄＝指定なし・「／」区切りOK）","")||"").trim();
+      }
       S.nextPlay=S.nextPlay||{};
       S.nextPlay[pi]=S.nextPlay[pi]||[];
       S.nextPlay[pi].push({n,civ,word});
-      toast(`✨ 次に召喚するクリーチャーのコスト−${n}${civ?`（${["","光","水","闇","火","自然","ゼロ"][j]}のみ）`:""}${word?`（${word}）`:""}`);
+      toast(`✨ 次に召喚するクリーチャーのコスト−${n}${word?`（対象：${word}）`:""}（このターン）`);
     }else if(f.t==="oriotis1"){
       S.oriotisTurn=S.oriotisTurn||{};
       S.oriotisTurn[pi]=true;
@@ -5536,6 +5580,11 @@ async function execAttack(pi,id,tg){
         if(h.id===c.id)continue;
         const r=getReg(h);
         if(!r)continue;
+        // J・チェンジ：手札から。攻撃クリーチャーのコストがN以上（革命チェンジと同じ入れ替え挙動）
+        if(zn==="hand"&&r.jchange){
+          if(aRegNow&&aRegNow.cost!=null&&aRegNow.cost>=(r.jchangeN||0))cands.push({h,zn,jchange:true});
+          continue;
+        }
         const inv=r.invade||r.kakumei,sv=r.sInvade;
         if(!(zn==="hand"?(inv||sv||r.soulRaid):(sv&&sZones(sv).includes(zn))))continue;
         if(!condOk(r))continue;
@@ -5545,9 +5594,9 @@ async function execAttack(pi,id,tg){
     if(!cands.length)break;
     {
       const j=await askChoice(`⚔ ${invadedOnce?"さらに":"攻撃時："}侵略／革命チェンジしますか？\n（侵略が先→革命チェンジの順。重ねた順に効果処理）`,
-        [...cands.map(({h,zn})=>{const r=getReg(h);return (zn==="hyper"?(r.pInvade?"🌌P侵略：":"🌌P革命チェンジ："):r.soulRaid?"🔥超魂レイド：":r.sInvade?(r.sInvade==="sss"||r.sInvade==="tensai"?"🌠SSS級侵略：":"🌟S級侵略："):r.invade?"⚡侵略：":"♻革命チェンジ：")+faceNameOf(h)+`（${zLb[zn]}）`;}),"しない"]);
+        [...cands.map(({h,zn,jchange})=>{const r=getReg(h);return (jchange?"🃏J・チェンジ：":zn==="hyper"?(r.pInvade?"🌌P侵略：":"🌌P革命チェンジ："):r.soulRaid?"🔥超魂レイド：":r.sInvade?(r.sInvade==="sss"||r.sInvade==="tensai"?"🌠SSS級侵略：":"🌟S級侵略："):r.invade?"⚡侵略：":"♻革命チェンジ：")+faceNameOf(h)+`（${zLb[zn]}）`;}),"しない"]);
       if(j!==null&&j<cands.length){
-        const {h:hcard,zn:srcZone}=cands[j];
+        const {h:hcard,zn:srcZone,jchange:isJ}=cands[j];
         const r=getReg(hcard);
         snap();
         const arr0=Z[srcZone];
@@ -5576,7 +5625,7 @@ async function execAttack(pi,id,tg){
             else if(rb&&rb.ctype==="dragheart"){bc.face=0;bc.rot=0;Z.hyper.push(bc);}
             else Z.hand.push(bc);
           }
-          toast(`♻革命チェンジ！ ${faceNameOf(hcard)}（${faceNameOf(c)}は${c.isGR?"GRゾーンの下":"手札"}へ・攻撃継続）`);
+          toast(`${isJ?"🃏J・チェンジ":"♻革命チェンジ"}！ ${faceNameOf(hcard)}（${faceNameOf(c)}は${c.isGR?"GRゾーンの下":"手札"}へ・攻撃継続）`);
         }
         markArrive(hcard);
         emitEvent(pi,"summon");
@@ -6625,6 +6674,8 @@ function renderFxEditor(){
   $("fxCastle").checked=!!FXEDIT.castle;
   $("fxInvade").checked=!!FXEDIT.invade;
   $("fxKakumei").checked=!!FXEDIT.kakumei;
+  $("fxJChange").checked=!!FXEDIT.jchange;
+  $("fxJChangeN").value=FXEDIT.jchangeN||"";
   $("fxNinja").value=String(FXEDIT.ninja||0);
   $("fxEscape").checked=!!FXEDIT.escape;
   $("fxTrueEscape").checked=!!FXEDIT.trueEscape;
@@ -6733,6 +6784,7 @@ function renderFxEditor(){
   $("fxAGCond").value=FXEDIT.agCond||"";
   $("fxStUnblock").checked=!!FXEDIT.stUnblock;
   $("fxStOriotis").checked=!!FXEDIT.stOriotis;
+  $("fxManaUntapN").value=FXEDIT.manaUntapN||0;
   $("fxStNoCheat").checked=!!FXEDIT.stNoCheat;
   $("fxCostFloor1").checked=!!FXEDIT.costFloor1;
   $("fxNoUntap").checked=!!FXEDIT.noUntap;
@@ -7006,6 +7058,8 @@ function parseCardText(txt,mode){
   }
   // マナ武装（数値）
   m=tSelf.match(/マナ武装\s*(\d+)/); if(m)out.set.manaArm=+m[1];
+  // J・チェンジ（数値）：J・チェンジ〔N〕＝コストN以上のクリーチャー攻撃時に手札と入れ替え
+  m=tSelf.match(/[JＪ]・?チェンジ\s*[〔〈［\[（(]?\s*(\d+)/); if(m){out.set.jchange=true;out.set.jchangeN=+m[1];}
   // キリフダッシュ（コストn）／フシギバース（コストn）
   m=tSelf.match(/キリフダッシュ[（(]?コスト?[-−]?(\d+)/)||tSelf.match(/キリフダッシュ\s*(\d+)/); if(m)out.set.kirifuda=+m[1];
   m=tSelf.match(/フシギバース[（(]?コスト?(\d+)/)||tSelf.match(/フシギバース\s*(\d+)/); if(m)out.set.fushigi=+m[1];
@@ -7040,6 +7094,9 @@ function parseCardText(txt,mode){
   // 各ターン制限（一音の妖精型）
   m=t.match(/相手は各ターン(\d+)回しか呪文を唱えられない/); if(m)out.set.stSpellPT=+m[1];
   m=t.match(/相手は各ターン(\d+)体しかクリーチャーを(?:バトルゾーンに)?出せない/); if(m)out.set.stCrePT=+m[1];
+  // マナ回復制限（ガ・リュザーク型：相手ターン開始時、相手のマナのアンタップをn枚に制限）
+  m=t.match(/使用可能マナは(\d+)しか回復しない/)||t.match(/マナ(?:ゾーンのカード)?を(\d+)枚までしか(?:アンタップ|回復)(?:できない|しない)/);
+  if(m)out.set.manaUntapN=+m[1];
   // 常在ロック
   if(/相手は呪文を唱えられない/.test(t))out.set.stLockSpell=true;
   if(/相手は(?:クリーチャーを)?(?:バトルゾーンに)?クリーチャーを出せない/.test(t))out.set.stLockCre=true;
@@ -7138,7 +7195,7 @@ function fxKeyLabel(k){
     manaArm:"マナ武装",breaks:"ブレイカー",power:"パワー",cost:"コスト",cost2:"下面コスト",
     kakumei:"革命チェンジ",pkakumei:"P革命チェンジ",kirifuda:"キリフダッシュ",fushigi:"フシギバース",
     sympathy:"シンパシー",gzero:"G・ゼロ",ctype:"タイプ",stSpellPT:"呪文回数制限",stCrePT:"召喚数制限",
-    stLockSpell:"呪文ロック",stLockCre:"召喚ロック",invRace:"侵略元種族",invCost:"侵略元コスト"};
+    stLockSpell:"呪文ロック",stLockCre:"召喚ロック",invRace:"侵略元種族",invCost:"侵略元コスト",jchange:"J・チェンジ"};
   return M[k]||k;
 }
 async function autoFillFromText(){
@@ -7282,6 +7339,8 @@ function openFxEditor(key){
     castle:cur?!!cur.castle:false,
     invade:cur?!!cur.invade:false,
     kakumei:cur?!!cur.kakumei:false,
+    jchange:cur?!!cur.jchange:false,
+    jchangeN:cur?(cur.jchangeN||0):0,
     ninja:cur&&cur.ninja||0,
     escape:cur?!!cur.escape:false,
     trueEscape:cur?!!cur.trueEscape:false,
@@ -7390,6 +7449,7 @@ function openFxEditor(key){
     agCond:cur&&cur.agCond||"",
     stUnblock:cur?!!cur.stUnblock:false,
     stOriotis:cur?!!cur.stOriotis:false,
+    manaUntapN:cur?(cur.manaUntapN||0):0,
     stNoCheat:cur?!!cur.stNoCheat:false,
     costFloor1:cur?!!cur.costFloor1:false,
     noUntap:cur?!!cur.noUntap:false,
@@ -7532,6 +7592,8 @@ $("fxSave").addEventListener("click",async ()=>{
     castle:$("fxCastle").checked,
     invade:$("fxInvade").checked,
     kakumei:$("fxKakumei").checked,
+    jchange:$("fxJChange").checked,
+    jchangeN:(parseInt($("fxJChangeN").value,10)||0),
     ninja:+$("fxNinja").value||0,
     escape:$("fxEscape").checked,
     trueEscape:$("fxTrueEscape").checked,
@@ -7640,6 +7702,7 @@ $("fxSave").addEventListener("click",async ()=>{
     agCond:$("fxAGCond").value.trim(),
     stUnblock:$("fxStUnblock").checked,
     stOriotis:$("fxStOriotis").checked,
+    manaUntapN:(parseInt($("fxManaUntapN").value,10)||0),
     stNoCheat:$("fxStNoCheat").checked,
     costFloor1:$("fxCostFloor1").checked,
     noUntap:$("fxNoUntap").checked,
@@ -7826,6 +7889,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.castle)attrs.push("城/要塞");
     if(v.invade)attrs.push("侵略");
     if(v.kakumei)attrs.push("革命チェンジ");
+    if(v.jchange)attrs.push(`J・チェンジ${v.jchangeN?`（コスト${v.jchangeN}以上）`:""}`);
     if(v.ninja)attrs.push(`NS${v.ninja}`);
     if(v.escape)attrs.push("エスケープ");
     if(v.trueEscape)attrs.push("真エスケープ");
@@ -7909,6 +7973,7 @@ $("btnRegList").addEventListener("click",()=>{
     }
     if(v.stUnblock)attrs.push("常在：ブロックされない");
     if(v.stOriotis)attrs.push("常在：オリオティス");
+    if(v.manaUntapN>0)attrs.push(`常在：相手ターン開始時マナ回復を${v.manaUntapN}枚に制限`);
     if(v.stNoCheat)attrs.push("常在：召喚以外で出せない");
     if(v.costFloor1)attrs.push("コスト0にならない");
     if(v.noUntap)attrs.push("アンタップしない");
@@ -8000,6 +8065,7 @@ function findCard(pi,zone,id){
 }
 function placeCard(Z,toZone,c){
   if(toZone==="shieldUp"){c.faceup=true;Z.shield.push(c);}
+  else if(toZone==="shield"){c.faceup=false;Z.shield.push(c);}
   else if(toZone==="deckTop")Z.deck.unshift(c);
   else if(toZone==="deckBottom")Z.deck.push(c);
   else if(toZone==="grBottom")Z.gr.push(c);
@@ -8523,10 +8589,10 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
           return (rIn&&raceMatch(rIn,tk))||String(c.name).includes(tk);
         });
       };
-      const locker=zonesOf(foeR).battle.find(x=>{
+      const locker=isCreatureReg(rIn)?zonesOf(foeR).battle.find(x=>{
         const rx=getReg(x);
         return rx&&rx.repIn&&matchR(rx.repInF);
-      });
+      }):null;
       if(locker){
         const rL=getReg(locker);
         if(rL.repIn==="manaOverMax"){
@@ -10475,6 +10541,17 @@ function animOn(k){
 }
 /* ===== ゾーン間フライト演出：移動前の位置から新しい位置へゴーストを飛ばす ===== */
 const FLY_HIDE=new Set();
+function cardHiddenOwner(c){
+  // 相手の非公開手札にあるカードの所有者piを返す（無ければ-1）。演出での情報漏れ防止に使用
+  if(!(S.vs&&S.hideOpp))return -1;
+  const seat=S.seat|0;
+  for(const p of [0,1]){
+    if(p===seat)continue;
+    const Z=zonesOf(p);
+    if(Z&&Z.hand&&Z.hand.some(x=>x.id===c.id))return p;
+  }
+  return -1;
+}
 function flyGhost(srcRect,c,dstSel){
   if(!animOn("fly")||!srcRect)return;
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
@@ -10487,8 +10564,12 @@ function flyGhost(srcRect,c,dstSel){
     const g=document.createElement("div");
     g.className="flycard";
     const key=(typeof faceKeyOf==="function")?faceKeyOf(c):null;
-    if(c.faceup!==false&&key&&imgURL.has(key)){
+    const hidOwner=cardHiddenOwner(c);
+    if(hidOwner<0&&c.faceup!==false&&key&&imgURL.has(key)){
       const im=document.createElement("img");im.src=imgURL.get(key);g.appendChild(im);
+    }else if(hidOwner>=0){
+      const bu=(typeof backURL==="function")?backURL(hidOwner):null;
+      if(bu){const im=document.createElement("img");im.src=bu;g.appendChild(im);}
     }
     g.style.left=srcRect.left+"px";g.style.top=srcRect.top+"px";
     g.style.width=srcRect.width+"px";g.style.height=srcRect.height+"px";
