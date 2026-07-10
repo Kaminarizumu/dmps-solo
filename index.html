@@ -2276,12 +2276,18 @@ function startGame(picks){
     if(msgs.length)toast(`📋 ${msgs.join("・")} があります。ロック等の自動判定が確認式になる場合があります（登録画面から追記できます）`);
   }
 }
+/* シャコガイル型（山札0で負けるかわりに勝利）の保持クリーチャーを返す。エキスパート時のみ有効 */
+function libWinHolderOf(pi){
+  if(!S.expert)return null;
+  const Z=zonesOf(pi);
+  return Z.battle.find(x=>{const r=getReg(x);return r&&r.libWin&&!isSealed(x)&&!isIgnored(x,pi);})||null;
+}
 function draw(pi,n=1){
   const Z=S.players[pi].zones;
   for(let i=0;i<n;i++){
     if(!Z.deck.length){
       toast("山札がありません（LO）");
-      if(S.vs&&S.turn>0)declareWin(pi?0:1,`山札切れ：${S.players[pi].label} はカードを引けない`);
+      if(S.vs&&S.turn>0&&!libWinHolderOf(pi))declareWin(pi?0:1,`山札切れ：${S.players[pi].label} はカードを引けない`);
       break;
     }
     const c=Z.deck.shift();
@@ -2297,6 +2303,13 @@ function draw(pi,n=1){
     if(S.anim!==false){
       const pe=document.querySelector(`#sysrow-${pi} [data-zone="deckTop"]`);
       if(pe&&typeof flyGhost==="function")flyGhost(pe.getBoundingClientRect(),c,null);
+    }
+    // 山札の最後の1枚を引いた瞬間に敗北（デュエル・マスターズ準拠）。
+    // シャコガイル型(libWin)がある場合はrenderAll内のcheckLibWinが「負けるかわりに勝利」を処理する
+    if(S.vs&&S.turn>0&&Z.deck.length===0){
+      sfx("draw");renderAll();
+      if(!libWinHolderOf(pi))declareWin(pi?0:1,`山札切れ：${S.players[pi].label} が山札の最後の1枚を引いた`);
+      return;
     }
   }
   sfx("draw");
