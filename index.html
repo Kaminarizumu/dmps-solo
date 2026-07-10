@@ -3462,6 +3462,7 @@ const FX_TYPES=[
   ["handes","相手の手札をランダムにn枚捨てさせる"],
   ["peek","相手の手札を見る"],
   ["bounce","相手クリーチャーをランダムn体 手札に戻す"],
+  ["deckPin4","選んだクリーチャーを山札の上から4枚目に横向きで刺す（終葬/Q.Q.QX型・引くと特殊敗北）"],
   ["destroyRnd","相手クリーチャーをランダムn体 破壊"],
   ["grsummon","GR召喚 n体（超GRの上から）"],
   ["tutor","山札から好きなカードをn枚 手札に加える（TCG式・全部見える）"],
@@ -4099,6 +4100,27 @@ async function runFxList(pi,list,srcCard){
         toast(`バウンス：${faceNameOf(c)} を${S.players[tp].label}の手札へ`);
       }
       sfx("move");
+    }else if(f.t==="deckPin4"){
+      if(!S.vs){toast("（ソロのためスキップ）");continue;}
+      const tp=await askChoice("🔀 山札4枚目に横差し：どのプレイヤーのクリーチャーを対象にしますか？",[S.players[0].label,S.players[1].label]);
+      if(tp===null)continue;
+      const TZ=zonesOf(tp);
+      if(!TZ.battle.length){toast(`${S.players[tp].label}のバトルゾーンにクリーチャーがいません`);continue;}
+      for(let i=0;i<n&&TZ.battle.length;i++){
+        const labels=TZ.battle.map(x=>`${faceNameOf(x)}${x.tapped?"（タップ）":""}`);
+        const j=await askChoice(`🔀 横差しするクリーチャーを選択（${i+1}/${n}体目）`,[...labels,"やめる"]);
+        if(j===null||j>=TZ.battle.length)break;
+        snap();
+        const c=TZ.battle.splice(j,1)[0];
+        if(c.gear&&c.gear.length){const gs=c.gear.splice(0);gs.forEach(g=>gearOut(TZ,g));}
+        if(c.under&&c.under.length){const us=c.under.splice(0);us.forEach(u=>{u.faceup=true;TZ.grave.push(u);});}
+        c.tapped=false;c.faceup=false;c.mark=false;c.sideways=true;c.qqqxSide=true;
+        const pos=Math.min(3,TZ.deck.length);
+        TZ.deck.splice(pos,0,c);
+        sfx("move");renderAll();
+        toast(`🔀 ${faceNameOf(c)} を ${S.players[tp].label} の山札の上から4枚目に横向きで差し込んだ（引くと特殊敗北）`);
+        logOnly(`🔀 ${S.players[pi].label}：${faceNameOf(c)} を ${S.players[tp].label} の山札4枚目に横差し`);
+      }
     }else if(f.t==="destroyRnd"){
       if(!S.vs){toast("（ソロのためスキップ）");continue;}
       const tp=await askChoice(`🎲 ランダム破壊（${n}体）：対象プレイヤーを選択`,[S.players[0].label,S.players[1].label]);
@@ -6695,6 +6717,80 @@ function renderFxEditor(){
   }
 }
 /* ===== カードテキスト自動解析：貼り付けたテキストからキーワード能力・数値・cip効果を検出してFXEDITへ反映 ===== */
+/* 汎用エフェクト抽出：本文を能力単位（■/。/改行）に分解し、各文から効果タイプを推定 */
+/* 自然言語の条件節（「マナゾーンにツインパクトが5枚以上」等）を zoneCondOk 用の式に変換 */
+function condExprFrom(clause){
+  if(!clause)return "";
+  const c=clause.replace(/\s+/g,"");
+  const zoneMap=[[/(?:自分の)?マナ(?:ゾーン)?/,"マナ"],[/(?:自分の)?墓地/,"墓地"],[/(?:自分の)?手札/,"手札"],[/(?:自分の)?シールド|(?:自分の)?盾/,"盾"],[/(?:自分の)?バトルゾーン/,"バトル"]];
+  let zone=null;
+  for(const [re,z] of zoneMap)if(re.test(c)){zone=z;break;}
+  if(!zone)return "";
+  // 枚数と比較
+  const m=c.match(/(\d+)枚以上/); const eq=c.match(/(\d+)枚(?:ある|あれば|以下)/);
+  // フィルタ（ツインパクト/種族/文明/呪文/クリーチャー/多色）
+  let filt="";
+  if(/ツインパクト/.test(c))filt="ツインパクト";
+  else if(/呪文/.test(c))filt="呪文";
+  else if(/多色/.test(c))filt="多色";
+  else{
+    const civ=c.match(/(光|水|闇|火|自然)(?:のカード|のクリーチャー)?が/); if(civ)filt=civ[1];
+    else{const race=c.match(/([ァ-ヶ一-龠]{2,10})(?:のカード|のクリーチャー)?が\d/); if(race&&!/ゾーン|マナ|墓地|手札|シールド|バトル/.test(race[1]))filt=race[1];}
+  }
+  if(m)return `${zone}${filt?":"+filt:""}>=${m[1]}`;
+  if(/(\d+)枚以下/.test(c)){const mm=c.match(/(\d+)枚以下/);return `${zone}${filt?":"+filt:""}<=${mm[1]}`;}
+  return "";
+}
+function extractEffects(text,mode){
+  if(!text)return [];
+  const fx=[];
+  const clauses=text.split(/[■●。\n]/).map(x=>x.trim()).filter(x=>x.length>1);
+  const numOf=(s,re)=>{const m=s.match(re);return m?+m[1]:1;};
+  for(const cl of clauses){
+    // ドロー
+    if(/引く/.test(cl)&&!/相手/.test(cl.split("引く")[0].slice(-8))){
+      const n=numOf(cl,/(\d+)枚(?:を)?引く/); fx.push({t:"draw",n});
+    }
+    // マナ加速（山札上→マナ）
+    if(/山札の上から.*?マナ(?:ゾーン)?に置く/.test(cl)||/マナ加速/.test(cl)){
+      const n=numOf(cl,/上から(\d+)枚/); fx.push({t:/タップして/.test(cl)?"chargeTap":"charge",n});
+    }
+    // 山札を墓地（セルフ/相手）
+    if(/山札の上から(\d+)枚を?墓地に置く/.test(cl)){
+      const n=numOf(cl,/上から(\d+)枚/); fx.push({t:/相手/.test(cl)?"millOpp":"mill",n});
+    }
+    // ハンデス
+    if(/手札を.*?捨て(?:させる|る)/.test(cl)&&/相手/.test(cl)){
+      const n=numOf(cl,/(\d+)枚/); fx.push({t:"handes",n});
+    }
+    // 破壊
+    if(/破壊する/.test(cl)&&/相手|すべて|全て/.test(cl)){
+      const n=numOf(cl,/(\d+)体/); fx.push({t:"destroyRnd",n});
+    }
+    // バウンス
+    if(/手札に戻す/.test(cl)&&/相手/.test(cl)){
+      const n=numOf(cl,/(\d+)体/); fx.push({t:"bounce",n});
+    }
+    // 全タップ（スパーク）
+    if(/相手の.*クリーチャーを.*(?:すべて|全て).*タップ/.test(cl))fx.push({t:"tapAllOp",n:1});
+    // GR召喚
+    if(/GR召喚|超GR/.test(cl)){const n=numOf(cl,/(\d+)体/);fx.push({t:"grsummon",n});}
+    // サーチ（山札から手札）
+    if(/山札(?:を見て|から).*手札に加える/.test(cl)){
+      const n=numOf(cl,/(\d+)枚/);
+      fx.push({t:/すべて見|全て見|好きな/.test(cl)?"tutor":"tutorDMPS",n});
+    }
+    // 横差し（終葬/Q.Q.QX）
+    if(/山札の上から4枚目.*?横向き/.test(cl)||/横向き.*?山札の上から4枚目/.test(cl))fx.push({t:"deckPin4",n:1});
+    // 墓地/山札を見る
+    if(/相手の墓地を見る/.test(cl))fx.push({t:"graveView",n:1});
+    if(/山札の上から(\d+)枚を?見る/.test(cl)){const n=numOf(cl,/(\d+)枚/);fx.push({t:"look",n});}
+    if(/山札の上から(\d+)枚を?(?:表向きに|公開)/.test(cl)){const n=numOf(cl,/(\d+)枚/);fx.push({t:"reveal",n});}
+  }
+  // 重複除去
+  const seen=new Set();
+  return fx.filter(f=>{const k=f.t+":"+(f.n||"");if(seen.has(k))return false;seen.add(k);return true;});
+}
 function parseCardText(txt,mode){
   const out={set:{},fx:[],notes:[],twinHint:false};
   const t=txt.replace(/\s+/g," ");
@@ -6773,6 +6869,17 @@ function parseCardText(txt,mode){
   // 常在ロック
   if(/相手は呪文を唱えられない/.test(t))out.set.stLockSpell=true;
   if(/相手は(?:クリーチャーを)?(?:バトルゾーンに)?クリーチャーを出せない/.test(t))out.set.stLockCre=true;
+  // 条件付きS・トリガー付与（「〜あれば/なら、…S・トリガーを与える」）→ STをON＋条件式を推定
+  if(/S・?トリガー」?を与える/.test(t)){
+    out.set.st=true;
+    // 直前の条件節から zoneCondOk 用の式を組み立てる
+    const cm=t.match(/([^■。、]{3,40}?)(?:あれば|いれば|なら)[、,]?[^。]*?S・?トリガー」?を与える/);
+    if(cm){
+      const cond=condExprFrom(cm[1]);
+      if(cond){out.set.stCond=cond;out.notes.push({msg:`⭐ 条件付きS・トリガー：条件式「${cond}」を自動設定`,q:"トリガー"});}
+      else out.notes.push({msg:"💡 S・トリガーは条件付きです。条件式は『条件ST』欄で調整してください","q":"トリガー"});
+    }
+  }
   // 効果の定型文：クリーチャー面は「出た時」以降、呪文面は本文全体を対象
   let seg=null;
   if(mode==="spell"){
@@ -6781,13 +6888,21 @@ function parseCardText(txt,mode){
     const cipSeg=t.split(/バトルゾーンに出た時[、,]?/)[1];
     if(cipSeg)seg=cipSeg.split(/[■●]/)[0];
   }
-  if(seg){
-    let mm;
+  // 汎用抽出：本文を■/。で能力単位に分解し、各文から動詞・数値・対象を拾う
+  out.fx.push(...extractEffects(seg||t,mode));
+  // 重複除去（同じタイプ＋n）
+  {const seen=new Set();out.fx=out.fx.filter(f=>{const k=f.t+":"+(f.n||"");if(seen.has(k))return false;seen.add(k);return true;});}
+  {
+    let mm;const s2=seg;
+    if(s2){
     if((mm=seg.match(/カードを(\d+)枚引く/))||(mm=seg.match(/(\d+)枚引く/)))out.fx.push({t:"draw",n:+mm[1]});
     if((mm=seg.match(/山札の上から(\d+)枚を?マナゾーンに置/)))out.fx.push({t:"charge",n:+mm[1]});
     if((mm=seg.match(/相手のクリーチャーを(\d+)体.{0,10}?破壊/)))out.fx.push({t:"destroyRnd",n:+mm[1]});
     if((mm=seg.match(/相手の手札を(\d+)枚.{0,6}?捨て/)))out.fx.push({t:"handes",n:+mm[1]});
+    if(/山札の上から4枚目.{0,8}?横向きに(?:刺す|差す|差し込む)/.test(seg)||/横向きに(?:刺す|差す).{0,20}?山札の上から4枚目/.test(seg))out.fx.push({t:"deckPin4",n:1});
     if(/手札に戻す/.test(seg))out.notes.push("バウンス系は効果プルダウンから対象指定で追加してください");
+    }
+    {const seen=new Set();out.fx=out.fx.filter(f=>{const k=f.t+":"+(f.n||"");if(seen.has(k))return false;seen.add(k);return true;});}
   }
   // 条件付き強化（「これがNEO進化クリーチャーなら〜」等）は自動化しない旨を通知
   if(/これが.{0,8}進化クリーチャーなら/.test(t))out.notes.push("💡「進化しているなら〜」の条件付き強化は『条件常在』欄で手動設定してください");
@@ -6831,6 +6946,7 @@ const NAMED_CARDS=[
   {re:/ペテンシー|奇天烈\s*シャッフ/,set:{petensy:true},note:"ペテンシー型（相手ターン終わりに3体以上で無料使用）をON"},
   {re:/ボルメテウス.*ホワイト|ボルメテウス・?ホワイト/,set:{sa:true,breaks:"2",shieldBurn:true},note:"ボルメテウス・ホワイト：シールド焼却（ブレイクした盾は墓地・ST不可）"},
   {re:/Q\.Q\.QX|キューキューキューエックス/,set:{qqqx:true,breaks:"2"},note:"Q.Q.QX型（横差し4枚目＋特殊敗北＋山札ロック＋離場シャッフル）をON"},
+  {re:/終葬\s*5\.?S\.?D|終葬/,note:"終葬5.S.D.：呪文。効果に『deckPin4（山札4枚目に横差し）』を追加＋『このカードをバトルに出す』は手動。条件ST（マナにツインパクト5枚以上でST付与）は条件ST欄で"},
 ];
 function applyNamedCard(name){
   const nn=normName(name||"");
@@ -14077,6 +14193,7 @@ function zoneCondOk(expr,pi){
           if(filt==="多色")return r&&r.civs&&r.civs.length>=2;
           if(filt==="呪文")return r&&r.ctype==="spell";
           if(filt==="クリーチャー")return r&&r.ctype!=="spell";
+          if(filt==="ツインパクト")return r&&(r.twin||r.ctype==="twinpact");
           if(civMap[filt])return r&&r.civs&&r.civs.includes(civMap[filt]);
           return (r&&raceMatch(r,filt))||String(x.name||"").includes(filt);
         }).length;
