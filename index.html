@@ -1624,6 +1624,7 @@ body.shake{animation:bodyShake .4s ease-out}
     <h2>登録一覧</h2>
     <div class="row" style="position:sticky;top:0;z-index:5;background:var(--panel,#131a2a);padding:6px 0;margin:0">
       <input type="text" id="regSearch" placeholder="🔎 カード名・能力で検索（スペース区切りでAND・例：侵略 SA）" style="flex:1;min-width:180px;background:#0d1119;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px;font-size:13px">
+      <button type="button" class="btn small" id="regNamedBtn" style="white-space:nowrap">⭐ 固有辞書</button>
       <span id="regSearchN" style="font-size:11px;color:var(--muted);white-space:nowrap"></span>
     </div>
     <h3 style="margin-top:4px">⚡ 効果登録</h3>
@@ -6306,6 +6307,21 @@ function fxUiPolish(){
         bar.innerHTML='<input type="text" id="fxFinder" placeholder="🔎 項目をしぼり込み（例：マッドネス／常在／侵略／シールド…・空欄で全表示）" style="flex:1;min-width:180px"><button type="button" class="btn small primary" id="fxAutoBtn" style="white-space:nowrap">📋 テキストから自動設定</button><button type="button" class="btn small" id="fxGuideBtn" style="white-space:nowrap;display:none">💡 案内</button><span id="fxFinderN" style="font-size:11px;color:var(--muted);white-space:nowrap"></span>';
         bar.querySelector("#fxAutoBtn").addEventListener("click",autoFillFromText);
         bar.querySelector("#fxGuideBtn").addEventListener("click",showFxGuide);
+        // 編集中カードが名前辞書に該当するなら「⭐ 名前から設定」ボタンを出す
+        {
+          const nm=(typeof FXEDIT!=="undefined")&&(FXEDIT.name||FXEDIT.key)||"";
+          if(typeof applyNamedCard==="function"&&applyNamedCard(nm)){
+            const nb=document.createElement("button");
+            nb.type="button";nb.className="btn small";nb.style.whiteSpace="nowrap";
+            nb.textContent="⭐ 名前から設定";
+            nb.addEventListener("click",()=>{
+              const hit=autoApplyNamed();
+              renderFxEditor();
+              if(hit)toast(`⭐ ${nm} の固有効果を反映しました。${hit.note||""}\n⚠ 確認してから保存してください`);
+            });
+            bar.insertBefore(nb,bar.querySelector("#fxGuideBtn"));
+          }
+        }
         firstH3.parentElement.insertBefore(bar,firstH3);
         const inp=bar.querySelector("#fxFinder");
         inp.placeholder="🔎 項目をしぼり込み（略称OK：SA/cip/pig/バウンス/ハンデス…・スペースでAND）";
@@ -6803,6 +6819,33 @@ function showFxGuide(){
   })();
 }
 function noteMsg(x){return (x&&x.msg)||String(x);}
+/* カード名から固有効果を引き当てる辞書（部分一致・正規化名で判定）。
+   set:自動チェックする項目 / fx:効果リストへ追加 / note:案内 */
+const NAMED_CARDS=[
+  {re:/シャコガイル/,set:{libWin:true,breaks:"3"},note:"シャコガイル：山札切れ勝利（libWin）＋T・ブレイカー"},
+  {re:/一音の妖精/,set:{ctype:"neoevo",gs:true,stSpellPT:1},note:"一音の妖精：NEO進化＋G・ストライク＋呪文各ターン1回。④はstCrePT（進化時のみ）を手動確認"},
+  {re:/アイアン・?マンハッタン/,set:{sa:true,breaks:"2"},note:"マンハッタン：SA＋W・ブレイカー。『相手は各ターン2体まで』はターン限定ロック(マンハッタン型)を手動で"},
+  {re:/龍装鬼\s*オブザ|オブザ0?8号/,set:{sa:true,breaks:"2",twin:true},note:"オブザ08号：ツインパクト。上面シンパシー(墓地)は下面に効かないよう面別で"},
+  {re:/セプトン7|7777777/,set:{breaks:"2"},note:"セプトン7：ツインパクト。上面cip＋下面STを本文取り込みで"},
+  {re:/ヤドック/,note:"ヤドック：置換ロック欄で『ヤドック型（最大マナ超→マナ）』を選択"},
+  {re:/ペテンシー|奇天烈\s*シャッフ/,set:{petensy:true},note:"ペテンシー型（相手ターン終わりに3体以上で無料使用）をON"},
+  {re:/ボルメテウス.*ホワイト|ボルメテウス・?ホワイト/,set:{sa:true,breaks:"2",shieldBurn:true},note:"ボルメテウス・ホワイト：シールド焼却（ブレイクした盾は墓地・ST不可）"},
+  {re:/Q\.Q\.QX|キューキューキューエックス/,set:{qqqx:true,breaks:"2"},note:"Q.Q.QX型（横差し4枚目＋特殊敗北＋山札ロック＋離場シャッフル）をON"},
+];
+function applyNamedCard(name){
+  const nn=normName(name||"");
+  const raw=name||"";
+  for(const e of NAMED_CARDS){
+    if(e.re.test(raw)||e.re.test(nn))return e;
+  }
+  return null;
+}
+function autoApplyNamed(){
+  const hit=applyNamedCard(FXEDIT.name||FXEDIT.key||"");
+  if(!hit)return null;
+  if(hit.set)for(const [k,v] of Object.entries(hit.set)){if(k!=="dSelfNote")FXEDIT[k]=v;}
+  return hit;
+}
 function fxKeyLabel(k){
   const M={sa:"SA",blocker:"ブロッカー",slayer:"スレイヤー",gs:"G・ストライク",st:"S・トリガー",
     guardman:"ガードマン",mach:"マッハF",jdiver:"ジャストダイバー",exlife:"EXライフ",escape:"エスケープ",
@@ -6834,6 +6877,8 @@ async function autoFillFromText(){
     if(!txt)return;
     const r=parseCardText(txt);
     let cnt=applySet(r.set)+applyFx(r.fx,0);
+    const named=autoApplyNamed();
+    if(named){cnt++;if(named.note)r.notes.push({msg:"⭐ "+named.note,q:""});}
     FXEDIT._guide=r.notes.filter(x=>x&&x.q);
     renderFxEditor();
     {const gb=document.getElementById("fxGuideBtn");if(gb)gb.style.display=FXEDIT._guide.length?"":"none";}
@@ -7112,10 +7157,28 @@ function openFxEditor(key){
     modeOpts:cur&&cur.modeOpts||"",
     watch:cur&&cur.watch?{...cur.watch}:{atkC:false,atkP:false,draw:false,summon:false,spell:false,turnEndMine:false,turnEndOpp:false,turnEndBoth:false},
   };
+  // 新規登録カード（既存効果なし）で名前辞書に該当する場合、固有効果を自動反映して通知
+  if(!cur&&typeof applyNamedCard==="function"){
+    const hit=applyNamedCard(FXEDIT.name||FXEDIT.key||"");
+    if(hit){autoApplyNamed();FXEDIT._namedHit=hit;}
+  }
   renderFxEditor();
+  if(FXEDIT._namedHit){const h=FXEDIT._namedHit;setTimeout(()=>toast(`⭐ ${FXEDIT.name} の固有効果を自動反映しました。${h.note||""}\n⚠ 確認してから保存してください`),200);}
   $("fxOlay").classList.add("open");
 }
 function fxBackToSettings(){$("fxOlay").classList.remove("open");openDeckPanel();}
+/* 名前辞書を一覧・検索するダイアログ（どのカードが固有対応済みか確認できる） */
+async function showNamedList(){
+  const q=(await askText("⭐ 固有カード辞書を検索（カード名の一部・空欄で全件）",""))||"";
+  const qq=q.trim();
+  const list=NAMED_CARDS.filter(e=>{
+    if(!qq)return true;
+    return e.re.test(qq)||(e.note&&e.note.includes(qq));
+  });
+  if(!list.length){toast(`「${qq}」に一致する固有カードはありません（辞書は今後も追加されます）`);return;}
+  const label=e=>{const s=e.re.source.replace(/[\\/()?.*+^$|]/g," ").replace(/\s+/g," ").trim().split(" ")[0];return `${s}：${e.note||"固有効果あり"}`;};
+  toast(`⭐ 固有カード辞書（${list.length}件）\n`+list.map(label).join("\n"));
+}
 (function initFxSelects(){
   const ps=$("fxPowerSel");
   const o0=document.createElement("option");o0.value="";o0.textContent="選択▼";ps.appendChild(o0);
@@ -7631,6 +7694,7 @@ $("btnRegList").addEventListener("click",()=>{
     inp.oninput=apply;
     apply();
   }
+  {const nb=document.getElementById("regNamedBtn");if(nb)nb.onclick=showNamedList;}
 });
 $("regClose").addEventListener("click",()=>$("regOlay").classList.remove("open"));
 
