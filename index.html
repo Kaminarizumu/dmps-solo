@@ -598,6 +598,7 @@ body.shake{animation:bodyShake .4s ease-out}
     <button class="btn small bar-extra" id="btnSeat" style="display:none">視点:P1</button>
     <button class="btn small warn bar-extra" id="btnResignBar" style="display:none">🏳 投了</button>
     <button class="btn small ghost bar-extra" id="btnLog">📜</button>
+    <button class="btn small ghost bar-extra" id="btnStats" title="対戦戦績">📊</button>
     <button class="btn small bar-extra" id="btnFreePlay">踏倒:OFF</button>
     <button class="btn" id="btnPause" title="処理中（誤操作防止ロック）">⏸ 処理中</button>
   </div>
@@ -1990,6 +1991,7 @@ function qqqxLeaveShuffle(pi,c){
 /* ================= undo ================= */
 const HIST=[];
 const REDO=[];
+const REPLAY={on:false,frames:[],live:null,idx:0,timer:null,cur:null};
 let DECK_DIRTY=false;
 function markDeckDirty(){DECK_DIRTY=true;const dm=$("dirtyMark");if(dm)dm.textContent="● 未保存の変更あり";}
 function updateEditingBanner(){
@@ -2008,6 +2010,10 @@ function snap(){
   HIST.push(s);
   if(HIST.length>50)HIST.shift();
   REDO.length=0;
+  // 📽 リプレイ：試合中はフレームも蓄積（リプレイ再生中は記録しない・上限600）
+  if(typeof MATCH_CTX!=="undefined"&&MATCH_CTX&&!REPLAY.on){
+    if(REPLAY.frames.length<600&&REPLAY.frames[REPLAY.frames.length-1]!==s)REPLAY.frames.push(s);
+  }
 }
 function restoreState(st){
   S.turn=st.t;S.who=st.w;
@@ -2057,11 +2063,12 @@ function redo(){
 
 /* ================= IndexedDB ================= */
 function openDB(){return new Promise(res=>{try{
-  const r=indexedDB.open("dmps-solo",1);
+  const r=indexedDB.open("dmps-solo",2);
   r.onupgradeneeded=()=>{const d=r.result;
     if(!d.objectStoreNames.contains("images"))d.createObjectStore("images");
     if(!d.objectStoreNames.contains("decks"))d.createObjectStore("decks");
-    if(!d.objectStoreNames.contains("misc"))d.createObjectStore("misc");};
+    if(!d.objectStoreNames.contains("misc"))d.createObjectStore("misc");
+    if(!d.objectStoreNames.contains("replays"))d.createObjectStore("replays");};
   r.onsuccess=()=>res(r.result); r.onerror=()=>res(null);
 }catch(e){res(null);}});}
 const idbGet=(s,k)=>new Promise(r=>{if(!db)return r(null);try{const q=db.transaction(s).objectStore(s).get(k);q.onsuccess=()=>r(q.result);q.onerror=()=>r(null);}catch(e){r(null);}});
@@ -2275,6 +2282,16 @@ function startGame(picks){
   closeSheet();renderAll();
   sfx("ok");
   toast(S.vs?`対戦開始！ 先行：${S.players[S.who].label}`:"対戦開始！");
+  // 📊 戦績用：この試合のコンテキストを記録（勝敗確定時にdeclareWinで保存）
+  MATCH_CTX=S.vs?{
+    id:Date.now(),
+    start:Date.now(),
+    deck0:S.players[0].deckName||"（デッキ未選択）",
+    deck1:S.players[1].deckName||"（デッキ未選択）",
+    first:S.who
+  }:null;
+  // 📽 リプレイ：初期盤面をフレーム0として記録
+  REPLAY.frames=S.vs?[serializeState()]:[];
   // 登録漏れ警告：ロック/シンパシー等の自動判定がすり抜ける原因になるため、開始時に知らせる
   if(S.expert){
     const miss=new Set(), noPC=new Set();
@@ -2388,10 +2405,12 @@ async function runLabyEnd(cur2){
   renderAll();
 }
 function nextTurn(){
+  if(REPLAY.on){toast("📽 リプレイ再生中です（「✖ 終了」で戻れます）");return;}
   if(GAME_PAUSE){
     toast("⏸ 処理中です（「▶ 再開」を押してから進めてください）");
     return;
   }
+  MUGETSU_ASKED={}; // ターンが変わるので無月の門の確認済みフラグをリセット（絶は毎ターン終了時に再確認）
   if(LABY_RUN){
     toast("⏳ ラビリンス・マジックの処理中です");
     return;
@@ -10052,8 +10071,31 @@ let MUGETSU_BUSY=false;
           虚無月の門(kyomu)＝場+墓地の魔導具 合計4以上
           無月の門・絶(zetsu)＝場+墓地の魔導具 合計6以上
    タイミング： normal/kyomu＝条件が揃った時（renderAllから随時）／zetsu＝各ターンの終わり */
+/* 無月の門で手札/墓地からコストを支払わずに召喚し、門の下に敷く */
+async function doMugetsuSummon(pi,zn,id){
+  const Z=zonesOf(pi);
+  const arr=Z[zn];
+  const hi=arr?arr.findIndex(x=>x.id===id):-1;
+  if(hi<0){toast("カードが見つかりません");return;}
+  const h=arr[hi];
+  const r=getReg(h);
+  const type=(r&&r.mugetsu)||"normal";
+  const label=type==="zetsu"?"無月の門・絶":type==="kyomu"?"虚無月の門":"無月の門";
+  snap();
+  arr.splice(hi,1);
+  h.faceup=true;h.tapped=false;h.sideways=false;
+  Z.battle.push(h);
+  markArrive(h);
+  emitEvent(pi,"summon");
+  enqueueFx(pi,h);
+  sfx("ok");renderAll();
+  toast(`🌑 ${label}！ ${faceNameOf(h)}（${zn==="grave"?"墓地":"手札"}から召喚）`);
+  await waitFxIdle();
+  const needN=type==="zetsu"?6:4;
+  await mugetsuGate(pi,h.id,needN);
+}
 async function checkMugetsu(atTurnEnd){
-  if(!S.expert||MUGETSU_BUSY)return;
+  if(!S.expert||MUGETSU_BUSY||REPLAY.on)return;
   // 描画駆動時は他のダイアログ/ビューアが開いていれば見送る（多重表示防止）
   if(!atTurnEnd&&(($("askOlay")&&$("askOlay").classList.contains("open"))||($("viewerOlay")&&$("viewerOlay").classList.contains("open"))))return;
   for(const pi of (S.vs?[0,1]:[0])){
@@ -10080,34 +10122,19 @@ async function checkMugetsu(atTurnEnd){
       if(MUGETSU_ASKED[key])continue;                 // 成立中に一度断ったら再確認しない
       MUGETSU_ASKED[key]=true;
       MUGETSU_BUSY=true;
-      const label=type==="zetsu"?"無月の門・絶":type==="kyomu"?"虚無月の門":"無月の門";
-      const condTxt=type==="normal"?`場${battleMad}・墓${graveMad}（各2以上）`:`場+墓 計${total}（${type==="kyomu"?4:6}以上）`;
-      const yes=await ask(`🌑 ${label}：条件成立！ 魔導具 ${condTxt}\n《${faceNameOf(h)}》を${zn==="grave"?"墓地":"手札"}からコストを支払わずに召喚しますか？`);
-      if(yes){
-        snap();
-        const arr=Z[zn];
-        const hi=arr.findIndex(x=>x.id===h.id);
-        if(hi>=0){
-          arr.splice(hi,1);
-          h.faceup=true;h.tapped=false;h.sideways=false;
-          Z.battle.push(h);
-          markArrive(h);
-          emitEvent(pi,"summon");
-          enqueueFx(pi,h);
-          sfx("ok");renderAll();
-          toast(`🌑 ${label}！ ${faceNameOf(h)}（${zn==="grave"?"墓地":"手札"}から召喚）`);
-          await waitFxIdle();
-          const needN=type==="zetsu"?6:4;
-          await mugetsuGate(pi,h.id,needN);
-        }
-      }
-      MUGETSU_BUSY=false;
+      try{
+        const label=type==="zetsu"?"無月の門・絶":type==="kyomu"?"虚無月の門":"無月の門";
+        const condTxt=type==="normal"?`場${battleMad}・墓${graveMad}（各2以上）`:`場+墓 計${total}（${type==="kyomu"?4:6}以上）`;
+        const yes=await ask(`🌑 ${label}：条件成立！ 魔導具 ${condTxt}\n《${faceNameOf(h)}》を${zn==="grave"?"墓地":"手札"}からコストを支払わずに召喚しますか？`);
+        if(yes)await doMugetsuSummon(pi,zn,h.id);
+      }catch(e){}
+      finally{MUGETSU_BUSY=false;}
       return; // 1回につき1体
     }
   }
 }
 function checkLibWin(){
-  if(!S.expert)return;
+  if(!S.expert||REPLAY.on)return;
   for(const pi of (S.vs?[0,1]:[0])){
     const Z=zonesOf(pi);
     if(Z.deck.length>0){LIBWIN_ASKED[pi]=false;continue;}
@@ -10330,6 +10357,7 @@ function setupConn(conn){
     else if(msg&&msg.t==="resign"){
       if(msg.score){SCORE[0]=msg.score[0]|0;SCORE[1]=msg.score[1]|0;}
       const w=msg.loser?0:1;
+      recordMatch(w,"投了");
       toast(`🏳 ${S.players[msg.loser].label} が投了！ ${S.players[w].label} の勝ち！（戦績 P1 ${SCORE[0]} - ${SCORE[1]} P2）`);
       sfx("atk");
       renderAll();
@@ -10507,6 +10535,275 @@ function showResultScreen(winner,reason){
   ol.addEventListener("click",()=>ol.remove());
   document.body.appendChild(ol);
 }
+/* ================= 📊 対戦統計（一人回し戦績） ================= */
+let MATCH_CTX=null;   // 進行中の試合コンテキスト（startGameで設定）
+let MATCH_STATS=[];   // 保存済みの全試合 [{d,deck0,deck1,first,winner,reason,turns,ms}]
+async function loadStats(){try{const v=db?await idbGet("misc","matchStats"):null;if(Array.isArray(v))MATCH_STATS=v;}catch(e){}}
+async function persistStats(){try{if(db)await idbPut("misc","matchStats",MATCH_STATS);}catch(e){}}
+async function recordMatch(winner,reason){
+  if(!MATCH_CTX)return; // 既に登録済み/破棄済みの試合は二重記録しない
+  const c=MATCH_CTX;
+  const id=c.id||Date.now();
+  MATCH_STATS.push({
+    id,
+    d:Date.now(),
+    deck0:c.deck0||S.players[0].deckName||"（デッキ未選択）",
+    deck1:c.deck1||S.players[1].deckName||"（デッキ未選択）",
+    first:(c.first!=null)?c.first:0,
+    winner,
+    reason:String(reason||"").slice(0,80),
+    turns:S.turn,
+    ms:c.start?(Date.now()-c.start):0
+  });
+  if(MATCH_STATS.length>2000)MATCH_STATS=MATCH_STATS.slice(-2000);
+  await persistStats();
+  // 📽 リプレイ＆ログを保存（直近30試合分のみ保持）
+  try{
+    if(db&&REPLAY.frames.length){
+      // 最終盤面もフレームに含める
+      const last=serializeState();
+      if(REPLAY.frames[REPLAY.frames.length-1]!==last&&REPLAY.frames.length<600)REPLAY.frames.push(last);
+      await idbPut("replays",String(id),{frames:REPLAY.frames.slice(),log:GAMELOG.slice()});
+      const keys=(await idbKeys("replays")).map(Number).filter(x=>!isNaN(x)).sort((a,b)=>a-b);
+      while(keys.length>30){const old=keys.shift();await idbDel("replays",String(old));}
+    }
+  }catch(e){}
+  REPLAY.frames=[];
+  MATCH_CTX=null;
+}
+/* 📽 リプレイ再生：保存フレームを実盤面に描画。終了で元のライブ状態へ復帰 */
+async function startReplay(id){
+  const rec=db?await idbGet("replays",String(id)):null;
+  if(!rec||!rec.frames||!rec.frames.length){toast("この試合のリプレイは保存されていません（直近30試合のみ保持）");return;}
+  if(REPLAY.on){toast("既にリプレイ再生中です");return;}
+  closeViewer();
+  REPLAY.on=true;
+  REPLAY.live=serializeState();
+  REPLAY.cur=rec;
+  REPLAY.idx=0;
+  // 操作バー
+  let bar=document.getElementById("replayBar");
+  if(!bar){
+    bar=document.createElement("div");
+    bar.id="replayBar";
+    bar.style.cssText="position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:900;background:#131a2a;border:2px solid #6d28d9;border-radius:14px;padding:8px 12px;display:flex;gap:6px;align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.6);flex-wrap:wrap;justify-content:center;max-width:96vw";
+    document.body.appendChild(bar);
+  }
+  bar.style.display="flex";
+  const mkBtn=(txt,fn)=>{const b=document.createElement("button");b.className="btn small";b.textContent=txt;b.onclick=fn;return b;};
+  const lbl=document.createElement("span");
+  lbl.style.cssText="font-size:12px;font-weight:900;color:#c4b5fd;min-width:120px;text-align:center";
+  const show=i=>{
+    REPLAY.idx=Math.max(0,Math.min(rec.frames.length-1,i));
+    try{restoreState(JSON.parse(rec.frames[REPLAY.idx]));}catch(e){}
+    lbl.textContent=`📽 ${REPLAY.idx+1} / ${rec.frames.length}`;
+  };
+  const stopAuto=()=>{if(REPLAY.timer){clearInterval(REPLAY.timer);REPLAY.timer=null;autoBtn.textContent="▶ 自動";}};
+  const autoBtn=mkBtn("▶ 自動",()=>{
+    if(REPLAY.timer){stopAuto();return;}
+    autoBtn.textContent="⏸ 停止";
+    REPLAY.timer=setInterval(()=>{
+      if(REPLAY.idx>=rec.frames.length-1){stopAuto();return;}
+      show(REPLAY.idx+1);
+    },900);
+  });
+  bar.innerHTML="";
+  bar.appendChild(lbl);
+  bar.appendChild(mkBtn("|◀ 最初",()=>{stopAuto();show(0);}));
+  bar.appendChild(mkBtn("◀ 前",()=>{stopAuto();show(REPLAY.idx-1);}));
+  bar.appendChild(mkBtn("次 ▶",()=>{stopAuto();show(REPLAY.idx+1);}));
+  bar.appendChild(mkBtn("最後 ▶|",()=>{stopAuto();show(rec.frames.length-1);}));
+  bar.appendChild(autoBtn);
+  bar.appendChild(mkBtn("📜 ログ",()=>{showSavedLog(rec.log||[]);}));
+  const exitB=mkBtn("✖ 終了",()=>{endReplay();});
+  exitB.className="btn small warn";
+  bar.appendChild(exitB);
+  show(0);
+  toast("📽 リプレイ再生中：盤面は閲覧専用です。「✖ 終了」で元の状態に戻ります");
+}
+function endReplay(){
+  if(!REPLAY.on)return;
+  if(REPLAY.timer){clearInterval(REPLAY.timer);REPLAY.timer=null;}
+  const bar=document.getElementById("replayBar");
+  if(bar)bar.style.display="none";
+  const live=REPLAY.live;
+  REPLAY.on=false;REPLAY.cur=null;REPLAY.live=null;
+  if(live){try{restoreState(JSON.parse(live));}catch(e){}}
+  toast("📽 リプレイを終了し、元の盤面に戻しました");
+}
+function showSavedLog(log){
+  $("vTitle").textContent=`📜 試合ログ（${log.length}件）`;
+  $("vHint").textContent="";
+  $("vSearch").style.display="none";
+  $("vStatus").textContent="";
+  $("vOk").style.display="none";
+  const g=$("vGrid");g.innerHTML="";
+  const wrap=document.createElement("div");
+  wrap.style.cssText="grid-column:1/-1;display:flex;flex-direction:column;gap:4px;font-size:12px";
+  for(let i=log.length-1;i>=0;i--){
+    const row=document.createElement("div");
+    row.style.cssText="padding:4px 8px;background:#0d1119;border:1px solid var(--line);border-radius:7px;word-break:break-word";
+    row.textContent=log[i];
+    wrap.appendChild(row);
+  }
+  if(!log.length)wrap.innerHTML="<div class='hint'>ログが保存されていません</div>";
+  g.appendChild(wrap);
+  $("viewerOlay").classList.add("open");
+}
+function pct(a,b){return b?Math.round(a/b*1000)/10:0;}
+function openStatsPanel(){
+  const g=$("vGrid");g.innerHTML="";
+  $("vTitle").textContent=`📊 対戦戦績（${MATCH_STATS.length}試合）`;
+  $("vHint").textContent="一人回し・対戦の記録から自動集計。デッキ名で対面ごとの相性も出ます";
+  $("vSearch").style.display="none";
+  $("vStatus").textContent="";
+  $("vOk").style.display="none";
+  const wrap=document.createElement("div");
+  wrap.style.cssText="grid-column:1/-1;display:flex;flex-direction:column;gap:10px;font-size:13px";
+  // 進行中の試合があれば、途中でも結果を登録できる行を出す
+  if(S.vs&&MATCH_CTX){
+    const cur=document.createElement("div");
+    cur.style.cssText="background:#1a1430;border:1px solid #6d28d9;border-radius:10px;padding:10px";
+    cur.innerHTML=`<b>⏱ 進行中の試合</b>　${MATCH_CTX.deck0} vs ${MATCH_CTX.deck1}（ターン${S.turn}・先攻 ${S.players[MATCH_CTX.first].label}）<br>`;
+    const row=document.createElement("div");
+    row.className="row";row.style.cssText="gap:6px;flex-wrap:wrap;margin-top:6px";
+    for(const w of [0,1]){
+      const b=document.createElement("button");
+      b.className="btn small";b.textContent=`🏆 ${S.players[w].label}（${w===0?MATCH_CTX.deck0:MATCH_CTX.deck1}）の勝ちで登録`;
+      b.onclick=async()=>{
+        SCORE[w]++;
+        await recordMatch(w,"途中終了");
+        closeViewer();
+        toast(`🏆 ${S.players[w].label} の勝ちで記録しました（戦績 ${SCORE[0]} - ${SCORE[1]}）`);
+      };
+      row.appendChild(b);
+    }
+    const ng=document.createElement("button");
+    ng.className="btn small ghost";ng.textContent="📝 ノーゲームとして破棄";
+    ng.onclick=()=>{MATCH_CTX=null;closeViewer();toast("📝 ノーゲームとして破棄しました");};
+    row.appendChild(ng);
+    cur.appendChild(row);
+    wrap.appendChild(cur);
+  }
+  if(!MATCH_STATS.length){
+    wrap.innerHTML="<div class='hint'>まだ戦績がありません。対戦モードで勝敗を記録すると自動で貯まります。</div>";
+  }else{
+    const st=MATCH_STATS;
+    const total=st.length;
+    const p1w=st.filter(m=>m.winner===0).length;
+    const firstW=st.filter(m=>m.winner===m.first).length;
+    const avgT=Math.round(st.reduce((a,m)=>a+(m.turns||0),0)/total*10)/10;
+    // サマリー
+    const sum=document.createElement("div");
+    sum.style.cssText="background:#0d1119;border:1px solid var(--line);border-radius:10px;padding:10px";
+    sum.innerHTML=`<b>全体</b>　${total}試合　P1勝率 ${pct(p1w,total)}%（${p1w}勝${total-p1w}敗）　<b>先攻勝率 ${pct(firstW,total)}%</b>　平均${avgT}ターン`;
+    wrap.appendChild(sum);
+    // デッキ別成績（P1/P2どちら側でも合算）
+    const byDeck=new Map();
+    for(const m of st){
+      for(const side of [0,1]){
+        const dk=side===0?m.deck0:m.deck1;
+        if(!byDeck.has(dk))byDeck.set(dk,{w:0,l:0,fw:0,fn:0});
+        const o=byDeck.get(dk);
+        if(m.winner===side)o.w++;else o.l++;
+        if(m.first===side){o.fn++;if(m.winner===side)o.fw++;}
+      }
+    }
+    const dv=document.createElement("div");
+    dv.style.cssText="background:#0d1119;border:1px solid var(--line);border-radius:10px;padding:10px";
+    let dh="<b>デッキ別勝率</b>（P1/P2両側を合算）<br>";
+    const dEntries=[...byDeck.entries()].sort((a,b)=>(b[1].w+b[1].l)-(a[1].w+a[1].l));
+    for(const [dk,o] of dEntries){
+      const n=o.w+o.l;
+      dh+=`・${dk}：<b>${pct(o.w,n)}%</b>（${o.w}勝${o.l}敗）${o.fn?`　先攻時 ${pct(o.fw,o.fn)}%`:""}<br>`;
+    }
+    dv.innerHTML=dh;
+    wrap.appendChild(dv);
+    // 対面マトリクス（デッキA vs デッキB・向き正規化）
+    const byMatch=new Map();
+    for(const m of st){
+      const a=m.deck0,b=m.deck1;
+      const key=a<=b?a+"｜vs｜"+b:b+"｜vs｜"+a;
+      const flip=!(a<=b); // keyの左側から見た勝敗に正規化
+      if(!byMatch.has(key))byMatch.set(key,{w:0,l:0});
+      const o=byMatch.get(key);
+      const leftWon=(m.winner===0)!==flip;
+      if(leftWon)o.w++;else o.l++;
+    }
+    const mv=document.createElement("div");
+    mv.style.cssText="background:#0d1119;border:1px solid var(--line);border-radius:10px;padding:10px";
+    let mh="<b>対面相性</b>（左デッキ視点の勝率）<br>";
+    const mEntries=[...byMatch.entries()].sort((a,b)=>(b[1].w+b[1].l)-(a[1].w+a[1].l));
+    for(const [key,o] of mEntries){
+      const [a,b]=key.split("｜vs｜");
+      const n=o.w+o.l;
+      mh+=`・${a} vs ${b}：<b>${pct(o.w,n)}%</b>（${o.w}-${o.l}／${n}試合）<br>`;
+    }
+    mv.innerHTML=mh;
+    wrap.appendChild(mv);
+    // 直近の試合履歴（新しい順・最大30・📽再生/📜ログつき）
+    const hv=document.createElement("div");
+    hv.style.cssText="background:#0d1119;border:1px solid var(--line);border-radius:10px;padding:10px";
+    const hh=document.createElement("div");
+    hh.innerHTML="<b>直近の試合</b>（新しい順・📽＝リプレイ保存あり）";
+    hv.appendChild(hh);
+    const recent=st.slice(-30).reverse();
+    (async()=>{
+      const repKeys=new Set(db?(await idbKeys("replays")).map(String):[]);
+      for(const m of recent){
+        const d=new Date(m.d);
+        const ds=`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+        const wDk=m.winner===0?m.deck0:m.deck1;
+        const lDk=m.winner===0?m.deck1:m.deck0;
+        const row=document.createElement("div");
+        row.style.cssText="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:3px 0;border-bottom:1px dashed #26304a";
+        const tx=document.createElement("span");
+        tx.style.flex="1";
+        tx.innerHTML=`${ds}　🏆<b>${wDk}</b> ＞ ${lDk}　${m.turns||"?"}T${m.first===m.winner?"・先攻":"・後攻"}　<span style="color:var(--muted)">${m.reason||""}</span>`;
+        row.appendChild(tx);
+        if(m.id&&repKeys.has(String(m.id))){
+          const pb=document.createElement("button");
+          pb.className="btn small";pb.textContent="📽 再生";
+          pb.onclick=()=>startReplay(m.id);
+          row.appendChild(pb);
+          const lb=document.createElement("button");
+          lb.className="btn small ghost";lb.textContent="📜";
+          lb.title="この試合のログ";
+          lb.onclick=async()=>{const rec=await idbGet("replays",String(m.id));showSavedLog(rec&&rec.log||[]);};
+          row.appendChild(lb);
+        }
+        hv.appendChild(row);
+      }
+    })();
+    wrap.appendChild(hv);
+    // 操作行
+    const ops=document.createElement("div");
+    ops.className="row";
+    ops.style.cssText="gap:8px;flex-wrap:wrap";
+    const exp=document.createElement("button");
+    exp.className="btn small";exp.textContent="📤 CSVコピー";
+    exp.onclick=()=>{
+      const rows=[["date","deck_p1","deck_p2","first","winner","turns","reason"]];
+      for(const m of MATCH_STATS){
+        const d=new Date(m.d);
+        rows.push([d.toISOString(),m.deck0,m.deck1,m.first===0?"P1":"P2",m.winner===0?"P1":"P2",m.turns||"",String(m.reason||"").replace(/,/g,"、")]);
+      }
+      const csv=rows.map(r=>r.join(",")).join("\n");
+      navigator.clipboard&&navigator.clipboard.writeText(csv).then(()=>toast("📤 CSVをコピーしました"),()=>toast("コピーに失敗しました"));
+    };
+    ops.appendChild(exp);
+    const clr=document.createElement("button");
+    clr.className="btn small ghost";clr.textContent="🗑 全消去";
+    clr.onclick=async()=>{
+      if(!window.confirm("戦績をすべて削除しますか？（元に戻せません）"))return;
+      MATCH_STATS=[];await persistStats();closeViewer();toast("戦績を消去しました");
+    };
+    ops.appendChild(clr);
+    wrap.appendChild(ops);
+  }
+  g.appendChild(wrap);
+  $("viewerOlay").classList.add("open");
+}
 async function declareWin(winner,reason,askFirst=true){
   if(!S.vs){toast(`🏆 ${reason}`);return;}
   let warn="";
@@ -10518,6 +10815,7 @@ async function declareWin(winner,reason,askFirst=true){
   }
   if(askFirst&&!(await ask(`${reason}${warn}\n${S.players[winner].label} の勝ちとして戦績に記録しますか？`)))return;
   SCORE[winner]++;
+  recordMatch(winner,reason);
   toast(`🏆 ${S.players[winner].label} の勝利！（${reason}／戦績 ${SCORE[0]} - ${SCORE[1]}）`);
   sfx("atk");
   showResultScreen(winner,reason);
@@ -10538,6 +10836,7 @@ async function doResign(){
   if(!await ask(`🏳 ${S.players[loser].label} が投了します。よろしいですか？`))return;
   const winner=loser?0:1;
   SCORE[winner]++;
+  recordMatch(winner,"投了");
   toast(`🏳 ${S.players[loser].label} 投了！ ${S.players[winner].label} の勝ち！（戦績 P1 ${SCORE[0]} - ${SCORE[1]} P2）`);
   sfx("atk");
   if(ONLINE.conn&&ONLINE.conn.open){
@@ -10571,6 +10870,7 @@ $("olDeckSend").addEventListener("click",async ()=>{
 $("olResign").addEventListener("click",doResign);
 $("btnResignBar").addEventListener("click",doResign);
 $("btnLog").addEventListener("click",openGameLog);
+{const sb=document.getElementById("btnStats");if(sb)sb.addEventListener("click",openStatsPanel);}
 $("btnMore").addEventListener("click",()=>{$("bottombar").classList.toggle("more-open");});
 $("btnFreePlay").addEventListener("click",()=>{
   S.freePlay=!S.freePlay;
@@ -12166,6 +12466,17 @@ function openCardSheet(ctx){
   if(c.mark){
     box.appendChild(actBtn("マーク色を戻す",()=>{c.mark=false;rerender();}));
   }
+  {
+    const rM=getReg(c);
+    const canMug=rM&&rM.mugetsu&&((ctx.zone==="hand")||(ctx.zone==="grave"&&rM.mugetsu==="zetsu"));
+    if(canMug){
+      const lb=rM.mugetsu==="zetsu"?"無月の門・絶":rM.mugetsu==="kyomu"?"虚無月の門":"無月の門";
+      box.appendChild(actBtn(`🌑 ${lb}で召喚（${ctx.zone==="grave"?"墓地":"手札"}から・下に敷く）`,async ()=>{
+        closeSheet();closeSel();
+        await doMugetsuSummon(ctx.p,ctx.zone,ctx.id);
+      },"primary",true));
+    }
+  }
   for(const [tz,label] of MOVE_TARGETS){
     if(tz===ctx.zone)continue;
     if(ctx.zone==="shield"&&(tz==="hand"||tz==="shieldUp"))continue;
@@ -13616,7 +13927,22 @@ async function startCustom(withShields){
 $("btnStart").addEventListener("click",async ()=>{
   const names=await deckNames();
   if(!S.players[0].mainList.length&&!names.length){openDeckPanel();toast("先にデッキを登録してください");return;}
-  if(S.turn>0&&!await ask("盤面をリセットして再試合しますか？"))return;
+  if(S.turn>0){
+    // 進行中の試合が未記録（MATCH_CTXが残っている）なら、途中終了の扱いを確認してから再試合へ
+    if(S.vs&&MATCH_CTX){
+      const j=await askChoice("進行中の試合が記録されていません。この試合をどうしますか？",
+        [`🏆 ${S.players[0].label} の勝ちとして記録`,`🏆 ${S.players[1].label} の勝ちとして記録`,"📝 記録せず破棄（ノーゲーム）","❌ キャンセル（試合に戻る）"]);
+      if(j===null||j===3)return;
+      if(j===0||j===1){
+        SCORE[j]++;
+        await recordMatch(j,"途中終了");
+        toast(`🏆 ${S.players[j].label} の勝ちで記録しました（戦績 ${SCORE[0]} - ${SCORE[1]}）`);
+      }else{
+        MATCH_CTX=null;
+        toast("📝 ノーゲームとして破棄しました");
+      }
+    }else if(!await ask("盤面をリセットして再試合しますか？"))return;
+  }
   await openStartOlay();
 });
 async function fillStartDecks(){
@@ -14861,6 +15187,7 @@ if("serviceWorker" in navigator&&location.protocol==="https:"){
   const bbt=db?await idbGet("misc","battleBtns"):null;
   if(bbt!==null&&bbt!==undefined)S.battleBtns=!!bbt;
   const ass=db?await idbGet("misc","autoSeat"):null;
+  await loadStats();
   if(ass!==null&&ass!==undefined)S.autoSeat=!!ass;
   const shm=db?await idbGet("misc","shieldMode"):null;
   if(shm)S.shieldMode=shm;
