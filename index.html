@@ -2170,6 +2170,7 @@ function draw(pi,n=1){
     }
     c.faceup=true;c.sideways=false;c.qqqxSide=false;Z.hand.push(c);
     markArrive(c);
+    logOnly(`${S.players[pi].label}：1枚ドロー`);
   }
   sfx("draw");
   emitEvent(pi,"draw");
@@ -4804,18 +4805,21 @@ function processBroken(op,stack,label){
       const i=remaining.findIndex(x=>x.id===c.id);
       if(i<0)return; remaining.splice(i,1);
       c.tapped=false;
-      if(zone==="grave"){c.faceup=true;Z.grave.push(c);sfx("grave");wentGrave=true;}
+      if(zone==="grave"){c.faceup=true;Z.grave.push(c);sfx("grave");wentGrave=true;logOnly(`${S.players[op].label}：ブレイクされた《${faceNameOf(c)}》を墓地へ置いた（S・バック/サバキZコスト等）`);}
       else if(zone==="resolve"){
         if(Z.resolve.length){const olds=Z.resolve.splice(0);olds.forEach(o=>resolveOut(Z,o));}
         c.faceup=true;Z.resolve.push(c);markArrive(c);sfx("move");
+        logOnly(`${S.players[op].label}：⚡S・トリガー！《${faceNameOf(c)}》を唱えた`);
         emitEvent(op,"spell");enqueueFx(op,c);
       }else if(zone==="battle"){
         c.faceup=true;Z.battle.push(c);markArrive(c);sfx("move");
         const r=getReg(c);if(r&&(r.d2||r.wide))c.rot=(op===S.seat)?270:90;
+        logOnly(`${S.players[op].label}：⚡S・トリガー！《${faceNameOf(c)}》を出した`);
         emitEvent(op,"summon");enqueueFx(op,c);
-      }else{c.faceup=true;Z[zone].push(c);markArrive(c);sfx("move");}
+      }else{c.faceup=true;Z[zone].push(c);markArrive(c);sfx("move");logOnly(`${S.players[op].label}：ブレイクされた《${faceNameOf(c)}》を${ZLOG[zone]||zone}へ`);}
       sel=null;renderAll();render();
     };
+    logOnly(label);
     const render=()=>{
       if(!remaining.length){finish();return;}
       $("breakOlay").classList.add("open");
@@ -4905,6 +4909,7 @@ function processBroken(op,stack,label){
       }else bar.style.display="none";
     };
     $("bkDone").onclick=()=>{
+      if(remaining.length)logOnly(`${S.players[op].label}：ブレイクされた${remaining.length}枚（${remaining.map(x=>faceNameOf(x)).join("、")}）を手札に加えた`);
       remaining.forEach(c=>{c.faceup=true;Z.hand.push(c);markArrive(c);});
       remaining=[];sfx("move");finish();
     };
@@ -8148,7 +8153,33 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
     toast(`GRクリーチャー：${dispName.get(faceKeyOf(c))||c.name} はGRゾーンの下へ戻った`);
   }
   sfx("move");
-  logOnly(`${S.players[pTo].label}：${faceNameOf(c)} ${ZLOG[fromZone]||fromZone}→${ZLOG[toZone]||toZone}`);
+  {
+    const rV=getReg(c);
+    const who=S.players[pTo].label;
+    let msg;
+    if(toZone==="battle"){
+      if(rV&&rV.ctype==="crossgear")msg=`${who}：《${faceNameOf(c)}》をジェネレートした`;
+      else if(fromZone==="hand")msg=S.freePlay?`${who}：《${faceNameOf(c)}》を出した（踏み倒し）`:`${who}：《${faceNameOf(c)}》を召喚した`;
+      else msg=`${who}：《${faceNameOf(c)}》を出した（${ZLOG[fromZone]||fromZone}から）`;
+    }else if(toZone==="resolve"){
+      msg=`${who}：《${faceNameOf(c)}》を唱えた`;
+    }else if(toZone==="mana"){
+      msg=`${who}：《${faceNameOf(c)}》をマナに置いた（${ZLOG[fromZone]||fromZone}から）`;
+    }else if(toZone==="hand"&&fromZone==="battle"){
+      msg=`${who}：《${faceNameOf(c)}》を手札に戻した`;
+    }else if(toZone==="hand"&&(fromZone==="mana"||fromZone==="grave")){
+      msg=`${who}：《${faceNameOf(c)}》を${ZLOG[fromZone]}から手札に戻した`;
+    }else if((toZone==="shield"||toZone==="shieldUp")&&fromZone!=="shield"){
+      msg=`${who}：《${faceNameOf(c)}》をシールドに追加した${toZone==="shieldUp"?"（表向き）":""}`;
+    }else if(toZone==="grave"&&fromZone==="battle"){
+      msg=`${who}：《${faceNameOf(c)}》が破壊された（墓地へ）`;
+    }else if(toZone==="grave"&&fromZone==="hand"){
+      msg=`${who}：《${faceNameOf(c)}》を捨てた`;
+    }else{
+      msg=`${who}：${faceNameOf(c)} ${ZLOG[fromZone]||fromZone}→${ZLOG[toZone]||toZone}`;
+    }
+    logOnly(msg);
+  }
   if(toZone==="battle"||toZone==="resolve")enqueueFx(pTo,c);
 }
 let MOVE_TAP_CHAIN=Promise.resolve();
