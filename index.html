@@ -6876,7 +6876,7 @@ function parseCardText(txt,mode){
     const cm=t.match(/([^■。、]{3,40}?)(?:あれば|いれば|なら)[、,]?[^。]*?S・?トリガー」?を与える/);
     if(cm){
       const cond=condExprFrom(cm[1]);
-      if(cond){out.set.stCond=cond;out.notes.push({msg:`⭐ 条件付きS・トリガー：条件式「${cond}」を自動設定`,q:"トリガー"});}
+      if(cond){out.set.stCond=cond;out.notes.push({msg:`⭐ 条件付きS・トリガーを設定（${cond}）`,q:""});}
       else out.notes.push({msg:"💡 S・トリガーは条件付きです。条件式は『条件ST』欄で調整してください","q":"トリガー"});
     }
   }
@@ -6976,7 +6976,7 @@ async function autoFillFromText(){
   const grab=async(label)=>{
     const src=await askChoice(`📋 ${label}の取り込み方法`,["テキストを貼り付け","スクショ画像から読み取り（公式サイトのカード詳細など）"]);
     if(src===null)return null;
-    if(src===0)return await askText(`📋 ${label}の効果テキストを貼り付けてください\n（自前のカード情報 → デュエプレ版wikiの順で。TCG紙版のテキストは非推奨）`);
+    if(src===0)return await askText(`📋 ${label}の効果テキストを貼り付けてください\n（公式サイトやwikiのテキストをそのまま貼り付けOK）`);
     return await ocrCardShot();
   };
   const applySet=(set)=>{let n=0;for(const [k,v] of Object.entries(set)){FXEDIT[k]=v;n++;}return n;};
