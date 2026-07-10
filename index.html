@@ -1414,6 +1414,9 @@ body.shake{animation:bodyShake .4s ease-out}
           <input type="text" id="fxStLockSpellF" placeholder="対象条件（例：光以外／コスト5以下・「／」＝すべて満たす呪文のみ禁止・空欄＝全て）" style="flex:1;min-width:170px">
           <label><input type="checkbox" id="fxStLockCre"> 相手はクリーチャーを出せない</label>
           <input type="text" id="fxStLockCreF" placeholder="対象条件（例：コスト5以下／パワー5000以下／光以外・空欄＝全て）" style="flex:1;min-width:170px">
+          <label style="display:flex;align-items:center;gap:6px">相手は各ターン<input type="number" id="fxStSpellPT" min="0" placeholder="0" style="width:56px"> 回しか呪文を唱えられない（0=制限なし・一音の妖精型）</label>
+          <label style="display:flex;align-items:center;gap:6px">相手は各ターン<input type="number" id="fxStCrePT" min="0" placeholder="0" style="width:56px"> 体しかクリーチャーを出せない（0=制限なし）</label>
+          <label><input type="checkbox" id="fxStCrePTevo"> ↑は自身が進化クリーチャーの時のみ有効（一音の妖精④型）</label>
         </div>
         <div style="flex:1 1 100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <span style="font-size:12px;font-weight:700">置換ロック</span>
@@ -1873,7 +1876,8 @@ function markArrive(c){
     if(S.turn>0&&[0,1].some(p=>zonesOf(p).battle.includes(c))){
       c.bornTurn=S.turn;
       const pOwn=[0,1].find(p=>zonesOf(p).battle.includes(c));
-      if(pOwn!=null){S.playedTurn=S.playedTurn||{};S.playedTurn[pOwn]=(S.playedTurn[pOwn]||0)+1;}
+      if(pOwn!=null){S.playedTurn=S.playedTurn||{};S.playedTurn[pOwn]=(S.playedTurn[pOwn]||0)+1;
+        if(typeof turnLockCountUp==="function")turnLockCountUp(pOwn);}
       const r=getReg(c);
       const evo=isEvoReg(r);
       c.sick=!evo&&!(r&&r.sa);
@@ -2322,6 +2326,7 @@ function nextTurn(){
   S.manaX2={};
   S.tauntUsed={};
   S.playedTurn={};
+  S.spellTurn={};
   if(S.oriotisTurn){
     const nw=S.vs?(S.who===0?1:0):0;
     if(S.oriotisTurn[nw]){
@@ -2664,6 +2669,7 @@ function runWatchFxCond(pi,cond){
 }
 function emitEvent(actor,type){
   if(!S.expert)return;
+  if(type==="spell"){S.spellTurn=S.spellTurn||{};S.spellTurn[actor]=(S.spellTurn[actor]||0)+1;}
   const names=watchNames(actor,type);
   if(names.length){
     sfx("flip");
@@ -2939,6 +2945,8 @@ function fxActor(){return (FX_PI!=null)?FX_PI:(S.vs?S.who:0);}
 function battleEntryOk(pi,c){
   if(!S.expert||S.freePlay||S.turn<=0)return true;
   const r=getReg(c);
+  const cap=perTurnCapHit(pi,"creature");
+  if(cap){sfx("flip");toast(`⛔ ${faceNameOf(cap.by)}：${S.players[pi].label}はこのターン、クリーチャーを${cap.limit}体しか出せない（既に${cap.used}体）`);return false;}
   const lk=stLockerOf(pi,"stLockCre","stLockCreF",r,c);
   const tl=lk?null:turnLockHit(pi,"creature",r);
   const tlU=(lk||tl)?null:turnLockUnknown(pi,"creature",r);
@@ -3090,7 +3098,7 @@ const EFFECTS=[
      sfx("ok");
      toast(`✨ 次に召喚する${["","光の","水の","闇の","火の","自然の","ゼロの"][j]||""}${word?`「${word}」`:""}クリーチャーのコスト−${n}（このターン）`);
    }},
-  {name:"エクストラウィン（自分の勝利）",cat:"⏭ ターン",
+  {name:"エクストラウィン（自分の勝利）",cat:"⏭ ターン",hidden:true, /* 「特殊勝利（エクストラウィン）」に統合（登録カードの後方互換のため定義は残す） */
    desc:"特殊勝利条件を満たした時に。確認のうえ自分の勝ちでゲームを終了します",
    async run(){
      closeSheet();
@@ -3406,6 +3414,7 @@ function openEffects(){
   const box=$("sheetActions");box.innerHTML="";
   const groups=new Map();
   for(const ef of EFFECTS){
+    if(ef.hidden)continue;
     const cat=ef.cat||fxCategory(ef.name);
     if(!groups.has(cat))groups.set(cat,[]);
     groups.get(cat).push(ef);
@@ -4003,8 +4012,21 @@ async function runFxList(pi,list,srcCard){
       const tgt=S.vs?await askChoice("⛔ ロック対象のプレイヤー",[`相手（${S.players[op].label}）`,`自分（${S.players[pi].label}）`]):0;
       if(tgt===null)continue;
       const tPi=S.vs?(tgt===0?op:pi):0;
-      const kd=await askChoice("⛔ ロックの種別",["呪文を唱えられない","クリーチャーを出せない"]);
+      const kd=await askChoice("⛔ ロックの種別",["呪文を唱えられない","クリーチャーを出せない","クリーチャーをn体以上出せない（マンハッタン型）"]);
       if(kd===null)continue;
+      if(kd===2){
+        const nn=await askNumber("⛔ このターン、相手が出せるクリーチャーは何体まで？（2体以上出せない→2）",2);
+        if(nn==null)continue;
+        const du2=await askChoice("⛔ ロックの期間",["このターンの終わりまで","次のターンの終わりまで（次の相手ターン中）"]);
+        if(du2===null)continue;
+        S.pturn=S.pturn|0;
+        S.turnLock=S.turnLock||[];
+        const L2={pi:tPi,kind:"creatureCount",limit:+nn,until:S.pturn+(du2===0?0:1)};
+        S.turnLock.push(L2);
+        sfx("ok");renderAll();
+        toast(`⛔ ターン限定ロック：${turnLockLabel(L2)}（${du2===0?"このターン":"次のターン終了"}まで）`);
+        continue;
+      }
       const cn=await askChoice("⛔ 対象の条件",["コストn以下","コストn以上","パワーn以下","パワーn以上","条件なし（すべて）"]);
       if(cn===null)continue;
       let prop=null,opr=null,val=null;
@@ -4313,9 +4335,14 @@ function stLockerOf(pi,key,filtKey,r,c){
   return null;
 }
 function turnLockHit(pi,kind,r){
-  // S.turnLock=[{pi,kind:"spell"|"creature",prop:"cost"|"power",op:"<="|">=",val,until}]
+  // S.turnLock=[{pi,kind:"spell"|"creature"|"creatureCount",prop,op,val,limit,cnt,until}]
   if(!S.turnLock||!S.turnLock.length)return null;
   for(const L of S.turnLock){
+    // 体数制限：kind="creature" の召喚チェック時に、同じ相手の creatureCount ロックも判定
+    if(kind==="creature"&&L.kind==="creatureCount"&&L.pi===pi){
+      if(((L.cnt|0)+1)>=(L.limit|0))return L; // このターン既に(limit-1)体出していれば、次の1体でアウト
+      continue;
+    }
     if(L.pi!==pi||L.kind!==kind)continue;
     if(L.val!=null){
       const v=L.prop==="power"?(r&&r.power!=null?+r.power:null):(r&&r.cost!=null?+r.cost:null);
@@ -4327,7 +4354,37 @@ function turnLockHit(pi,kind,r){
   }
   return null;
 }
+/* 体数制限ロックの成立カウントを1増やす（実際に召喚が通った時に呼ぶ） */
+function turnLockCountUp(pi){
+  if(!S.turnLock||!S.turnLock.length)return;
+  for(const L of S.turnLock){
+    if(L.kind==="creatureCount"&&L.pi===pi)L.cnt=(L.cnt|0)+1;
+  }
+}
+/* 常在「各ターンn回まで」制限（一音の妖精型）。piの相手の場のカードが課す最小の上限を返す（0/なし=無制限）。
+   kind:"spell"（呪文）/"creature"（クリーチャー）。返り値 {limit, used, by} または null */
+function perTurnCapHit(pi,kind){
+  if(!S.expert||!S.vs)return null;
+  const foe=pi?0:1;
+  let best=null;
+  for(const x of zonesOf(foe).battle){
+    const r=getReg(x);
+    if(!r||isSealed(x)||isIgnored(x,foe))continue;
+    let lim=null;
+    if(kind==="spell"&&r.stSpellPT>0)lim=+r.stSpellPT;
+    if(kind==="creature"&&r.stCrePT>0){
+      // stCrePTevo（進化時のみ）：そのカードが今、進化状態（下に置かれている）である場合のみ有効
+      if(!r.stCrePTevo||(x.under&&x.under.length))lim=+r.stCrePT;
+    }
+    if(lim==null)continue;
+    if(best==null||lim<best.limit)best={limit:lim,by:x};
+  }
+  if(!best)return null;
+  const used=kind==="spell"?((S.spellTurn&&S.spellTurn[pi])||0):((S.playedTurn&&S.playedTurn[pi])||0);
+  return used>=best.limit?{limit:best.limit,used,by:best.by,kind}:null;
+}
 function turnLockLabel(L){
+  if(L.kind==="creatureCount")return `${S.players[L.pi].label}はクリーチャーを${L.limit}体以上出せない（このターン${L.cnt|0}/${(L.limit|0)-1}体）`;
   const kd=L.kind==="spell"?"呪文を唱えられない":"クリーチャーを出せない";
   const cnd=L.val!=null?`${L.prop==="power"?"パワー":"コスト"}${L.val}${L.op==="<="?"以下":"以上"}の`:"";
   return `${S.players[L.pi].label}は${cnd}${kd}`;
@@ -6242,7 +6299,8 @@ function fxUiPolish(){
         const bar=document.createElement("div");
         bar.className="row";
         bar.style.cssText="position:sticky;top:0;z-index:5;background:var(--panel,#131a2a);padding:6px 0;margin:0";
-        bar.innerHTML='<input type="text" id="fxFinder" placeholder="🔎 項目をしぼり込み（例：マッドネス／常在／侵略／シールド…・空欄で全表示）" style="flex:1;min-width:180px"><span id="fxFinderN" style="font-size:11px;color:var(--muted);white-space:nowrap"></span>';
+        bar.innerHTML='<input type="text" id="fxFinder" placeholder="🔎 項目をしぼり込み（例：マッドネス／常在／侵略／シールド…・空欄で全表示）" style="flex:1;min-width:180px"><button type="button" class="btn small primary" id="fxAutoBtn" style="white-space:nowrap">📋 テキストから自動設定</button><span id="fxFinderN" style="font-size:11px;color:var(--muted);white-space:nowrap"></span>';
+        bar.querySelector("#fxAutoBtn").addEventListener("click",autoFillFromText);
         firstH3.parentElement.insertBefore(bar,firstH3);
         const inp=bar.querySelector("#fxFinder");
         inp.placeholder="🔎 項目をしぼり込み（略称OK：SA/cip/pig/バウンス/ハンデス…・スペースでAND）";
@@ -6452,6 +6510,9 @@ function renderFxEditor(){
   $("fxStLockSpellF").value=FXEDIT.stLockSpellF||"";
   $("fxStLockCre").checked=!!FXEDIT.stLockCre;
   $("fxStLockCreF").value=FXEDIT.stLockCreF||"";
+  $("fxStSpellPT").value=FXEDIT.stSpellPT||"";
+  $("fxStCrePT").value=FXEDIT.stCrePT||"";
+  $("fxStCrePTevo").checked=!!FXEDIT.stCrePTevo;
   $("fxInvCiv").value=FXEDIT.invCiv||"";
   $("fxSymX").value=String(FXEDIT.symX||1);
   $("fxPInvade").checked=!!FXEDIT.pInvade;
@@ -6612,6 +6673,67 @@ function renderFxEditor(){
     }
   }
 }
+/* ===== カードテキスト自動解析：貼り付けたテキストからキーワード能力・数値・cip効果を検出してFXEDITへ反映 ===== */
+function parseCardText(txt){
+  const out={set:{},fx:[],notes:[]};
+  const t=txt.replace(/\s+/g," ");
+  // 数値：パワー・コスト（「パワー」表記 or 行内の独立した4〜6桁）
+  let m=t.match(/パワー\s*(\d{3,6})/); if(m)out.set.power=+m[1];
+  m=t.match(/コスト\s*(\d{1,2})/); if(m)out.set.cost=+m[1];
+  // キーワード能力（チェックボックス系）
+  const KW=[
+    [/スピードアタッカー/,"sa"],[/ブロッカー/,"blocker"],[/スレイヤー/,"slayer"],
+    [/G・?ストライク/,"gs"],[/S・?トリガー/,"st"],[/ガードマン/,"guardman"],
+    [/マッハファイター/,"mach"],[/ジャストダイバー/,"jdiver"],[/EXライフ/,"exlife"],
+    [/エスケープ/,"agEsc"],[/ラストバースト/,"lastburst"],
+  ];
+  for(const [re,k] of KW)if(re.test(t))out.set[k]=true;
+  // ブレイカー
+  if(/ワールド・?ブレイカー/.test(t))out.set.breaks="all";
+  else if(/Q・?ブレイカー/.test(t))out.set.breaks="4";
+  else if(/T・?ブレイカー/.test(t))out.set.breaks="3";
+  else if(/W・?ブレイカー/.test(t))out.set.breaks="2";
+  // シンパシー
+  m=t.match(/シンパシー[：: ]?([^（(。■]+)/); if(m)out.set.sympathy=m[1].trim();
+  // G・ゼロ
+  m=t.match(/G・?ゼロ[-ー－]?[：: ]?([^（(。■]+)/); if(m)out.set.gzero=m[1].trim();
+  // 各ターン制限（一音の妖精型）
+  m=t.match(/相手は各ターン(\d+)回しか呪文を唱えられない/); if(m)out.set.stSpellPT=+m[1];
+  m=t.match(/相手は各ターン(\d+)体しかクリーチャーを(?:バトルゾーンに)?出せない/); if(m)out.set.stCrePT=+m[1];
+  // 常在ロック
+  if(/相手は呪文を唱えられない/.test(t))out.set.stLockSpell=true;
+  if(/相手は(?:クリーチャーを)?(?:バトルゾーンに)?クリーチャーを出せない/.test(t))out.set.stLockCre=true;
+  // cip（出た時）効果の定型文
+  const cipSeg=t.split(/バトルゾーンに出た時[、,]?/)[1];
+  if(cipSeg){
+    const seg=cipSeg.split(/[■●]/)[0];
+    let mm;
+    if((mm=seg.match(/カードを(\d+)枚引く/))||(mm=seg.match(/(\d+)枚引く/)))out.fx.push({t:"draw",n:+mm[1]});
+    if((mm=seg.match(/山札の上から(\d+)枚を?マナゾーンに置/)))out.fx.push({t:"charge",n:+mm[1]});
+    if((mm=seg.match(/相手のクリーチャーを(\d+)体.{0,10}?破壊/)))out.fx.push({t:"destroyRnd",n:+mm[1]});
+    if((mm=seg.match(/相手の手札を(\d+)枚.{0,6}?捨て/)))out.fx.push({t:"handes",n:+mm[1]});
+    if(/手札に戻す/.test(seg))out.notes.push("バウンス系は効果プルダウンから対象指定で追加してください");
+  }
+  // 種族（行頭付近の「／」区切り種族行はUI別管理のため通知のみ）
+  return out;
+}
+async function autoFillFromText(){
+  const txt=await askText("📋 カードの効果テキストを貼り付けてください\n（自前のカード情報 → デュエプレ版wikiの順で。TCG紙版のテキストは非推奨）");
+  if(!txt)return;
+  const r=parseCardText(txt);
+  let cnt=0;
+  for(const [k,v] of Object.entries(r.set)){FXEDIT[k]=v;cnt++;}
+  if(r.fx.length){
+    FXEDIT.faces[0]=FXEDIT.faces[0]||[];
+    for(const f of r.fx){FXEDIT.faces[0].push({t:f.t,n:f.n});cnt++;}
+  }
+  renderFxEditor();
+  const msg=[`📋 自動設定：${cnt}項目を反映しました`];
+  if(r.fx.length)msg.push(`出た時効果 ${r.fx.length}件を追加`);
+  msg.push("⚠ 必ず内容を確認してから保存してください（解析は定型文のみ対応）");
+  if(r.notes.length)msg.push(...r.notes);
+  toast(msg.join("\n"));
+}
 function openFxEditor(key){
   const cur=FXDB.get(key);
   FXEDIT={
@@ -6678,6 +6800,9 @@ function openFxEditor(key){
     altCiv:cur&&cur.altCiv||"",
     altCond:cur&&cur.altCond||"",
     stLockSpell:cur?!!cur.stLockSpell:false,
+    stSpellPT:cur&&cur.stSpellPT||0,
+    stCrePT:cur&&cur.stCrePT||0,
+    stCrePTevo:cur?!!cur.stCrePTevo:false,
     stLockSpellF:cur&&cur.stLockSpellF||"",
     stLockCre:cur?!!cur.stLockCre:false,
     stLockCreF:cur&&cur.stLockCreF||"",
@@ -6907,6 +7032,9 @@ $("fxSave").addEventListener("click",async ()=>{
     altCiv:$("fxAltCiv").value.trim(),
     altCond:$("fxAltCond").value.trim(),
     stLockSpell:$("fxStLockSpell").checked,
+    stSpellPT:+$("fxStSpellPT").value||0,
+    stCrePT:+$("fxStCrePT").value||0,
+    stCrePTevo:$("fxStCrePTevo").checked,
     stLockSpellF:$("fxStLockSpellF").value.trim(),
     stLockCre:$("fxStLockCre").checked,
     stLockCreF:$("fxStLockCreF").value.trim(),
@@ -7183,6 +7311,8 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.galaxy)attrs.push(`ギャラクシールド${v.galaxy}`);
     if(v.altCost!=null)attrs.push(`代替コスト[${v.altCost}]${v.altCiv?`（文明：${v.altCiv}）`:""}${v.altCond?`（${v.altCond}）`:""}`);
     if(v.stLockSpell)attrs.push(`常在：相手は${v.stLockSpellF?v.stLockSpellF+"の":""}呪文を唱えられない`);
+    if(v.stSpellPT>0)attrs.push(`常在：相手は各ターン${v.stSpellPT}回しか呪文を唱えられない`);
+    if(v.stCrePT>0)attrs.push(`常在：相手は各ターン${v.stCrePT}体しかクリーチャーを出せない${v.stCrePTevo?"（進化時のみ）":""}`);
     if(v.stLockCre)attrs.push(`常在：相手は${v.stLockCreF?v.stLockCreF+"の":""}クリーチャーを出せない`);
     if(v.pInvade)attrs.push("P侵略");
     if(v.pKakumei)attrs.push("P革命チェンジ");
@@ -7652,6 +7782,8 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   // 常在ロック／ターン限定ロック：呪文（唱える＝resolve送り）
   if(S.expert&&!S.freePlay&&toZone==="resolve"&&S.turn>0){
     const rQ=getReg(f.card);
+    const cap=perTurnCapHit(pTo,"spell");
+    if(cap){sfx("flip");toast(`⛔ ${faceNameOf(cap.by)}：${S.players[pTo].label}はこのターン、呪文を${cap.limit}回しか唱えられない（既に${cap.used}回）`);MOVE_BLOCKED=true;return;}
     const lk=stLockerOf(pTo,"stLockSpell","stLockSpellF",rQ,f.card);
     const tl=lk?null:turnLockHit(pTo,"spell",rQ);
     if(lk||tl){
@@ -7666,6 +7798,8 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
     // 効果未登録（rQ=null）も、バトルゾーンに出す以上クリーチャー扱いにしてロック対象とする
     const isCre=!rQ||["creature","evo","neoevo","starevo","smaxevo","onismaxevo","gneo","twinpact","lunatic","ultimate"].includes(rQ.ctype)||rQ.twin||!rQ.ctype;
     if(isCre){
+      const cap=perTurnCapHit(pTo,"creature");
+      if(cap){sfx("flip");toast(`⛔ ${faceNameOf(cap.by)}：${S.players[pTo].label}はこのターン、クリーチャーを${cap.limit}体しか出せない（既に${cap.used}体）`);MOVE_BLOCKED=true;return;}
       const lk=stLockerOf(pTo,"stLockCre","stLockCreF",rQ,f.card);
       const tl=lk?null:turnLockHit(pTo,"creature",rQ);
       const tlU=(lk||tl)?null:turnLockUnknown(pTo,"creature",rQ);
@@ -8705,7 +8839,7 @@ function cardEl(pi,zone,c){
   const showFace=c.faceup&&!hidden;
   if(c.tapped)el.classList.add("tapped");
   if(!showFace)el.classList.add("facedown");
-  if(arrived.has(c.id)){
+  if(arrived.has(c.id)&&!(typeof FLY_HIDE!=="undefined"&&FLY_HIDE.has(c.id))){
     el.classList.add("arrive");
     if(c.dealIdx!=null)el.style.animationDelay=(c.dealIdx*110)+"ms";
   }
@@ -8719,6 +8853,7 @@ function cardEl(pi,zone,c){
   }
   {
     el.dataset.cid=c.id;
+    if(typeof FLY_HIDE!=="undefined"&&FLY_HIDE.has(c.id))el.style.visibility="hidden";
     {
       const afx=ANIM_FX.get(c.id);
       if(afx&&S.anim!==false&&Date.now()<afx.until){
@@ -9244,6 +9379,8 @@ function renderAll(){
         if(typeof isSealed==="function"&&isSealed(x))continue;
         const foe=k?0:1;
         if(rx.stLockCre)parts.push(`🔒 ${faceNameOf(x)}：${S.players[foe].label}はクリーチャーを出せない${rx.stLockCreF?`（${rx.stLockCreF}）`:""}`);
+        if(rx.stSpellPT>0)parts.push(`🔒 ${faceNameOf(x)}：${S.players[foe].label}は呪文 各ターン${rx.stSpellPT}回まで（今${(S.spellTurn&&S.spellTurn[foe])||0}回）`);
+        if(rx.stCrePT>0&&(!rx.stCrePTevo||(x.under&&x.under.length)))parts.push(`🔒 ${faceNameOf(x)}：${S.players[foe].label}はクリーチャー 各ターン${rx.stCrePT}体まで（今${(S.playedTurn&&S.playedTurn[foe])||0}体）`);
         if(rx.stLockSpell)parts.push(`🔒 ${faceNameOf(x)}：${S.players[foe].label}は呪文を唱えられない${rx.stLockSpellF?`（${rx.stLockSpellF}）`:""}`);
         if(rx.repIn)parts.push(`🔁 ${faceNameOf(x)}：置換ロック（${rx.repIn==="manaOverMax"?"最大マナ超→マナ":rx.repIn==="grave"?"→墓地":"→山下"}）`);
         if(rx.qqqx)parts.push(`🔀 ${faceNameOf(x)}：Q.Q.QX（${S.players[foe].label}は山札シャッフル/確認/公開不可）`);
@@ -9788,6 +9925,7 @@ function animOn(k){
   return !S.animSet||S.animSet[k]!==false;
 }
 /* ===== ゾーン間フライト演出：移動前の位置から新しい位置へゴーストを飛ばす ===== */
+const FLY_HIDE=new Set();
 function flyGhost(srcRect,c,dstSel){
   if(!animOn("fly")||!srcRect)return;
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
@@ -9807,20 +9945,26 @@ function flyGhost(srcRect,c,dstSel){
     g.style.width=srcRect.width+"px";g.style.height=srcRect.height+"px";
     g.style.transition="transform .28s cubic-bezier(.22,.9,.3,1),opacity .28s ease";
     document.body.appendChild(g);
-    // 二重表示防止：飛行中は着地先の実カードを隠す（到着と同時に表示）
+    // 二重表示防止：飛行中は着地先の実カードを隠す（再レンダされても隠れ続けるようIDで管理）
     if(hideDst){
+      FLY_HIDE.add(c.id);
+      if(typeof arrived!=="undefined")arrived.delete(c.id);
       dst.style.visibility="hidden";
       const did=c.id;
       setTimeout(()=>{
-        const e2=document.querySelector(`[data-cid="${did}"]`);
-        if(e2)e2.style.visibility="";
+        FLY_HIDE.delete(did);
+        document.querySelectorAll(`[data-cid="${did}"]`).forEach(e2=>{e2.style.visibility="";});
       },290);
     }
     const dx=dr.left-srcRect.left, dy=dr.top-srcRect.top;
     const sx=dr.width/srcRect.width, sy=dr.height/srcRect.height;
+    // 着地先が回転表示（マナ等）の場合はゴーストも回して馴染ませる
+    let rot=0;
+    try{const tf=getComputedStyle(dst).transform;if(tf&&tf!=="none"){const m=new DOMMatrixReadOnly(tf);rot=Math.round(Math.atan2(m.b,m.a)*180/Math.PI);}}catch(e){}
     g.style.transformOrigin="top left";
     requestAnimationFrame(()=>{
-      g.style.transform=`translate(${dx}px,${dy}px) scale(${sx},${sy})`;
+      g.style.transform=`translate(${dx}px,${dy}px) scale(${sx},${sy})${rot?` rotate(${rot}deg)`:""}`;
+      if(rot)g.style.transformOrigin="center";
       g.style.opacity=".92";
     });
     setTimeout(()=>{g.remove();},300);
@@ -10706,6 +10850,8 @@ function openCardSheet(ctx){
       // ターン限定ロック／常在ロック：マナ・墓地からの召喚もチェック（手札召喚と同じ扱い）
       if(S.expert&&!S.freePlay&&S.turn>0){
         const rQ=getReg(c);
+        const cap=perTurnCapHit(ctx.p,"creature");
+        if(cap){sfx("flip");toast(`⛔ ${faceNameOf(cap.by)}：${S.players[ctx.p].label}はこのターン、クリーチャーを${cap.limit}体しか出せない（既に${cap.used}体）`);return;}
         const lk=stLockerOf(ctx.p,"stLockCre","stLockCreF",rQ,c);
         const tl=lk?null:turnLockHit(ctx.p,"creature",rQ);
         const tlU=(lk||tl)?null:turnLockUnknown(ctx.p,"creature",rQ);
