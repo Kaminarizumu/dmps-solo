@@ -6674,12 +6674,16 @@ function renderFxEditor(){
   }
 }
 /* ===== カードテキスト自動解析：貼り付けたテキストからキーワード能力・数値・cip効果を検出してFXEDITへ反映 ===== */
-function parseCardText(txt){
-  const out={set:{},fx:[],notes:[]};
+function parseCardText(txt,mode){
+  const out={set:{},fx:[],notes:[],twinHint:false};
   const t=txt.replace(/\s+/g," ");
-  // 数値：パワー・コスト（「パワー」表記 or 行内の独立した4〜6桁）
+  // ツインパクトの手掛かり：コスト「7/3」形式、カードタイプ「クリーチャー/呪文」
+  if(/コスト\s*\d{1,2}\s*[\/／]\s*\d{1,2}/.test(t)||/クリーチャー\s*[\/／]\s*呪文/.test(t))out.twinHint=true;
+  // 数値：パワー・コスト（ツインパクト「7/3」は上/下に振り分け）
   let m=t.match(/パワー\s*(\d{3,6})/); if(m)out.set.power=+m[1];
-  m=t.match(/コスト\s*(\d{1,2})/); if(m)out.set.cost=+m[1];
+  m=t.match(/コスト\s*(\d{1,2})\s*[\/／]\s*(\d{1,2})/);
+  if(m){out.set.cost=+m[1];out.set.cost2=+m[2];}
+  else{m=t.match(/コスト\s*(\d{1,2})/); if(m){if(mode==="spell")out.set.cost2=+m[1];else out.set.cost=+m[1];}}
   // キーワード能力（チェックボックス系）
   const KW=[
     [/スピードアタッカー/,"sa"],[/ブロッカー/,"blocker"],[/スレイヤー/,"slayer"],
@@ -6703,10 +6707,15 @@ function parseCardText(txt){
   // 常在ロック
   if(/相手は呪文を唱えられない/.test(t))out.set.stLockSpell=true;
   if(/相手は(?:クリーチャーを)?(?:バトルゾーンに)?クリーチャーを出せない/.test(t))out.set.stLockCre=true;
-  // cip（出た時）効果の定型文
-  const cipSeg=t.split(/バトルゾーンに出た時[、,]?/)[1];
-  if(cipSeg){
-    const seg=cipSeg.split(/[■●]/)[0];
+  // 効果の定型文：クリーチャー面は「出た時」以降、呪文面は本文全体を対象
+  let seg=null;
+  if(mode==="spell"){
+    seg=t;
+  }else{
+    const cipSeg=t.split(/バトルゾーンに出た時[、,]?/)[1];
+    if(cipSeg)seg=cipSeg.split(/[■●]/)[0];
+  }
+  if(seg){
     let mm;
     if((mm=seg.match(/カードを(\d+)枚引く/))||(mm=seg.match(/(\d+)枚引く/)))out.fx.push({t:"draw",n:+mm[1]});
     if((mm=seg.match(/山札の上から(\d+)枚を?マナゾーンに置/)))out.fx.push({t:"charge",n:+mm[1]});
@@ -6714,25 +6723,108 @@ function parseCardText(txt){
     if((mm=seg.match(/相手の手札を(\d+)枚.{0,6}?捨て/)))out.fx.push({t:"handes",n:+mm[1]});
     if(/手札に戻す/.test(seg))out.notes.push("バウンス系は効果プルダウンから対象指定で追加してください");
   }
-  // 種族（行頭付近の「／」区切り種族行はUI別管理のため通知のみ）
   return out;
 }
 async function autoFillFromText(){
-  const txt=await askText("📋 カードの効果テキストを貼り付けてください\n（自前のカード情報 → デュエプレ版wikiの順で。TCG紙版のテキストは非推奨）");
-  if(!txt)return;
-  const r=parseCardText(txt);
-  let cnt=0;
-  for(const [k,v] of Object.entries(r.set)){FXEDIT[k]=v;cnt++;}
-  if(r.fx.length){
-    FXEDIT.faces[0]=FXEDIT.faces[0]||[];
-    for(const f of r.fx){FXEDIT.faces[0].push({t:f.t,n:f.n});cnt++;}
+  const grab=async(label)=>{
+    const src=await askChoice(`📋 ${label}の取り込み方法`,["テキストを貼り付け","スクショ画像から読み取り（公式サイトのカード詳細など）"]);
+    if(src===null)return null;
+    if(src===0)return await askText(`📋 ${label}の効果テキストを貼り付けてください\n（自前のカード情報 → デュエプレ版wikiの順で。TCG紙版のテキストは非推奨）`);
+    return await ocrCardShot();
+  };
+  const applySet=(set)=>{let n=0;for(const [k,v] of Object.entries(set)){FXEDIT[k]=v;n++;}return n;};
+  const applyFx=(fx,face)=>{FXEDIT.faces[face]=FXEDIT.faces[face]||[];for(const f of fx)FXEDIT.faces[face].push({t:f.t,n:f.n});return fx.length;};
+  // ツインパクトかどうか（既にチェック済みなら自動でツインパクトフロー）
+  let isTwin=FXEDIT.twin;
+  if(!isTwin){
+    const kind=await askChoice("📋 カードの種類",["通常カード（1回で取り込み）","ツインパクト（上面→下面の順に取り込み）"]);
+    if(kind===null)return;
+    isTwin=(kind===1);
+  }
+  if(!isTwin){
+    const txt=await grab("カード");
+    if(!txt)return;
+    const r=parseCardText(txt);
+    let cnt=applySet(r.set)+applyFx(r.fx,0);
+    renderFxEditor();
+    const msg=[`📋 自動設定：${cnt}項目を反映しました`];
+    if(r.twinHint)msg.push("💡 コスト表記が「n/m」でした。ツインパクトの可能性があります（ツインパクトにチェックして再取り込みできます）");
+    msg.push("⚠ 必ず内容を確認してから保存してください（解析は定型文のみ対応）");
+    if(r.notes.length)msg.push(...r.notes);
+    toast(msg.join("\n"));
+    return;
+  }
+  // ツインパクト：上面（クリーチャー）→ 下面（呪文）を順に取り込み
+  FXEDIT.twin=true;
+  let total=0,notes=[];
+  const up=await grab("上面（クリーチャー面）");
+  if(up){
+    const r1=parseCardText(up,"creature");
+    // 上面の進化/NEO進化を検出
+    if(/NEO進化/.test(up))FXEDIT.twinTop="neoevo";
+    else if(/進化[：:－ー]/.test(up)||/進化クリーチャー/.test(up))FXEDIT.twinTop="evo";
+    total+=applySet(r1.set)+applyFx(r1.fx,0);
+    notes.push(...r1.notes);
+  }
+  const dn=await grab("下面（呪文面）");
+  if(dn){
+    const r2=parseCardText(dn,"spell");
+    // 下面から拾うのは cost2・ST・呪文効果のみ（パワー等は上面優先で上書きしない）
+    if(r2.set.cost2!=null)FXEDIT.cost2=r2.set.cost2;
+    if(r2.set.st)FXEDIT.st=true;
+    total+=applyFx(r2.fx,1);
+    notes.push(...r2.notes);
   }
   renderFxEditor();
-  const msg=[`📋 自動設定：${cnt}項目を反映しました`];
-  if(r.fx.length)msg.push(`出た時効果 ${r.fx.length}件を追加`);
-  msg.push("⚠ 必ず内容を確認してから保存してください（解析は定型文のみ対応）");
-  if(r.notes.length)msg.push(...r.notes);
+  const msg=[`📋 ツインパクト自動設定：${total}項目を反映しました（上面→効果1／下面→効果2に振り分け）`];
+  msg.push("⚠ 上面種別・下面コスト・各効果を確認してから保存してください");
+  if(notes.length)msg.push(...notes);
   toast(msg.join("\n"));
+}
+/* 公式サイト等のスクショから効果テキストをOCRで抽出（白文字×暗背景を反転して精度向上） */
+async function ocrCardShot(){
+  if(!(await loadTesseract())){toast("OCRエンジンの読み込みに失敗（通信環境を確認してください）");return null;}
+  const file=await new Promise(res=>{
+    const inp=document.createElement("input");
+    inp.type="file";inp.accept="image/*";
+    inp.onchange=()=>res(inp.files&&inp.files[0]||null);
+    inp.click();
+    setTimeout(()=>{if(!inp.files||!inp.files.length)res(null);},120000);
+  });
+  if(!file)return null;
+  toast("🔍 画像を解析中…（数十秒かかることがあります）");
+  const img=await new Promise((res,rej)=>{
+    const im=new Image();
+    im.onload=()=>res(im);im.onerror=rej;
+    im.src=URL.createObjectURL(file);
+  });
+  // 前処理：2倍拡大＋グレースケール＋明暗判定で自動反転（暗背景の白文字→黒文字化）
+  const cv=document.createElement("canvas");
+  const sc2=Math.min(2,2600/Math.max(img.width,img.height));
+  cv.width=Math.round(img.width*sc2);cv.height=Math.round(img.height*sc2);
+  const cx=cv.getContext("2d");
+  cx.drawImage(img,0,0,cv.width,cv.height);
+  const d=cx.getImageData(0,0,cv.width,cv.height);
+  let sum=0;
+  for(let i=0;i<d.data.length;i+=4){const g=(d.data[i]*.3+d.data[i+1]*.59+d.data[i+2]*.11);sum+=g;}
+  const avg=sum/(d.data.length/4);
+  const invert=avg<110; // 暗い画像（公式サイト系）は反転
+  for(let i=0;i<d.data.length;i+=4){
+    let g=(d.data[i]*.3+d.data[i+1]*.59+d.data[i+2]*.11);
+    if(invert)g=255-g;
+    d.data[i]=d.data[i+1]=d.data[i+2]=g;
+  }
+  cx.putImageData(d,0,0);
+  try{
+    const res=await Tesseract.recognize(cv,"jpn");
+    const raw=(res&&res.data&&res.data.text||"").replace(/\s+/g," ").trim();
+    if(!raw){toast("文字を読み取れませんでした。テキスト貼り付けをお試しください");return null;}
+    const ok=await ask(`🔍 読み取り結果（確認・修正は貼り付け側でどうぞ）：\n${raw.slice(0,300)}${raw.length>300?"…":""}\n\nこのテキストで自動設定しますか？`);
+    return ok?raw:null;
+  }catch(e){
+    toast("OCRに失敗しました。テキスト貼り付けをお試しください");
+    return null;
+  }
 }
 function openFxEditor(key){
   const cur=FXDB.get(key);
