@@ -1146,6 +1146,7 @@ body.shake{animation:bodyShake .4s ease-out}
         <input type="text" id="fxRace3" list="raceList" placeholder="種族3" style="flex:1;min-width:110px">
         <input type="text" id="fxRace4" list="raceList" placeholder="種族4" style="flex:1;min-width:110px">
         <input type="text" id="fxRace5" list="raceList" placeholder="種族5" style="flex:1;min-width:110px">
+        <button type="button" class="btn small" id="fxBulkRaceBtn" style="white-space:nowrap">🏷 種族一括付与</button>
         <datalist id="raceList">
           <option value="S級侵略者"><option value="アーク・セラフィム"><option value="アース・ドラゴン"><option value="アースイーター"><option value="アーマード"><option value="アーマード・ドラゴン"><option value="アーマード・ファイアー・バード"><option value="ファイアー・バードの集い"><option value="アーマード・ワイバーン"><option value="アーマロイド"><option value="アイドル">
           <option value="アウトレイジ"><option value="アウトレイジ・コマンドMAX"><option value="アウトレイジMAX"><option value="アビス"><option value="アビスへの誘い"><option value="アビスロイヤル"><option value="アポロニア・ドラゴン"><option value="アンノイズ"><option value="アンノウン"><option value="イニシエート"><option value="イニシャルズ">
@@ -8147,6 +8148,7 @@ async function bulkTagRace(){
   $("viewerOlay").classList.add("open");
 }
 {const bt=document.getElementById("regBulkRaceBtn");if(bt)bt.onclick=bulkTagRace;}
+{const bt2=document.getElementById("fxBulkRaceBtn");if(bt2)bt2.onclick=bulkTagRace;}
 
 /* ================= card ops ================= */
 function zonesOf(pi){return S.players[pi].zones;}
