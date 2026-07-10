@@ -328,6 +328,21 @@ body.vs .pboard.cmw{flex:1 1 0;min-height:0}
 .pile .n{font-size:15px;color:#fff;position:relative;z-index:2;background:rgba(6,8,16,.66);border-radius:6px;padding:0 6px;line-height:1.35;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .pile .lbl{font-size:9px;letter-spacing:.1em;position:relative;z-index:2;color:#e6ecf7;text-shadow:0 1px 3px #000;background:rgba(6,8,16,.5);border-radius:4px;padding:0 4px}
 .pile .side{position:absolute;top:2px;left:2px;background:var(--tap);color:#04222a;font-size:9px;font-weight:800;border-radius:4px;padding:0 4px;z-index:3}
+/* ===== 山札などの「厚み」表現（残枚数に応じて重なりの段数が変わる） ===== */
+.pile.stk1{box-shadow:1.5px 1.5px 0 -.5px #050810,1.5px 1.5px 0 0 #313e5e}
+.pile.stk2{box-shadow:1.5px 1.5px 0 -.5px #050810,1.5px 1.5px 0 0 #313e5e,3px 3px 0 -.5px #050810,3px 3px 0 0 #2b3654}
+.pile.stk3{box-shadow:1.5px 1.5px 0 -.5px #050810,1.5px 1.5px 0 0 #313e5e,3px 3px 0 -.5px #050810,3px 3px 0 0 #2b3654,4.5px 4.5px 0 -.5px #050810,4.5px 4.5px 0 0 #26304b}
+.pile.stk4{box-shadow:1.5px 1.5px 0 -.5px #050810,1.5px 1.5px 0 0 #313e5e,3px 3px 0 -.5px #050810,3px 3px 0 0 #2b3654,4.5px 4.5px 0 -.5px #050810,4.5px 4.5px 0 0 #26304b,6px 6px 0 -.5px #050810,6px 6px 0 0 #212a42}
+.pile.stk5{box-shadow:1.5px 1.5px 0 -.5px #050810,1.5px 1.5px 0 0 #313e5e,3px 3px 0 -.5px #050810,3px 3px 0 0 #2b3654,4.5px 4.5px 0 -.5px #050810,4.5px 4.5px 0 0 #26304b,6px 6px 0 -.5px #050810,6px 6px 0 0 #212a42,7.5px 7.5px 0 -.5px #050810,7.5px 7.5px 0 0 #1c2438}
+/* 厚み影はbox-shadowのみ＝レイアウト寸法に影響しない（marginは追加しない） */
+/* ===== ゾーン間フライトアニメ用のゴースト ===== */
+.flycard{
+  position:fixed;z-index:9000;pointer-events:none;border-radius:6px;overflow:hidden;
+  border:1px solid var(--line);box-shadow:0 8px 22px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.06);
+  background:repeating-linear-gradient(45deg,#222c46,#222c46 6px,#1a2338 6px,#1a2338 12px);
+  will-change:transform,opacity;
+}
+.flycard img{width:100%;height:100%;object-fit:cover;display:block}
 .pile:active{transform:translateY(1px)}
 .pilewrap{display:flex;flex-direction:column;gap:3px;flex:0 0 auto;align-items:center}
 .pmenu{
@@ -2171,6 +2186,10 @@ function draw(pi,n=1){
     c.faceup=true;c.sideways=false;c.qqqxSide=false;Z.hand.push(c);
     markArrive(c);
     logOnly(`${S.players[pi].label}：1枚ドロー`);
+    if(S.anim!==false){
+      const pe=document.querySelector(`#sysrow-${pi} [data-zone="deckTop"]`);
+      if(pe&&typeof flyGhost==="function")flyGhost(pe.getBoundingClientRect(),c,null);
+    }
   }
   sfx("draw");
   emitEvent(pi,"draw");
@@ -7508,6 +7527,7 @@ function moveCardXRaw(pFrom,fromZone,id,pTo,toZone){
 }
 function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   MOVE_BLOCKED=false;
+  const _flySrc=(S.anim!==false&&typeof rectOfCard==="function")?rectOfCard(id):null;
   const f=findCard(pFrom,fromZone,id);if(!f)return;
   // バトルゾーン→墓地の手動移動：破壊されない判定（GGGグループ効果・レイド型・ゼロン等）
   if(S.expert&&!S.freePlay&&fromZone==="battle"&&toZone==="grave"&&pFrom===pTo&&S.turn>0&&!skipRep){
@@ -8153,6 +8173,15 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
     toast(`GRクリーチャー：${dispName.get(faceKeyOf(c))||c.name} はGRゾーンの下へ戻った`);
   }
   sfx("move");
+  {
+    // ゾーン間フライト演出（山札・盾・墓地など[data-cid]の無い行き先はパイルへ向けて飛ばす）
+    const dstSel=(toZone==="deckTop"||toZone==="deckBottom"||toZone==="deck")?`#sysrow-${pTo} [data-zone="deckTop"]`
+      :(toZone==="grave")?`#sysrow-${pTo} [data-zone="grave"]`
+      :(toZone==="shield"||toZone==="shieldUp")?`#sysrow-${pTo} [data-zone="shield"]`
+      :(toZone==="hyper")?`#sysrow-${pTo} [data-zone="hyper"]`
+      :null;
+    flyGhost(_flySrc,c,dstSel);
+  }
   {
     const rV=getReg(c);
     const who=S.players[pTo].label;
@@ -8875,7 +8904,9 @@ function cardEl(pi,zone,c){
 }
 function pileEl(opts){
   const el=document.createElement("div");
-  el.className="pile"+(opts.cls?" "+opts.cls:"");
+  const cnt=+opts.n||0;
+  const stk=cnt<=0?0:cnt<=3?1:cnt<=8?2:cnt<=15?3:cnt<=25?4:5;
+  el.className="pile"+(opts.cls?" "+opts.cls:"")+(stk?" stk"+stk:"");
   if(opts.dz)el.dataset.zone=opts.dz;
   if(opts.img){const im=document.createElement("img");im.src=opts.img;im.draggable=false;el.appendChild(im);}
   const n=document.createElement("span");n.className="n";n.textContent=opts.n;
@@ -9631,10 +9662,43 @@ function openShieldStack(pi,id){
   document.body.appendChild(ol);
 }
 const ANIM_FX=new Map();
-const ANIM_KEYS=[["atk","⚔ 攻撃モーション"],["zone","🃏 移動（配り/マナ/着地）"],["break","🛡 盾ブレイク"],["clash","⚡ バトル衝突"],["shake","💥 画面シェイク"],["cip","✨ cip光輪"],["pulse","🌟 パルス（HM金/禁断紫）"],["vanish","💨 消滅の残像"]];
+const ANIM_KEYS=[["atk","⚔ 攻撃モーション"],["zone","🃏 移動（配り/マナ/着地）"],["fly","🕊 フライト（ゾーン間をカードが飛ぶ）"],["break","🛡 盾ブレイク"],["clash","⚡ バトル衝突"],["shake","💥 画面シェイク"],["cip","✨ cip光輪"],["pulse","🌟 パルス（HM金/禁断紫）"],["vanish","💨 消滅の残像"]];
 function animOn(k){
   if(S.anim===false)return false;
   return !S.animSet||S.animSet[k]!==false;
+}
+/* ===== ゾーン間フライト演出：移動前の位置から新しい位置へゴーストを飛ばす ===== */
+function flyGhost(srcRect,c,dstSel){
+  if(!animOn("fly")||!srcRect)return;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    let dst=document.querySelector(`[data-cid="${c.id}"]`);
+    if(!dst&&dstSel)dst=document.querySelector(dstSel);
+    if(!dst)return;
+    const dr=dst.getBoundingClientRect();
+    if(!dr.width||(Math.abs(dr.left-srcRect.left)<4&&Math.abs(dr.top-srcRect.top)<4))return;
+    const g=document.createElement("div");
+    g.className="flycard";
+    const key=(typeof faceKeyOf==="function")?faceKeyOf(c):null;
+    if(c.faceup!==false&&key&&imgURL.has(key)){
+      const im=document.createElement("img");im.src=imgURL.get(key);g.appendChild(im);
+    }
+    g.style.left=srcRect.left+"px";g.style.top=srcRect.top+"px";
+    g.style.width=srcRect.width+"px";g.style.height=srcRect.height+"px";
+    g.style.transition="transform .28s cubic-bezier(.22,.9,.3,1),opacity .28s ease";
+    document.body.appendChild(g);
+    const dx=dr.left-srcRect.left, dy=dr.top-srcRect.top;
+    const sx=dr.width/srcRect.width, sy=dr.height/srcRect.height;
+    g.style.transformOrigin="top left";
+    requestAnimationFrame(()=>{
+      g.style.transform=`translate(${dx}px,${dy}px) scale(${sx},${sy})`;
+      g.style.opacity=".92";
+    });
+    setTimeout(()=>{g.remove();},320);
+  }));
+}
+function rectOfCard(id){
+  const e=document.querySelector(`[data-cid="${id}"]`);
+  return e?e.getBoundingClientRect():null;
 }
 const ANIM_CLS_KEY={"an-cip":"cip","an-gold":"pulse","an-dark":"pulse","an-clash":"clash","an-atkF":"atk","an-atkB":"atk"};
 function fxAnim(id,cls,ms){
