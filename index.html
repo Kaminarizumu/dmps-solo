@@ -838,6 +838,7 @@ body.shake{animation:bodyShake .4s ease-out}
       <div class="row"><label><input type="checkbox" id="setFitBoard" checked> カードを画面の高さに自動で収める（オフ＝サイズ設定をそのまま大きく反映し、はみ出す分は縦スクロール）</label></div>
       <div class="row"><label><input type="checkbox" id="setAutoTap"> コスト自動マナタップ（EX時：コスト登録済みカードを手札から出すと左から自動タップ）</label></div>
       <div class="row"><label><input type="checkbox" id="setNoUntapMana"> ターン開始時にマナを自動アンタップしない</label></div>
+      <div class="row"><label><input type="checkbox" id="setSpellAuto" checked> 呪文は効果処理後に自動で墓地へ（解決中スタック方式。保持したいカードは登録の「🕐解決中に保持」）</label></div>
       <div class="row"><label><input type="checkbox" id="setTapMultiMana"> 多色カード（文明2つ以上を登録）はタップしてマナに置く</label></div>
     </section>
     <section>
@@ -1187,6 +1188,7 @@ body.shake{animation:bodyShake .4s ease-out}
         <label><input type="checkbox" id="fxNoChoose"> 選ばれない（アンタッチャブル）</label>
         <label><input type="checkbox" id="fxGS"> G・ストライク</label>
         <label><input type="checkbox" id="fxCharger"> チャージャー（呪文使用後マナへ／ツインパクト下面も可）</label>
+        <label><input type="checkbox" id="fxHoldResolve"> 🕐 解決中に保持（ザフィヴォ型：処理の途中で他のカードを使う呪文。自動で墓地に置かず、手動で墓地に置いた時に虚無月の門等が誘発）</label>
         <label><input type="checkbox" id="fxCastle"> 城/要塞（盾に重ねて要塞化・表向き）</label>
       </div>
       <div class="row" style="gap:12px;flex-wrap:wrap">
@@ -1897,6 +1899,8 @@ function markArrive(c){
       // NEOクリーチャー：NEO進化として出していない（下に進化元が無く・neoEvoフラグ無し）なら非進化＝召喚酔いあり
       if(evo&&isNeoReg(r)&&!(c.neoEvo||(c.under&&c.under.length)))evo=false;
       c.sick=!evo&&!(r&&r.sa);
+      // 🌑 魔導具クリーチャーが場に出た → 無月の門の誘発候補（一連の処理後に判定・虚無月は対象外）
+      if(r&&raceMatch(r,"魔導具")&&pOwn!=null)MUGETSU_PENDING.add(pOwn+":cre");
     }
   }catch(e){}
 }
@@ -2410,6 +2414,41 @@ function nextTurn(){
     toast("⏸ 処理中です（「▶ 再開」を押してから進めてください）");
     return;
   }
+  // 🌑 絶・無月の門：ターンを進める前に確認。
+  //  - 召喚したらターンはまだ進めない（出た時の処理時間を確保。準備できたらもう一度「次のターン」）
+  //  - 使わない（いいえ）なら自動でそのままターンを進める（再度ボタンを押す必要なし＝ループ解消）
+  if(S.expert&&S.vs&&S.turn>0&&!MUGETSU_TE_DONE){
+    const list=[];
+    for(const pi2 of [0,1]){
+      const Z2=zonesOf(pi2);
+      const isMad=x=>{const r=getReg(x);return r&&raceMatch(r,"魔導具");};
+      const total=Z2.battle.filter(isMad).length+Z2.grave.filter(isMad).length;
+      if(total<6)continue;
+      for(const zn of ["hand","grave"]){
+        for(const h of Z2[zn]){
+          const r=getReg(h);
+          if(r&&r.mugetsu==="zetsu")list.push({pi:pi2,h,zn,total});
+        }
+      }
+    }
+    if(list.length){
+      MUGETSU_TE_DONE=true;
+      (async()=>{
+        let summoned=false;
+        for(const {pi:pz,h,zn,total} of list){
+          const yes=await ask(`🌑 無月の門・絶：条件成立！ 魔導具 場+墓 計${total}（6以上）\n《${faceNameOf(h)}》を${zn==="grave"?"墓地":"手札"}からコストを支払わずに召喚しますか？\n（各ターンの終わり）`);
+          if(yes){await doMugetsuSummon(pz,zn,h.id);summoned=true;break;}
+        }
+        if(summoned){
+          renderAll();
+          toast("🌑 出た時の処理などが終わったら、もう一度「次のターン ▶」を押してください（ターンはまだ進んでいません）");
+        }else{
+          nextTurn(); // 使わない場合は自動でターンを進める
+        }
+      })();
+      return;
+    }
+  }
   MUGETSU_ASKED={}; // ターンが変わるので無月の門の確認済みフラグをリセット（絶は毎ターン終了時に再確認）
   if(LABY_RUN){
     toast("⏳ ラビリンス・マジックの処理中です");
@@ -2565,8 +2604,7 @@ function nextTurn(){
       }
     }
   }
-  // 🌑 無月の門（ドルスザク）：絶＝各ターンの終わりに判定。通常/虚無は「揃ったタイミング」でrenderAllから判定
-  checkMugetsu(true);
+  // 🌑 絶・無月の門はnextTurn冒頭のゲートで処理済み（ここでは何もしない）
   for(const P of S.players)P.zones.battle.forEach(c=>{c.buff=null;c.tmpWB=false;});
   let extra=false;
   if(S.extra[cur]>0){S.extra[cur]--;extra=true;S.turn++;}
@@ -2579,6 +2617,7 @@ function nextTurn(){
   const Z=S.players[pi].zones;
   // 通しターンカウンタ（プレイヤーターン単位）＋ ターン限定ロック失効処理
   S.pturn=(S.pturn|0)+1;
+  MUGETSU_TE_DONE=false; // ターンが実際に進んだので絶ゲートを再有効化
   ENTERED_CNT=0;  // 着地カウンタは全ターン経路で確実にリセット（漏れ防止）
   if(S.turnLock&&S.turnLock.length){
     const rest=[],exp=[];
@@ -5026,7 +5065,39 @@ function resolveOut(Z,o){
   o.faceup=true;o.tapped=false;
   const rg=getReg(o);
   if(rg&&rg.charger){Z.mana.push(o);return true;}
-  Z.grave.push(o);return false;
+  Z.grave.push(o);
+  // 🌑 虚無月の門：水の魔導具呪文の解決完了（解決中→墓地）を誘発候補に
+  if(rg&&raceMatch(rg,"魔導具")&&rg.civs&&rg.civs.includes("water")){
+    const pi=S.players.findIndex(P=>P.zones===Z);
+    if(pi>=0)MUGETSU_PENDING.add(pi+":spl");
+  }
+  return false;
+}
+/* 📚 解決中スタックの自動クローズ：
+   そのカード自身の効果処理（fxキュー）が終わり、かつスタックの一番上（＝後から使ったカードが全て処理済み）に
+   なった時点で、自動的に墓地へ置く（チャージャーはマナへ）。
+   - ザフィヴォ型（登録の「解決中に保持」ON）は自動で置かず、手動で墓地に置いた時に虚無月等が誘発
+   - 途中で手動移動されたら何もしない */
+async function scheduleAutoResolve(pi,c){
+  const r=getReg(c);
+  if(r&&r.holdResolve){toast(`🕐 ${faceNameOf(c)} は解決中に保持（処理が終わったら手動で墓地へ）`);return;}
+  await waitFxIdle();
+  let guard=0;
+  while(guard++<200){ // 最大約60秒。超えたら手動運用に任せる
+    if(REPLAY.on)return;
+    const Z=zonesOf(pi);
+    const ix=Z.resolve.findIndex(x=>x.id===c.id);
+    if(ix<0)return;                       // 手動で移動済み
+    if(ix===Z.resolve.length-1&&!fxRunning&&!fxQueue.length){
+      Z.resolve.splice(ix,1);
+      const toMana=resolveOut(Z,c);       // 墓地へ（チャージャーはマナ）＋虚無月誘発はresolveOut内
+      sfx("grave");
+      toast(toMana?`⚡チャージャー：${faceNameOf(c)} はマナゾーンへ`:`${faceNameOf(c)} の解決が終了（墓地へ）`);
+      renderAll();
+      return;
+    }
+    await new Promise(r2=>setTimeout(r2,300)); // 上に別カードがある間は待つ（入れ子処理中）
+  }
 }
 function hasSlayer(c){const r=getReg(c);return !!((r&&r.slayer)||(c.buff&&c.buff.slayer)||(c.hyper&&r&&(r.hmSlayer||r.hmSL)));}
 async function doBattle(pa,a,pd,d){
@@ -6702,6 +6773,7 @@ function renderFxEditor(){
   $("fxNoChoose").checked=!!FXEDIT.noChoose;
   $("fxGS").checked=!!FXEDIT.gs;
   $("fxCharger").checked=!!FXEDIT.charger;
+  $("fxHoldResolve").checked=!!FXEDIT.holdResolve;
   $("fxCastle").checked=!!FXEDIT.castle;
   $("fxInvade").checked=!!FXEDIT.invade;
   $("fxKakumei").checked=!!FXEDIT.kakumei;
@@ -7378,6 +7450,7 @@ function openFxEditor(key){
     noChoose:cur?!!cur.noChoose:false,
     gs:cur?!!cur.gs:false,
     charger:cur?!!cur.charger:false,
+    holdResolve:cur?!!cur.holdResolve:false,
     castle:cur?!!cur.castle:false,
     invade:cur?!!cur.invade:false,
     kakumei:cur?!!cur.kakumei:false,
@@ -7633,6 +7706,7 @@ $("fxSave").addEventListener("click",async ()=>{
     noChoose:$("fxNoChoose").checked,
     gs:$("fxGS").checked,
     charger:$("fxCharger").checked,
+    holdResolve:$("fxHoldResolve").checked,
     castle:$("fxCastle").checked,
     invade:$("fxInvade").checked,
     kakumei:$("fxKakumei").checked,
@@ -7932,6 +8006,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.noChoose)attrs.push("選ばれない");
     if(v.gs)attrs.push("Gストライク");
     if(v.charger)attrs.push("チャージャー");
+    if(v.holdResolve)attrs.push("🕐解決中に保持");
     if(v.castle)attrs.push("城/要塞");
     if(v.invade)attrs.push("侵略");
     if(v.kakumei)attrs.push("革命チェンジ");
@@ -8469,6 +8544,11 @@ function moveCardXRaw(pFrom,fromZone,id,pTo,toZone){
 function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   MOVE_BLOCKED=false;
   const _flySrc=(S.anim!==false&&typeof rectOfCard==="function")?rectOfCard(id):null;
+  // 🌑 虚無月の門：水の魔導具「呪文」の解決完了（効果解決ゾーン→墓地）→ 誘発候補
+  if(fromZone==="resolve"&&toZone==="grave"&&pFrom===pTo){
+    try{const f0=findCard(pFrom,fromZone,id);const r0=f0&&getReg(f0.card);
+      if(r0&&raceMatch(r0,"魔導具")&&r0.civs&&r0.civs.includes("water"))MUGETSU_PENDING.add(pFrom+":spl");}catch(e){}
+  }
   const f=findCard(pFrom,fromZone,id);if(!f)return;
   // バトルゾーン→墓地の手動移動：破壊されない判定（GGGグループ効果・レイド型・ゼロン等）
   if(S.expert&&!S.freePlay&&fromZone==="battle"&&toZone==="grave"&&pFrom===pTo&&S.turn>0&&!skipRep){
@@ -8587,16 +8667,25 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   markArrive(c);
   if((toZone==="shield"||toZone==="shieldUp")&&S.turn>0)c.mark=true;
   if(toZone==="resolve"){
-    if(Z.resolve.length){
-      const olds=Z.resolve.splice(0);
-      const chg=[],grv=[];
-      olds.forEach(o=>{(resolveOut(Z,o)?chg:grv).push(faceNameOf(o));});
-      sfx("grave");
-      if(grv.length)toast(`解決済みの ${grv.join("、")} を墓地へ`);
-      if(chg.length)toast(`⚡チャージャー：${chg.join("、")} はマナゾーンへ`);
+    if(S.spellAutoGrave!==false){
+      // 📚 スタック方式：前のカードを掃かずに重ねる（ザフィヴォ型の入れ子処理に対応）。
+      // 各カードは自身の効果処理が終わり、かつスタック最上位になった時点で自動で墓地へ（scheduleAutoResolve）
+      Z.resolve.push(c);
+      emitEvent(pTo,"spell");
+      scheduleAutoResolve(pTo,c);
+    }else{
+      // 従来方式：新しい呪文を置く時に前のカードを墓地へ掃く
+      if(Z.resolve.length){
+        const olds=Z.resolve.splice(0);
+        const chg=[],grv=[];
+        olds.forEach(o=>{(resolveOut(Z,o)?chg:grv).push(faceNameOf(o));});
+        sfx("grave");
+        if(grv.length)toast(`解決済みの ${grv.join("、")} を墓地へ`);
+        if(chg.length)toast(`⚡チャージャー：${chg.join("、")} はマナゾーンへ`);
+      }
+      Z.resolve.push(c);
+      emitEvent(pTo,"spell");
     }
-    Z.resolve.push(c);
-    emitEvent(pTo,"spell");
   }
   else if(fromZone==="resolve"&&toZone==="grave"&&(()=>{
     const rg=getReg(c);
@@ -10066,6 +10155,8 @@ function renderPlayer(pi){
 let LIBWIN_ASKED=[false,false];
 let MUGETSU_ASKED={};
 let MUGETSU_BUSY=false;
+let MUGETSU_TE_DONE=false;      // 絶ゲート：このターン終了処理で確認済みか
+let MUGETSU_PENDING=new Set();  // 無月/虚無月の誘発イベント（魔導具の着地・水魔導具の解決完了）が起きたプレイヤー
 /* 無月の門（ドルスザク）：魔導具（種族）を数えて条件成立を判定し、召喚を確認する
    条件： 無月の門(normal)＝場に魔導具2以上 かつ 墓地に魔導具2以上
           虚無月の門(kyomu)＝場+墓地の魔導具 合計4以上
@@ -10096,37 +10187,37 @@ async function doMugetsuSummon(pi,zn,id){
 }
 async function checkMugetsu(atTurnEnd){
   if(!S.expert||MUGETSU_BUSY||REPLAY.on)return;
-  // 描画駆動時は他のダイアログ/ビューアが開いていれば見送る（多重表示防止）
-  if(!atTurnEnd&&(($("askOlay")&&$("askOlay").classList.contains("open"))||($("viewerOlay")&&$("viewerOlay").classList.contains("open"))))return;
-  for(const pi of (S.vs?[0,1]:[0])){
+  if(!MUGETSU_PENDING.size)return;               // 誘発イベント（魔導具クリーチャー着地／水魔導具の解決完了）が無ければ何もしない
+  if(fxRunning||fxQueue.length)return;           // 一連の効果処理が終わるまで待つ（終わったら次の描画で判定）
+  if((($("askOlay")&&$("askOlay").classList.contains("open"))||($("viewerOlay")&&$("viewerOlay").classList.contains("open"))))return;
+  const pend=[...MUGETSU_PENDING];
+  MUGETSU_PENDING.clear();
+  const creP=new Set(pend.filter(x=>x.endsWith(":cre")).map(x=>+x.split(":")[0]));
+  const splP=new Set(pend.filter(x=>x.endsWith(":spl")).map(x=>+x.split(":")[0]));
+  for(const pi of new Set([...creP,...splP])){
     const Z=zonesOf(pi);
     const isMad=x=>{const r=getReg(x);return r&&raceMatch(r,"魔導具");};
     const battleMad=Z.battle.filter(isMad).length;
     const graveMad=Z.grave.filter(isMad).length;
     const total=battleMad+graveMad;
-    const cands=[];
-    for(const zn of ["hand","grave"]){
-      for(const h of Z[zn]){
-        const r=getReg(h);
-        if(!r||!r.mugetsu)continue;
-        if(zn==="grave"&&r.mugetsu!=="zetsu")continue; // 墓地から召喚できるのは絶のみ
-        cands.push({h,zn,r});
-      }
-    }
-    for(const {h,zn,r} of cands){
+    for(const h of Z.hand){
+      const r=getReg(h);
+      if(!r||!r.mugetsu||r.mugetsu==="zetsu")continue; // 絶はターン終了ゲートで処理
       const type=r.mugetsu;
-      if(type==="zetsu"&&!atTurnEnd)continue;   // 絶はターン終了時のみ
-      const met=type==="normal"?(battleMad>=2&&graveMad>=2):type==="kyomu"?(total>=4):(total>=6);
-      const key=pi+":"+h.id+":"+zn;
-      if(!met){delete MUGETSU_ASKED[key];continue;}   // 条件が崩れたら再確認できるようリセット
-      if(MUGETSU_ASKED[key])continue;                 // 成立中に一度断ったら再確認しない
+      // 誘発タイミング：無月＝魔導具クリーチャーの一連処理後／虚無月＝水の魔導具「呪文」の一連処理後のみ
+      if(type==="normal"&&!creP.has(pi))continue;
+      if(type==="kyomu"&&!splP.has(pi))continue;
+      const met=type==="normal"?(battleMad>=2&&graveMad>=2):(total>=4);
+      const key=pi+":"+h.id+":hand";
+      if(!met){delete MUGETSU_ASKED[key];continue;}
+      if(MUGETSU_ASKED[key])continue;
       MUGETSU_ASKED[key]=true;
       MUGETSU_BUSY=true;
       try{
-        const label=type==="zetsu"?"無月の門・絶":type==="kyomu"?"虚無月の門":"無月の門";
-        const condTxt=type==="normal"?`場${battleMad}・墓${graveMad}（各2以上）`:`場+墓 計${total}（${type==="kyomu"?4:6}以上）`;
-        const yes=await ask(`🌑 ${label}：条件成立！ 魔導具 ${condTxt}\n《${faceNameOf(h)}》を${zn==="grave"?"墓地":"手札"}からコストを支払わずに召喚しますか？`);
-        if(yes)await doMugetsuSummon(pi,zn,h.id);
+        const label=type==="kyomu"?"虚無月の門":"無月の門";
+        const condTxt=type==="normal"?`場${battleMad}・墓${graveMad}（各2以上）`:`場+墓 計${total}（4以上）`;
+        const yes=await ask(`🌑 ${label}：条件成立！ 魔導具 ${condTxt}\n《${faceNameOf(h)}》を手札からコストを支払わずに召喚しますか？`);
+        if(yes)await doMugetsuSummon(pi,"hand",h.id);
       }catch(e){}
       finally{MUGETSU_BUSY=false;}
       return; // 1回につき1体
@@ -10564,7 +10655,9 @@ async function recordMatch(winner,reason){
       const last=serializeState();
       if(REPLAY.frames[REPLAY.frames.length-1]!==last&&REPLAY.frames.length<600)REPLAY.frames.push(last);
       await idbPut("replays",String(id),{frames:REPLAY.frames.slice(),log:GAMELOG.slice()});
-      const keys=(await idbKeys("replays")).map(Number).filter(x=>!isNaN(x)).sort((a,b)=>a-b);
+      // 古いリプレイを整理（⭐お気に入りは保護し、それ以外を直近30件に）
+      const favIds=new Set(MATCH_STATS.filter(m=>m.fav&&m.id).map(m=>String(m.id)));
+      const keys=(await idbKeys("replays")).map(String).filter(k=>!favIds.has(k)).map(Number).filter(x=>!isNaN(x)).sort((a,b)=>a-b);
       while(keys.length>30){const old=keys.shift();await idbDel("replays",String(old));}
     }
   }catch(e){}
@@ -10597,8 +10690,14 @@ async function startReplay(id){
     REPLAY.idx=Math.max(0,Math.min(rec.frames.length-1,i));
     try{restoreState(JSON.parse(rec.frames[REPLAY.idx]));}catch(e){}
     lbl.textContent=`📽 ${REPLAY.idx+1} / ${rec.frames.length}`;
+    if(seek)seek.value=REPLAY.idx;
   };
   const stopAuto=()=>{if(REPLAY.timer){clearInterval(REPLAY.timer);REPLAY.timer=null;autoBtn.textContent="▶ 自動";}};
+  // 🎚 シークバー：好きな位置へジャンプ
+  const seek=document.createElement("input");
+  seek.type="range";seek.min=0;seek.max=rec.frames.length-1;seek.value=0;seek.step=1;
+  seek.style.cssText="flex:1 1 100%;min-width:200px;accent-color:#8b5cf6;cursor:pointer";
+  seek.oninput=()=>{stopAuto();show(parseInt(seek.value,10)||0);};
   const autoBtn=mkBtn("▶ 自動",()=>{
     if(REPLAY.timer){stopAuto();return;}
     autoBtn.textContent="⏸ 停止";
@@ -10618,6 +10717,7 @@ async function startReplay(id){
   const exitB=mkBtn("✖ 終了",()=>{endReplay();});
   exitB.className="btn small warn";
   bar.appendChild(exitB);
+  bar.appendChild(seek);
   show(0);
   toast("📽 リプレイ再生中：盤面は閲覧専用です。「✖ 終了」で元の状態に戻ります");
 }
@@ -10651,10 +10751,13 @@ function showSavedLog(log){
   $("viewerOlay").classList.add("open");
 }
 function pct(a,b){return b?Math.round(a/b*1000)/10:0;}
-function openStatsPanel(){
+function openStatsPanel(days){
   const g=$("vGrid");g.innerHTML="";
-  $("vTitle").textContent=`📊 対戦戦績（${MATCH_STATS.length}試合）`;
-  $("vHint").textContent="一人回し・対戦の記録から自動集計。デッキ名で対面ごとの相性も出ます";
+  const now=Date.now();
+  const stAll=MATCH_STATS;
+  const st=(days&&days>0)?stAll.filter(m=>now-m.d<=days*86400000):stAll;
+  $("vTitle").textContent=`📊 対戦戦績（${st.length}試合${days?`／直近${days}日`:""}）`;
+  $("vHint").textContent="一人回し・対戦の記録から自動集計。⭐＝お気に入り（リプレイが自動削除されません）";
   $("vSearch").style.display="none";
   $("vStatus").textContent="";
   $("vOk").style.display="none";
@@ -10685,10 +10788,25 @@ function openStatsPanel(){
     cur.appendChild(row);
     wrap.appendChild(cur);
   }
-  if(!MATCH_STATS.length){
-    wrap.innerHTML="<div class='hint'>まだ戦績がありません。対戦モードで勝敗を記録すると自動で貯まります。</div>";
+  // 期間フィルタ
+  {
+    const fr=document.createElement("div");
+    fr.className="row";fr.style.cssText="gap:6px;flex-wrap:wrap";
+    for(const [lb,dd] of [["全期間",0],["今日",1],["7日",7],["30日",30]]){
+      const b=document.createElement("button");
+      b.className="btn small"+((days||0)===dd?" primary":"");
+      b.textContent=lb;
+      b.onclick=()=>openStatsPanel(dd||undefined);
+      fr.appendChild(b);
+    }
+    wrap.appendChild(fr);
+  }
+  if(!st.length){
+    const nd=document.createElement("div");
+    nd.className="hint";
+    nd.textContent="この期間の戦績はありません。対戦モードで勝敗を記録すると自動で貯まります。";
+    wrap.appendChild(nd);
   }else{
-    const st=MATCH_STATS;
     const total=st.length;
     const p1w=st.filter(m=>m.winner===0).length;
     const firstW=st.filter(m=>m.winner===m.first).length;
@@ -10696,8 +10814,34 @@ function openStatsPanel(){
     // サマリー
     const sum=document.createElement("div");
     sum.style.cssText="background:#0d1119;border:1px solid var(--line);border-radius:10px;padding:10px";
-    sum.innerHTML=`<b>全体</b>　${total}試合　P1勝率 ${pct(p1w,total)}%（${p1w}勝${total-p1w}敗）　<b>先攻勝率 ${pct(firstW,total)}%</b>　平均${avgT}ターン`;
+    sum.innerHTML=`<b>全体</b>　${total}試合　P1勝率 ${pct(p1w,total)}%（${p1w}勝${total-p1w}敗）　<b>先攻勝率 ${pct(firstW,total)}%</b>（後攻 ${pct(total-firstW,total)}%）　平均${avgT}ターン`;
     wrap.appendChild(sum);
+    // 決着理由の内訳
+    {
+      const byR=new Map();
+      for(const m of st){const k=m.reason||"（不明）";byR.set(k,(byR.get(k)||0)+1);}
+      const rv=document.createElement("div");
+      rv.style.cssText="background:#0d1119;border:1px solid var(--line);border-radius:10px;padding:10px";
+      let rh="<b>決着理由</b><br>";
+      for(const [k,n] of [...byR.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10))rh+=`・${k}：${n}回（${pct(n,total)}%）<br>`;
+      rv.innerHTML=rh;
+      wrap.appendChild(rv);
+    }
+    // ターン数分布（簡易ヒストグラム）
+    {
+      const buckets=[["〜4T",t=>t<=4],["5〜6T",t=>t>=5&&t<=6],["7〜8T",t=>t>=7&&t<=8],["9〜10T",t=>t>=9&&t<=10],["11T〜",t=>t>=11]];
+      const tv=document.createElement("div");
+      tv.style.cssText="background:#0d1119;border:1px solid var(--line);border-radius:10px;padding:10px";
+      let th="<b>決着ターン分布</b><br>";
+      const maxN=Math.max(1,...buckets.map(([,f])=>st.filter(m=>f(m.turns||0)).length));
+      for(const [lb,f] of buckets){
+        const n=st.filter(m=>f(m.turns||0)).length;
+        const bar="█".repeat(Math.round(n/maxN*20));
+        th+=`・${lb}　${bar} ${n}（${pct(n,total)}%）<br>`;
+      }
+      tv.innerHTML=th;
+      wrap.appendChild(tv);
+    }
     // デッキ別成績（P1/P2どちら側でも合算）
     const byDeck=new Map();
     for(const m of st){
@@ -10771,6 +10915,31 @@ function openStatsPanel(){
           lb.title="この試合のログ";
           lb.onclick=async()=>{const rec=await idbGet("replays",String(m.id));showSavedLog(rec&&rec.log||[]);};
           row.appendChild(lb);
+        }
+        // ⭐お気に入り：リプレイの自動削除から保護
+        {
+          const fb=document.createElement("button");
+          fb.className="btn small ghost";
+          fb.textContent=m.fav?"⭐":"☆";
+          fb.title=m.fav?"お気に入り解除":"お気に入りに登録（リプレイを自動削除しない）";
+          fb.style.color=m.fav?"#f59e0b":"";
+          fb.onclick=async()=>{m.fav=!m.fav;await persistStats();openStatsPanel(days);};
+          row.appendChild(fb);
+        }
+        // 🗑この試合を削除（戦績＋リプレイ）
+        {
+          const db2=document.createElement("button");
+          db2.className="btn small ghost";db2.textContent="🗑";
+          db2.title="この試合を削除（戦績とリプレイ）";
+          db2.onclick=async()=>{
+            if(!window.confirm("この試合を削除しますか？（戦績・リプレイとも元に戻せません）"))return;
+            const ix=MATCH_STATS.indexOf(m);
+            if(ix>=0)MATCH_STATS.splice(ix,1);
+            await persistStats();
+            if(m.id){try{await idbDel("replays",String(m.id));}catch(e){}}
+            openStatsPanel(days);
+          };
+          row.appendChild(db2);
         }
         hv.appendChild(row);
       }
@@ -14187,6 +14356,11 @@ $("setNoUntapMana").addEventListener("change",async ()=>{
   if(db)await idbPut("misc","noUntapMana",S.noUntapMana);
   toast(S.noUntapMana?"ターン開始時のマナ自動アンタップ：OFF":"ターン開始時のマナ自動アンタップ：ON");
 });
+$("setSpellAuto").addEventListener("change",async ()=>{
+  S.spellAutoGrave=$("setSpellAuto").checked;
+  if(db)await idbPut("misc","spellAutoGrave",S.spellAutoGrave);
+  toast(S.spellAutoGrave?"呪文：効果処理後に自動で墓地へ（スタック方式）":"呪文：従来方式（次の呪文で前を墓地へ・手動）");
+});
 $("setMode").addEventListener("change",async ()=>{
   S.gameMode=$("setMode").value;
   if(db)await idbPut("misc","gameMode",S.gameMode);
@@ -15188,6 +15362,9 @@ if("serviceWorker" in navigator&&location.protocol==="https:"){
   if(bbt!==null&&bbt!==undefined)S.battleBtns=!!bbt;
   const ass=db?await idbGet("misc","autoSeat"):null;
   await loadStats();
+  const sag=db?await idbGet("misc","spellAutoGrave"):null;
+  if(sag!==null&&sag!==undefined)S.spellAutoGrave=!!sag;
+  {const el=document.getElementById("setSpellAuto");if(el)el.checked=S.spellAutoGrave!==false;}
   if(ass!==null&&ass!==undefined)S.autoSeat=!!ass;
   const shm=db?await idbGet("misc","shieldMode"):null;
   if(shm)S.shieldMode=shm;
