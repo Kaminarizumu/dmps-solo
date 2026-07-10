@@ -430,10 +430,44 @@ body.shake{animation:bodyShake .4s ease-out}
 @keyframes anCharge{0%{box-shadow:inset 0 0 0 3px rgba(74,222,128,.95),inset 0 0 24px 8px rgba(74,222,128,.7);background:rgba(74,222,128,.30);opacity:1}100%{box-shadow:none;background:transparent;opacity:0}}
 .an-charge::after{animation:anCharge .6s ease-out forwards}
 .an-charge{animation:anFlash .6s ease-out}
-#resultOlay{position:fixed;inset:0;z-index:96;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(2,4,10,.86);animation:fadeIn .3s ease-out}
+#resultOlay{position:fixed;inset:0;z-index:96;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(2,4,10,.88);animation:fadeIn .3s ease-out;overflow:hidden;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes resPop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
-#resultOlay .rtxt{font-size:56px;font-weight:900;animation:resPop .5s ease-out;text-shadow:0 0 30px currentColor}
+@keyframes resPop{0%{transform:scale(.3) rotate(-6deg);opacity:0}55%{transform:scale(1.18) rotate(1deg)}100%{transform:scale(1) rotate(0);opacity:1}}
+/* 勝利：回転する金の放射光 */
+#resultOlay .rburst{position:absolute;left:50%;top:50%;width:240vmax;height:240vmax;transform:translate(-50%,-50%);background:repeating-conic-gradient(from 0deg,rgba(251,191,36,.14) 0 7deg,transparent 7deg 16deg);animation:rSpin 14s linear infinite;pointer-events:none;mask-image:radial-gradient(circle,#000 0 34%,transparent 68%);-webkit-mask-image:radial-gradient(circle,#000 0 34%,transparent 68%)}
+@keyframes rSpin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+/* 敗北：赤黒のビネット */
+#resultOlay .rvig{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 30%,rgba(120,10,20,.35) 72%,rgba(30,0,8,.85) 100%);pointer-events:none;animation:vigIn 1.2s ease-out}
+@keyframes vigIn{from{opacity:0}to{opacity:1}}
+/* 衝撃波リング */
+#resultOlay .rring{position:absolute;left:50%;top:46%;width:20px;height:20px;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;animation:ringOut .95s cubic-bezier(.2,.8,.3,1) forwards}
+@keyframes ringOut{0%{box-shadow:0 0 0 0 rgba(251,191,36,.85);opacity:1}100%{box-shadow:0 0 0 46vmin rgba(251,191,36,0);opacity:0}}
+/* メイン文字 */
+#resultOlay .rtxt{
+  position:relative;font-size:min(19vw,130px);font-weight:900;font-style:italic;letter-spacing:.04em;line-height:1;
+  animation:resPop .55s cubic-bezier(.2,1.4,.4,1);text-transform:uppercase;
+}
+#resultOlay .rtxt.win{
+  background:linear-gradient(175deg,#fff7d6 8%,#ffd54a 34%,#f5a623 52%,#fff2b8 66%,#c98a1b 92%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 3px 0 rgba(90,50,0,.85)) drop-shadow(0 0 26px rgba(251,191,36,.6));
+}
+#resultOlay .rtxt.win::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 32%,rgba(255,255,255,.9) 48%,transparent 62%);mix-blend-mode:overlay;animation:rShine 1.6s ease-in-out .35s;opacity:0;pointer-events:none}
+@keyframes rShine{0%{opacity:0;transform:translateX(-55%)}25%{opacity:1}100%{opacity:0;transform:translateX(60%)}}
+#resultOlay .rtxt.lose{
+  color:#e6e9f2;
+  text-shadow:2.5px 0 0 rgba(239,68,68,.8),-2.5px 0 0 rgba(56,189,248,.8),0 0 22px rgba(150,20,30,.9);
+  animation:resPop .55s cubic-bezier(.2,1.4,.4,1),loseJitter 2.4s steps(2) .6s infinite;
+}
+@keyframes loseJitter{0%,92%{transform:translate(0,0)}93%{transform:translate(-2px,1px)}95%{transform:translate(2px,-1px)}97%{transform:translate(-1px,-1px)}100%{transform:translate(0,0)}}
+/* 紙吹雪・粒子 */
+#resultOlay .rp{position:absolute;top:-4vh;border-radius:2px;pointer-events:none;animation:rpFall linear forwards}
+@keyframes rpFall{0%{transform:translateY(0) rotate(0deg);opacity:1}85%{opacity:1}100%{transform:translateY(112vh) rotate(720deg);opacity:0}}
+#resultOlay .rp.ash{border-radius:50%;animation-name:rpSink}
+@keyframes rpSink{0%{transform:translateY(0);opacity:.7}100%{transform:translateY(40vh);opacity:0}}
+#resultOlay .rsub{color:#eef1f7;font-size:16px;font-weight:800;text-align:center;padding:0 20px;text-shadow:0 1px 6px #000;position:relative}
+#resultOlay .rscore{color:#c8d0dd;font-size:14px;font-weight:700;letter-spacing:.15em;position:relative}
+#resultOlay .rhint{color:#8a94a8;font-size:12px;margin-top:12px;position:relative}
 #fxOlay .row{flex-wrap:wrap}
 #fxOlay .row>*{min-width:0;max-width:100%}
 #fxOlay select,#fxOlay input[type="text"],#fxOlay input[type="number"]{max-width:100%;box-sizing:border-box}
@@ -5888,15 +5922,40 @@ function fxAddSpecialOptions(sel,cur){
   }
   sel.appendChild(og);
 }
+/* 効果タイプをラベルの内容でカテゴリ分けし、optgroupで見やすくする */
+function fxTypeCat(lb){
+  if(/引く|ドロー/.test(lb))return "🎴 ドロー";
+  if(/捨て|手札を|ハンデス/.test(lb))return "✋ 手札破壊・操作";
+  if(/マナ/.test(lb))return "💎 マナ";
+  if(/破壊|墓地/.test(lb))return "💀 破壊・墓地";
+  if(/シールド|盾|ブレイク/.test(lb))return "🛡 シールド";
+  if(/山札|探索|見る|公開/.test(lb))return "🔍 山札・サーチ";
+  if(/戻す|タップ|フリーズ|出す|バトル|パワー|選んで移動|封印/.test(lb))return "⚔ バトルゾーン";
+  if(/コスト|唱え|ロック/.test(lb))return "✨ コスト・ロック";
+  return "🔧 その他";
+}
+function buildFxTypeSelect(sel,cur){
+  const cats=new Map();
+  for(const [v,lb] of FX_TYPES){
+    const cName=fxTypeCat(lb);
+    if(!cats.has(cName))cats.set(cName,[]);
+    cats.get(cName).push([v,lb]);
+  }
+  for(const [cName,items] of cats){
+    const og=document.createElement("optgroup");og.label=cName;
+    for(const [v,lb] of items){
+      const o=document.createElement("option");o.value=v;o.textContent=lb;
+      if(v===cur)o.selected=true;
+      og.appendChild(o);
+    }
+    sel.appendChild(og);
+  }
+}
 function fxRowEl(faceIdx,i){
   const f=FXEDIT.faces[faceIdx][i];
   const row=document.createElement("div");row.className="fxrow";
   const sel=document.createElement("select");
-  for(const [v,lb] of FX_TYPES){
-    const o=document.createElement("option");o.value=v;o.textContent=lb;
-    if(v===f.t)o.selected=true;
-    sel.appendChild(o);
-  }
+  buildFxTypeSelect(sel,f.t);
   fxAddSpecialOptions(sel,f.t);
   const num=document.createElement("select");
   num.style.cssText="flex:0 0 64px;width:64px";
@@ -5963,7 +6022,7 @@ function fxTrigRowEl(i){
   ev.onchange=()=>{f.ev=ev.value;};
   const sel=document.createElement("select");
   sel.style.cssText="flex:1 1 38%;min-width:150px;max-width:100%";
-  for(const [v,lb] of FX_TYPES){const o=document.createElement("option");o.value=v;o.textContent=lb;if(v===f.t)o.selected=true;sel.appendChild(o);}
+  buildFxTypeSelect(sel,f.t);
   fxAddSpecialOptions(sel,f.t);
   const num=document.createElement("select");
   num.style.cssText="flex:0 0 64px;width:64px";
@@ -6186,9 +6245,33 @@ function fxUiPolish(){
         bar.innerHTML='<input type="text" id="fxFinder" placeholder="🔎 項目をしぼり込み（例：マッドネス／常在／侵略／シールド…・空欄で全表示）" style="flex:1;min-width:180px"><span id="fxFinderN" style="font-size:11px;color:var(--muted);white-space:nowrap"></span>';
         firstH3.parentElement.insertBefore(bar,firstH3);
         const inp=bar.querySelector("#fxFinder");
-        inp.placeholder="🔎 項目をしぼり込み（スペース区切りでAND検索・例：常在 ロック／空欄で全表示）";
+        inp.placeholder="🔎 項目をしぼり込み（略称OK：SA/cip/pig/バウンス/ハンデス…・スペースでAND）";
+        // 通称・略称 → 正式項目の言い回し（検索クエリを展開してヒットさせる）
+        const FX_ALIAS={
+          "sa":["スピードアタッカー"],"ｓａ":["スピードアタッカー"],
+          "cip":["出た時"],"シップ":["出た時"],"etb":["出た時"],
+          "pig":["破壊された時"],"デストロイ":["破壊"],
+          "atk":["攻撃"],"アタックトリガー":["攻撃する時","攻撃時"],
+          "wb":["ブレイク数"],"tb":["ブレイク数"],"qb":["ブレイク数"],"ワールド":["ブレイク"],
+          "バウンス":["手札に戻す"],"除去":["破壊","手札に戻す","マナ","山札の下"],
+          "ハンデス":["捨て"],"ランデス":["マナ"],
+          "ブースト":["マナ加速"],"マナブースト":["マナ加速"],"加速":["マナ加速"],
+          "リアニ":["墓地から"],"リアニメイト":["墓地から"],"蘇生":["墓地から"],
+          "サーチ":["山札から","探索"],"回収":["手札に"],
+          "踏み倒し":["出す","コストを支払わず"],"タダ出し":["出す"],
+          "st":["S・トリガー"],"トリガー":["S・トリガー"],
+          "g0":["G・ゼロ"],"gゼロ":["G・ゼロ"],
+          "ns":["ニンジャ"],"忍者":["ニンジャ"],
+          "焼却":["墓地へ","シールド焼却"],"盾焼却":["シールド焼却"],
+          "ロック":["唱えられない","出せない","ロック"],
+          "軽減":["コスト−","シンパシー"],"重く":["コスト＋"],
+          "アンタップキラー":["アンタップ攻撃"],"タップキル":["アンタップ攻撃"],
+          "セイバー":["身代わり","セイバー"],"身代わり":["セイバー"],
+          "ドロソ":["引く","ドロー"],"ルーター":["引","捨て"],
+          "呪文横取り":["唱え"],"メタ":["ロック","タップイン","コスト＋"]
+        };
         inp.addEventListener("input",()=>{
-          const toks=inp.value.trim().split(/\s+/).filter(Boolean);
+          const toks=inp.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
           const cnt=document.getElementById("fxFinderN");
           const rows=[...panel.querySelectorAll(".row,.fxrow")].filter(r=>r!==bar&&!r.contains(bar)&&!r.closest(".fxrow, .row .row"));
           if(!toks.length){rows.forEach(r=>{r.style.display="";});if(cnt)cnt.textContent="";return;}
@@ -6197,11 +6280,16 @@ function fxUiPolish(){
             let txt=r.textContent||"";
             r.querySelectorAll("input[placeholder]").forEach(x=>{txt+=" "+x.placeholder;});
             r.querySelectorAll("input[type=text],input[type=number]").forEach(x=>{txt+=" "+(x.value||"");});
-            const ok=toks.every(t=>txt.includes(t));
+            const low=txt.toLowerCase();
+            const ok=toks.every(t=>{
+              if(low.includes(t))return true;
+              const al=FX_ALIAS[t];
+              return al?al.some(a=>txt.includes(a)):false;
+            });
             r.style.display=ok?"":"none";
             if(ok)hit++;
           });
-          if(cnt)cnt.textContent=`${hit}件`;
+          if(cnt)cnt.textContent=hit?`${hit}件`:"0件 — 見つからない能力は「誘発処理」＋汎用効果の組み合わせ、または覚え書き欄で代用できます";
         });
       }
     }catch(e){console.warn("finder",e);}
@@ -9462,18 +9550,50 @@ function showResultScreen(winner,reason){
   const ol=document.createElement("div");
   ol.id="resultOlay";
   const meWin=(winner===(S.seat|0));
+  if(meWin){
+    // 勝利：回転する金の放射光＋衝撃波リング×2＋紙吹雪
+    const burst=document.createElement("div");burst.className="rburst";ol.appendChild(burst);
+    for(const dly of [0,180]){
+      const ring=document.createElement("div");ring.className="rring";ring.style.animationDelay=dly+"ms";ol.appendChild(ring);
+    }
+    const COLS=["#ffd54a","#fff2b8","#f5a623","#7dd3fc","#f472b6","#ffffff"];
+    for(let i=0;i<36;i++){
+      const p=document.createElement("div");p.className="rp";
+      const w=4+Math.random()*7;
+      p.style.width=w+"px";p.style.height=(w*(.5+Math.random()))+"px";
+      p.style.left=(Math.random()*100)+"vw";
+      p.style.background=COLS[i%COLS.length];
+      p.style.animationDuration=(2.2+Math.random()*2.4)+"s";
+      p.style.animationDelay=(Math.random()*0.9)+"s";
+      p.style.opacity=String(.65+Math.random()*.35);
+      ol.appendChild(p);
+    }
+  }else{
+    // 敗北：赤黒ビネット＋沈む灰
+    const vig=document.createElement("div");vig.className="rvig";ol.appendChild(vig);
+    for(let i=0;i<16;i++){
+      const p=document.createElement("div");p.className="rp ash";
+      const w=2+Math.random()*4;
+      p.style.width=w+"px";p.style.height=w+"px";
+      p.style.left=(Math.random()*100)+"vw";
+      p.style.top=(10+Math.random()*50)+"vh";
+      p.style.background="rgba(180,180,195,.55)";
+      p.style.animationDuration=(3+Math.random()*3)+"s";
+      p.style.animationDelay=(Math.random()*1.2)+"s";
+      ol.appendChild(p);
+    }
+  }
   const t=document.createElement("div");
-  t.className="rtxt";
-  t.style.color=meWin?"#fbbf24":"#f87171";
-  t.textContent=meWin?"🏆 WIN!":"💀 LOSE...";
+  t.className="rtxt "+(meWin?"win":"lose");
+  t.textContent=meWin?"VICTORY":"DEFEAT";
   const sub=document.createElement("div");
-  sub.style.cssText="color:#e5e9f0;font-size:16px;font-weight:700;text-align:center;padding:0 20px";
+  sub.className="rsub";
   sub.textContent=`${S.players[winner].label} の勝利　—　${reason}`;
   const sc=document.createElement("div");
-  sc.style.cssText="color:#9aa4b2;font-size:14px";
-  sc.textContent=`戦績 ${SCORE[0]} - ${SCORE[1]}`;
+  sc.className="rscore";
+  sc.textContent=`SCORE ${SCORE[0]} - ${SCORE[1]}`;
   const ht=document.createElement("div");
-  ht.style.cssText="color:#9aa4b2;font-size:12px;margin-top:14px";
+  ht.className="rhint";
   ht.textContent="タップで閉じる";
   ol.appendChild(t);ol.appendChild(sub);ol.appendChild(sc);ol.appendChild(ht);
   ol.addEventListener("click",()=>ol.remove());
@@ -9672,7 +9792,8 @@ function flyGhost(srcRect,c,dstSel){
   if(!animOn("fly")||!srcRect)return;
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     let dst=document.querySelector(`[data-cid="${c.id}"]`);
-    if(!dst&&dstSel)dst=document.querySelector(dstSel);
+    let hideDst=!!dst;
+    if(!dst&&dstSel){dst=document.querySelector(dstSel);hideDst=false;}
     if(!dst)return;
     const dr=dst.getBoundingClientRect();
     if(!dr.width||(Math.abs(dr.left-srcRect.left)<4&&Math.abs(dr.top-srcRect.top)<4))return;
@@ -9686,6 +9807,15 @@ function flyGhost(srcRect,c,dstSel){
     g.style.width=srcRect.width+"px";g.style.height=srcRect.height+"px";
     g.style.transition="transform .28s cubic-bezier(.22,.9,.3,1),opacity .28s ease";
     document.body.appendChild(g);
+    // 二重表示防止：飛行中は着地先の実カードを隠す（到着と同時に表示）
+    if(hideDst){
+      dst.style.visibility="hidden";
+      const did=c.id;
+      setTimeout(()=>{
+        const e2=document.querySelector(`[data-cid="${did}"]`);
+        if(e2)e2.style.visibility="";
+      },290);
+    }
     const dx=dr.left-srcRect.left, dy=dr.top-srcRect.top;
     const sx=dr.width/srcRect.width, sy=dr.height/srcRect.height;
     g.style.transformOrigin="top left";
@@ -9693,7 +9823,7 @@ function flyGhost(srcRect,c,dstSel){
       g.style.transform=`translate(${dx}px,${dy}px) scale(${sx},${sy})`;
       g.style.opacity=".92";
     });
-    setTimeout(()=>{g.remove();},320);
+    setTimeout(()=>{g.remove();},300);
   }));
 }
 function rectOfCard(id){
