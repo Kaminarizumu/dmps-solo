@@ -2348,6 +2348,7 @@ function startGame(picks){
   }:null;
   // 📽 リプレイ：初期盤面をフレーム0として記録
   REPLAY.frames=S.vs?[serializeState()]:[];
+  MATCH_EV=S.vs?newMatchEv():null;
   // 登録漏れ警告：ロック/シンパシー等の自動判定がすり抜ける原因になるため、開始時に知らせる
   if(S.expert){
     const miss=new Set(), noPC=new Set();
@@ -2391,6 +2392,7 @@ function draw(pi,n=1){
     c.faceup=true;c.sideways=false;c.qqqxSide=false;
     const kept=toHand(Z,c); // デュエプレ：手札上限超過は墓地へ
     if(kept)markArrive(c);
+    bumpEv("draws",pi);
     logOnly(`${S.players[pi].label}：1枚ドロー${kept?"":"（手札上限のため墓地へ）"}`);
     if(S.anim!==false){
       const pe=document.querySelector(`#sysrow-${pi} [data-zone="deckTop"]`);
@@ -2906,6 +2908,9 @@ function runWatchFxCond(pi,cond){
   }
 }
 function emitEvent(actor,type){
+  if(type==="summon")bumpEv("summons",actor);
+  if(type==="spell")bumpEv("spells",actor);
+  if(type==="summon")updatePeakBoard();
   if(!S.expert)return;
   if(type==="spell"){S.spellTurn=S.spellTurn||{};S.spellTurn[actor]=(S.spellTurn[actor]||0)+1;}
   const names=watchNames(actor,type);
@@ -4266,14 +4271,17 @@ async function runFxList(pi,list,srcCard){
       renderAll();continue;
     }
     if(f.t==="draw"){
-      for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.hand.push(c);markArrive(c);}
+      let dc=0;for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.hand.push(c);markArrive(c);dc++;}
+      bumpEv("draws",pi,dc);
       sfx("draw");emitEvent(pi,"draw");
     }else if(f.t==="charge"){
-      for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.mana.push(c);markArrive(c);}
+      let cc=0;for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.mana.push(c);markArrive(c);cc++;}
+      bumpEv("manaAccel",pi,cc);
       sfx("move");
     }else if(f.t==="chargeTap"){
       let cn=0;
       for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;c.tapped=true;Z.mana.push(c);markArrive(c);cn++;}
+      bumpEv("manaAccel",pi,cn);
       sfx("move");
       if(cn>0)toast(`💠 マナ加速（タップイン）：山上${cn}枚をタップしてマナゾーンへ`);
     }else if(f.t==="mill"){
@@ -4342,6 +4350,7 @@ async function runFxList(pi,list,srcCard){
         const j=randInt(OZ.hand.length);
         const c=OZ.hand.splice(j,1)[0];
         c.faceup=true;OZ.grave.push(c);
+        bumpEv("handes",pi);
         toast(`ハンデス：${c.name} を墓地へ`);
         afterHandDiscard(op,c);
       }
@@ -5171,6 +5180,7 @@ async function effPower(c,attacking,inBattle){
   return p;
 }
 async function destroyWithReplace(pi,c){
+  bumpEv("destroys",pi?0:1); // piのクリーチャーが破壊された＝相手(pi?0:1)の破壊数に加算
   const r=getReg(c);
   const Z=zonesOf(pi);
   if(S.expert&&r){
@@ -5420,11 +5430,13 @@ function processBroken(op,stack,label){
         if(Z.resolve.length){const olds=Z.resolve.splice(0);olds.forEach(o=>resolveOut(Z,o));}
         c.faceup=true;Z.resolve.push(c);markArrive(c);sfx("move");
         logOnly(`${S.players[op].label}：⚡S・トリガー！《${faceNameOf(c)}》を唱えた`);
+        bumpEv("stTrig",op);
         emitEvent(op,"spell");enqueueFx(op,c);
       }else if(zone==="battle"){
         c.faceup=true;Z.battle.push(c);markArrive(c);sfx("move");
         const r=getReg(c);if(r&&(r.d2||r.wide))c.rot=(op===S.seat)?270:90;
         logOnly(`${S.players[op].label}：⚡S・トリガー！《${faceNameOf(c)}》を出した`);
+        bumpEv("stTrig",op);
         emitEvent(op,"summon");enqueueFx(op,c);
       }else{c.faceup=true;Z[zone].push(c);markArrive(c);sfx("move");logOnly(`${S.players[op].label}：ブレイクされた《${faceNameOf(c)}》を${ZLOG[zone]||zone}へ`);}
       sel=null;renderAll();render();
@@ -5590,6 +5602,7 @@ async function breakShields(op,count,attacker,forceIdx){
     if(idxs===null)return;
   }
   snap();
+  bumpEv("breaks",op?0:1,idxs.length); // opの盾がブレイクされた＝相手(op?0:1)のブレイク数
   idxs.sort((a,b)=>b-a);
   if(animOn("break")){
     for(const i of idxs){
@@ -10953,12 +10966,30 @@ function showResultScreen(winner,reason){
 /* ================= 📊 対戦統計（一人回し戦績） ================= */
 let MATCH_CTX=null;   // 進行中の試合コンテキスト（startGameで設定）
 let MATCH_STATS=[];   // 保存済みの全試合 [{d,deck0,deck1,first,winner,reason,turns,ms}]
+let MATCH_EV=null;    // 進行中試合のイベント計測 {key:[p0,p1]}
+function newMatchEv(){
+  return {draws:[0,0],summons:[0,0],spells:[0,0],stTrig:[0,0],breaks:[0,0],destroys:[0,0],manaAccel:[0,0],handes:[0,0],peakBoard:[0,0],shieldsEnd:[0,0]};
+}
+function bumpEv(key,pi,d=1){
+  if(!MATCH_EV||pi==null||(typeof REPLAY!=="undefined"&&REPLAY.on))return;
+  if(!MATCH_EV[key])MATCH_EV[key]=[0,0];
+  MATCH_EV[key][pi]=(MATCH_EV[key][pi]||0)+d;
+}
+function updatePeakBoard(){
+  if(!MATCH_EV||(typeof REPLAY!=="undefined"&&REPLAY.on))return;
+  for(const pi of (S.vs?[0,1]:[0])){
+    const n=zonesOf(pi).battle.length;
+    if(n>(MATCH_EV.peakBoard[pi]||0))MATCH_EV.peakBoard[pi]=n;
+  }
+}
 async function loadStats(){try{const v=db?await idbGet("misc","matchStats"):null;if(Array.isArray(v))MATCH_STATS=v;}catch(e){}}
 async function persistStats(){try{if(db)await idbPut("misc","matchStats",MATCH_STATS);}catch(e){}}
 async function recordMatch(winner,reason){
   if(!MATCH_CTX)return; // 既に登録済み/破棄済みの試合は二重記録しない
   const c=MATCH_CTX;
   const id=c.id||Date.now();
+  const ev=MATCH_EV?JSON.parse(JSON.stringify(MATCH_EV)):null;
+  if(ev){ev.shieldsEnd=[zonesOf(0).shield.length,zonesOf(1).shield.length];}
   MATCH_STATS.push({
     id,
     d:Date.now(),
@@ -10968,7 +10999,8 @@ async function recordMatch(winner,reason){
     winner,
     reason:String(reason||"").slice(0,80),
     turns:S.turn,
-    ms:c.start?(Date.now()-c.start):0
+    ms:c.start?(Date.now()-c.start):0,
+    ev
   });
   if(MATCH_STATS.length>2000)MATCH_STATS=MATCH_STATS.slice(-2000);
   await persistStats();
@@ -11072,6 +11104,39 @@ function showSavedLog(log){
   $("viewerOlay").classList.add("open");
 }
 function pct(a,b){return b?Math.round(a/b*1000)/10:0;}
+function showMatchDetail(m){
+  const d=new Date(m.d);
+  const ds=`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  $("vTitle").textContent="📊 試合データ詳細";
+  $("vHint").textContent=`${ds}　${m.deck0} vs ${m.deck1}`;
+  $("vSearch").style.display="none";$("vStatus").textContent="";$("vOk").style.display="none";
+  const g=$("vGrid");g.innerHTML="";
+  const wrap=document.createElement("div");
+  wrap.style.cssText="grid-column:1/-1;display:flex;flex-direction:column;gap:10px;font-size:13px";
+  const head=document.createElement("div");
+  head.style.cssText="background:#0d1119;border:1px solid var(--line);border-radius:10px;padding:10px";
+  head.innerHTML=`🏆 勝者：<b>${m.winner===0?m.deck0:m.deck1}</b>（${m.winner===0?"P1":"P2"}）　決着：${m.reason||"?"}　${m.turns||"?"}ターン　${m.first===m.winner?"先攻勝ち":"後攻勝ち"}　試合時間 ${Math.round((m.ms||0)/1000)}秒`;
+  wrap.appendChild(head);
+  const ev=m.ev||{};
+  const keys=[["breaks","シールドブレイク"],["stTrig","S・トリガー発動"],["summons","召喚"],["spells","呪文を唱えた"],["draws","ドロー"],["manaAccel","マナ加速"],["destroys","破壊した数"],["handes","ハンデス"],["peakBoard","最大盤面クリーチャー"],["shieldsEnd","最終シールド"]];
+  const tbl=document.createElement("div");
+  tbl.style.cssText="background:#0d1119;border:1px solid var(--line);border-radius:10px;padding:10px";
+  let th=`<div style="display:grid;grid-template-columns:1fr auto auto;gap:2px 14px">`;
+  th+=`<b>項目</b><b style="text-align:right">${m.deck0}</b><b style="text-align:right">${m.deck1}</b>`;
+  for(const [k,lb] of keys){
+    const a=ev[k]?ev[k][0]||0:0, b=ev[k]?ev[k][1]||0:0;
+    th+=`<span>${lb}</span><span style="text-align:right">${a}</span><span style="text-align:right">${b}</span>`;
+  }
+  th+=`</div>`;
+  tbl.innerHTML=th;
+  wrap.appendChild(tbl);
+  const back=document.createElement("button");
+  back.className="btn small";back.textContent="← 戦績に戻る";
+  back.onclick=()=>openStatsPanel();
+  wrap.appendChild(back);
+  g.appendChild(wrap);
+  $("viewerOlay").classList.add("open");
+}
 function openStatsPanel(days){
   const g=$("vGrid");g.innerHTML="";
   const now=Date.now();
@@ -11206,6 +11271,27 @@ function openStatsPanel(days){
     }
     mv.innerHTML=mh;
     wrap.appendChild(mv);
+    // 📈 イベント平均（試合中の計測がある試合のみ）
+    {
+      const evSt=st.filter(m=>m.ev);
+      if(evSt.length){
+        const keys=[["breaks","シールドブレイク"],["stTrig","S・トリガー発動"],["summons","召喚"],["spells","呪文"],["draws","ドロー"],["manaAccel","マナ加速"],["destroys","破壊"],["handes","ハンデス"],["peakBoard","最大盤面"]];
+        const av=document.createElement("div");
+        av.style.cssText="background:#0d1119;border:1px solid var(--line);border-radius:10px;padding:10px";
+        let ah=`<b>1試合あたりの平均</b>（計測あり${evSt.length}試合・勝者/敗者で集計）<br>`;
+        for(const [k,lb] of keys){
+          let win=0,lose=0;
+          for(const m of evSt){win+=(m.ev[k]?m.ev[k][m.winner]||0:0);lose+=(m.ev[k]?m.ev[k][m.winner?0:1]||0:0);}
+          const wv=Math.round(win/evSt.length*10)/10, lv=Math.round(lose/evSt.length*10)/10;
+          ah+=`・${lb}：勝者 <b>${wv}</b>／敗者 ${lv}<br>`;
+        }
+        // S・トリガーで捲った割合（敗色から勝った側がST発動した試合）
+        const stWins=evSt.filter(m=>m.ev.stTrig&&(m.ev.stTrig[m.winner]||0)>0).length;
+        ah+=`<span style="color:var(--muted)">※ 勝者がS・トリガーを1回以上発動した試合：${pct(stWins,evSt.length)}%（${stWins}/${evSt.length}）</span>`;
+        av.innerHTML=ah;
+        wrap.appendChild(av);
+      }
+    }
     // 直近の試合履歴（新しい順・最大30・📽再生/📜ログつき）
     const hv=document.createElement("div");
     hv.style.cssText="background:#0d1119;border:1px solid var(--line);border-radius:10px;padding:10px";
@@ -11246,6 +11332,13 @@ function openStatsPanel(days){
           fb.style.color=m.fav?"#f59e0b":"";
           fb.onclick=async()=>{m.fav=!m.fav;await persistStats();openStatsPanel(days);};
           row.appendChild(fb);
+        }
+        if(m.ev){
+          const eb=document.createElement("button");
+          eb.className="btn small ghost";eb.textContent="📊";
+          eb.title="この試合のデータ詳細";
+          eb.onclick=()=>showMatchDetail(m);
+          row.appendChild(eb);
         }
         // 🗑この試合を削除（戦績＋リプレイ）
         {
