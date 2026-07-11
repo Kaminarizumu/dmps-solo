@@ -6175,7 +6175,6 @@ async function execAttack(pi,id,tg){
           emitEvent(pi,"summon");
         }
         markArrive(h);
-        await autoTapCost(pi,h);
         enqueueFx(pi,h);
         sfx("ok");renderAll();
         toast(`🌀 D・D・D 発動！ ${faceNameOf(h)}（${zLbD[zn]}から・コストを支払って使用）`);
