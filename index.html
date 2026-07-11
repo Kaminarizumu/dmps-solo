@@ -4104,23 +4104,23 @@ async function destroyCreature(pi,c){
       toast(`🚯 ${faceNameOf(c)} の能力は無視されている（破壊耐性なし）`);
     }
     if(c.buff&&c.buff.noDestroy){
-      toast(`🛡 ${faceNameOf(c)} はこのターン破壊されない！`);
+      toast(`🪨 ${faceNameOf(c)} はこのターン破壊されない！`);
       return;
     }
     if(c.buff&&c.buff.noLeave){
-      toast(`🛡 ${faceNameOf(c)} はこのターン離れない！`);
+      toast(`⚓ ${faceNameOf(c)} はこのターン離れない！`);
       return;
     }
     if(!IGN&&rCX&&rCX.cstCond&&(rCX.cstFx==="noDestroy"||rCX.cstFx==="noLeave")&&zoneCondOk(rCX.cstCond,pi)){
-      toast(`✨ 条件常在（${rCX.cstCond}）：${faceNameOf(c)} は${rCX.cstFx==="noLeave"?"離れない":"破壊されない"}！`);
+      toast(`✨ 条件常在（${rCX.cstCond}）：${faceNameOf(c)} は${rCX.cstFx==="noLeave"?"⚓離れない":"🪨破壊されない"}！`);
       return;
     }
     if(!IGN&&c.sfActive&&rCX&&rCX.sforceFx==="noDestroy"){
-      toast(`🛡✨ シールド・フォース有効中：${faceNameOf(c)} は破壊されない！`);
+      toast(`🪨✨ シールド・フォース有効中：${faceNameOf(c)} は破壊されない！`);
       return;
     }
     if(!IGN&&c.sfActive&&rCX&&rCX.sforceFx==="noLeave"){
-      toast(`🛡✨ シールド・フォース有効中：${faceNameOf(c)} は離れない！（パーフェクト・ギャラクシー型）`);
+      toast(`⚓✨ シールド・フォース有効中：${faceNameOf(c)} は離れない！（パーフェクト・ギャラクシー型）`);
       return;
     }
     if(!IGN&&rCX&&rCX.ggg==="noDestroy"&&Z.hand.length<=1){
@@ -4509,6 +4509,7 @@ async function runFxList(pi,list,srcCard){
         if(isDestroy){
           await destroyWithReplace(tp,tgt);
         }else{
+          if(await offerTrueEscape(tp,tgt)){renderAll();continue;} // 真エスケープで離場キャンセル
           const idx=TZ.battle.findIndex(x=>x.id===tgt.id);
           if(idx<0)continue;
           const removed=TZ.battle.splice(idx,1)[0];
@@ -5179,6 +5180,46 @@ async function effPower(c,attacking,inBattle){
   if(c.buff)p+=(c.buff.pa||0)+(c.buff.pm||0);
   return p;
 }
+/* 🛡 真・エスケープ：破壊に限らずバトルゾーンを離れる時に発動できる。
+   盾があれば最大2枚を手札に加えて「場に残る」（＝離場をキャンセル）／盾が無ければ本体を手札へ戻す（盾なしでも手札へ戻る）。
+   戻り値 true＝離場をキャンセルした（呼び出し側は移動を中止する） */
+async function offerTrueEscape(pi,c){
+  if(!S.expert)return false;
+  const r=getReg(c);
+  if(!(r&&(r.trueEscape||allyGrant(pi,"agTEsc"))))return false;
+  const Z=zonesOf(pi);
+  const has=Z.shield.length>0;
+  const yes=await ask(`🛡 真・エスケープ！\n《${faceNameOf(c)}》がバトルゾーンを離れます。\n${has?"かわりにシールドを最大2枚手札に加えて場に残しますか？":"盾がありません。かわりに手札へ戻しますか？"}`);
+  if(!yes)return false;
+  snap();
+  if(has){
+    const take=Math.min(2,Z.shield.length);
+    for(let t=0;t<take;t++){
+      const j=Z.shield.length===1?0:await askChoice(`🛡 手札に加えるシールドを選択（${t+1}/${take}枚目）`,
+        Z.shield.map((x,i2)=>`盾${i2+1}${x.faceup?`（表：${faceNameOf(x)}）`:""}${x.under&&x.under.length?` +${x.under.length}`:""}`));
+      if(j===null){renderAll();return true;}
+      const sc=Z.shield.splice(j,1)[0];
+      const stack=[sc,...(sc.under?sc.under.splice(0):[])];
+      stack.forEach(x=>{x.faceup=true;x.tapped=false;Z.hand.push(x);});
+    }
+    toast(`🛡 真・エスケープ！ シールドを${take}枚手札に加え、${faceNameOf(c)} は場に残った`);
+    sfx("flip");renderAll();
+    return true;
+  }else{
+    // 盾なし：本体を手札へ戻す（下敷き・ギア・封印は墓地へ）
+    const idx=Z.battle.findIndex(x=>x.id===c.id);
+    if(idx<0){renderAll();return true;}
+    const cc=Z.battle.splice(idx,1)[0];
+    if(cc.under&&cc.under.length)cc.under.splice(0).forEach(u=>{u.faceup=true;Z.grave.push(u);});
+    if(cc.gear&&cc.gear.length)cc.gear.splice(0).forEach(g=>{g.faceup=true;Z.grave.push(g);});
+    if(cc.seals&&cc.seals.length)cc.seals.splice(0).forEach(s=>{s.faceup=true;Z.grave.push(s);});
+    cc.tapped=false;cc.sideways=false;cc.rot=0;cc.buff=null;cc.mark=false;cc.faceup=true;cc.seals=[];
+    Z.hand.push(cc);
+    toast(`🛡 真・エスケープ！ ${faceNameOf(cc)} は手札へ戻った`);
+    sfx("flip");renderAll();
+    return true;
+  }
+}
 async function destroyWithReplace(pi,c){
   bumpEv("destroys",pi?0:1); // piのクリーチャーが破壊された＝相手(pi?0:1)の破壊数に加算
   const r=getReg(c);
@@ -5688,17 +5729,19 @@ async function breakShields(op,count,attacker,forceIdx){
   }else{
     await processBroken(op,stack,`🛡 ${shs.length>1?"同時ブレイク":"ブレイク"}：${S.players[op].label}のシールド（計${stack.length}枚）`);
   }
-  // G・ストライク：手札に加わったGS持ちを確認
+  // G・ストライク：手札に加わったGS持ちを確認（複数枚それぞれ発動可・登録した追加効果も処理）
   if(S.expert){
     const gsCards=OZ.hand.filter(x=>stackIds.has(x.id)&&(()=>{const r2=getReg(x);return r2&&r2.gs;})());
+    let idxG=0;
     for(const gc of gsCards){
-      const yes=await ask(`🖐 G・ストライク！\n《${faceNameOf(gc)}》を公開して攻撃を止めますか？\n（攻撃クリーチャーはそれ以上何もできません）`);
-      if(yes){
-        toast(`🖐 G・ストライク！ ${faceNameOf(gc)} を公開 → 攻撃を止めた`);
-        if(attacker)attacker.noAtkBlock=true;
-        sfx("flip");renderAll();
-        break;
-      }
+      idxG++;
+      const yes=await ask(`🖐 G・ストライク！（${idxG}/${gsCards.length}枚目）\n《${faceNameOf(gc)}》を公開しますか？\n（攻撃を止める＋このカードに登録した追加効果を処理。複数ある場合は続けて確認します）`);
+      if(!yes)continue;
+      toast(`🖐 G・ストライク！ ${faceNameOf(gc)} を公開 → 攻撃を止めた`);
+      if(attacker)attacker.noAtkBlock=true;
+      sfx("flip");renderAll();
+      enqueueFx(op,gc);      // GSカードの登録効果（追加能力）を処理
+      await waitFxIdle();
     }
   }
   if(S.expert)runWatchFx(op,"shieldLeave");
@@ -9270,7 +9313,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
         Z2.shield[j].sfMark=faceNameOf(c);
         Z2.shield[j].sfBy=c.id;
         c.sfActive=true;
-        toast(`🛡 シールド・フォース：盾${j+1}を指定（この盾がある間、能力有効${reg.sforceFx?`：${{noLeave:"離れない",noDestroy:"破壊されない"}[reg.sforceFx]}`:""}）`);
+        toast(`🛡 シールド・フォース：盾${j+1}を指定（この盾がある間、能力有効${reg.sforceFx?`：${{noLeave:"⚓離れない",noDestroy:"🪨破壊されない"}[reg.sforceFx]}`:""}）`);
         renderAll();
       })();
     }
@@ -9463,7 +9506,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
       const arr0=ZT0[key0];
       if(arr0){const ix0=arr0.findIndex(x=>x.id===c.id);if(ix0>=0)arr0.splice(ix0,1);}
       zonesOf(pFrom).battle.push(c);
-      toast(`🛡 ${faceNameOf(c)} はこのターン離れない！`);
+      toast(`⚓ ${faceNameOf(c)} はこのターン離れない！`);
       renderAll();
       return;
     }
@@ -9483,7 +9526,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
       const arr2=ZT2[key2];
       if(arr2){const ix2=arr2.findIndex(x=>x.id===c.id);if(ix2>=0)arr2.splice(ix2,1);}
       zonesOf(pFrom).battle.push(c);
-      toast(`🛡✨ シールド・フォース有効中：${faceNameOf(c)} は離れない！`);
+      toast(`⚓✨ シールド・フォース有効中：${faceNameOf(c)} は離れない！`);
       renderAll();
       return;
     }
@@ -10093,6 +10136,8 @@ function cardEl(pi,zone,c){
     if(c.buff.pm&&dispPower(c)==null)parts.push((c.buff.pm>0?"+":"")+c.buff.pm);
     if(c.buff.slayer)parts.push("殺");
     if(c.buff.blocker)parts.push("盾");
+    if(c.buff.noDestroy)parts.push("🪨破壊×");
+    if(c.buff.noLeave)parts.push("⚓離脱×");
     if(c.buff.note)parts.push(c.buff.note);
     if(parts.length){
       const bt=document.createElement("span");bt.className="bufftag";bt.textContent=parts.join(" ");
@@ -11697,6 +11742,8 @@ function showCardPreview(ctx){
         if(r0.slayer||(c.buff&&c.buff.slayer)||(r0.hmSlayer&&c.hyper))tags.push("☠スレイヤー");
         const bk0=c.hyper&&r0.hmBk?r0.hmBk:r0.breaks;
         if(bk0&&bk0!=="1")tags.push(bk0==="2"?"W・ブレイカー":bk0==="3"?"T・ブレイカー":bk0==="all"?"ワールド・ブレイカー":bk0+"枚ブレイク");
+        if((c.buff&&c.buff.noDestroy)||(c.sfActive&&r0.sforceFx==="noDestroy")||(r0.cstCond&&r0.cstFx==="noDestroy"&&zoneCondOk(r0.cstCond,ctx.p))||(r0.ggg&&(r0.ggg==="noDestroy"||r0.ggg==="noDestroyGrp")&&zonesOf(ctx.p).hand.length<=1))tags.push("🪨破壊されない");
+        if((c.buff&&c.buff.noLeave)||(c.sfActive&&r0.sforceFx==="noLeave")||(r0.cstCond&&r0.cstFx==="noLeave"&&zoneCondOk(r0.cstCond,ctx.p)))tags.push("⚓離れない");
         if(tags.length){
           const tb=document.createElement("span");
           tb.textContent=tags.join("　");
@@ -12229,7 +12276,7 @@ function openCardSheet(ctx){
     }
     box.appendChild(actBtn("✨ 1ターン付与（パワー±/PA/スレイヤー等）",async ()=>{
       const pick=await askChoice(`《${faceNameOf(c)}》に付与\n（バフはターン終了で解除／❄フリーズ・JDは自動解除）`,
-        ["パワー ＋（数値入力）","パワー −（数値入力）","パワーアタッカー ＋（数値入力）","スレイヤー","ブロッカー","メモ（自由入力）","❄ フリーズ（次のターン アンタップしない）","🌀 ジャストダイバー（次の自分のターン開始まで）","🚫 攻撃もブロックもできない（プリンプリン型）","🛡 バトルゾーンを離れない（このターン）","🛡 破壊されない（このターン）","⚡ スピードアタッカー付与","💥 ブレイク数＋n"]);
+        ["パワー ＋（数値入力）","パワー −（数値入力）","パワーアタッカー ＋（数値入力）","スレイヤー","ブロッカー","メモ（自由入力）","❄ フリーズ（次のターン アンタップしない）","🌀 ジャストダイバー（次の自分のターン開始まで）","🚫 攻撃もブロックもできない（プリンプリン型）","⚓ バトルゾーンを離れない（このターン）","🪨 破壊されない（このターン）","⚡ スピードアタッカー付与","💥 ブレイク数＋n"]);
       if(pick===null)return;
       snap();
       if(pick===8){
@@ -12255,8 +12302,8 @@ function openCardSheet(ctx){
       if(pick===0){const v=await askNumber("パワー＋いくつ？",3000);if(v!=null)c.buff.pm=(c.buff.pm||0)+v;}
       else if(pick===1){const v=await askNumber("パワー−いくつ？",3000);if(v!=null)c.buff.pm=(c.buff.pm||0)-v;}
       else if(pick===2){const v=await askNumber("パワーアタッカー＋いくつ？",2222);if(v!=null)c.buff.pa=(c.buff.pa||0)+v;}
-      else if(pick===9){c.buff.noLeave=true;toast(`🛡 ${faceNameOf(c)}：このターン、バトルゾーンを離れない`);}
-      else if(pick===10){c.buff.noDestroy=true;toast(`🛡 ${faceNameOf(c)}：このターン、破壊されない`);}
+      else if(pick===9){c.buff.noLeave=true;toast(`⚓ ${faceNameOf(c)}：このターン、バトルゾーンを離れない`);}
+      else if(pick===10){c.buff.noDestroy=true;toast(`🪨 ${faceNameOf(c)}：このターン、破壊されない`);}
       else if(pick===11){c.buff.sa=true;toast(`⚡ ${faceNameOf(c)}：スピードアタッカー付与`);}
       else if(pick===12){const v=await askNumber("ブレイク数＋いくつ？",1);if(v!=null){c.buff.breakPlus=(c.buff.breakPlus||0)+v;toast(`💥 ${faceNameOf(c)}：ブレイク数＋${v}`);}}
       else if(pick===3)c.buff.slayer=true;
@@ -13085,7 +13132,14 @@ function openCardSheet(ctx){
       box.appendChild(actBtn("バトルへ（NEOクリーチャー：出し方を確認）",()=>{playNeoCreature(ctx.p,ctx.zone,ctx.id);},"primary"));
       continue;
     }
-    box.appendChild(actBtn(label,()=>{moveCard(ctx.p,ctx.zone,ctx.id,tz);closeSel();renderAll();}));
+    box.appendChild(actBtn(label,async ()=>{
+      if(ctx.zone==="battle"&&["hand","mana","deckTop","deckBottom","exile"].includes(tz)&&(()=>{const rE=getReg(c);return rE&&(rE.trueEscape||allyGrant(ctx.p,"agTEsc"));})()){
+        closeSel();closeSheet();
+        if(await offerTrueEscape(ctx.p,c)){renderAll();return;}
+        moveCard(ctx.p,ctx.zone,ctx.id,tz);renderAll();return;
+      }
+      moveCard(ctx.p,ctx.zone,ctx.id,tz);closeSel();renderAll();
+    }));
   }
   if(S.vs){
     const op=ctx.p===0?1:0;
