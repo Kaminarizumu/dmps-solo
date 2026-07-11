@@ -511,6 +511,9 @@ body.shake{animation:bodyShake .4s ease-out}
   -webkit-user-select:text;user-select:text;width:100%;
 }
 .panelbox textarea{min-height:100px;line-height:1.5;font-size:13px}
+.panelbox select,.panelbox input{min-width:0;max-width:100%}
+.panelbox .row{max-width:100%}
+.panelbox .row>select,.panelbox .row>input{flex-shrink:1}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
 .hint{font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px}
 .status{font-size:12px;color:var(--accent);margin-top:6px;min-height:1em}
@@ -3730,6 +3733,12 @@ const FX_TYPES=[
   ["manaElemPick","相手エレメントをn個選んでマナ送り（対象選択）"],
   ["bouncePick","相手クリーチャーをn体選んで手札に戻す（対象選択）"],
   ["bounceElemPick","相手エレメントをn個選んで手札に戻す（対象選択）"],
+  ["selfDestroy","自分のクリーチャーをn体選んで破壊する（自分で選ぶ）"],
+  ["selfMana","自分のクリーチャーをn体選んでマナ送り（自分で選ぶ）"],
+  ["selfBounce","自分のクリーチャーをn体選んで手札に戻す（自分で選ぶ）"],
+  ["foeSelfDestroy","相手は自身のクリーチャーをn体選んで破壊する（相手が選ぶ）"],
+  ["foeSelfMana","相手は自身のクリーチャーをn体選んでマナに送る（相手が選ぶ）"],
+  ["foeSelfBounce","相手は自身のクリーチャーをn体選んで手札に戻す（相手が選ぶ）"],
   ["shieldPickNew","相手クリーチャーをn体選んで新しいシールドに追加（対象選択・表向き）"],
   ["shieldPickTuck","相手クリーチャーをn体選んで既存のシールドに表向きで重ねる（対象選択）"],
   ["grsummon","GR召喚 n体（超GRの上から）"],
@@ -4461,21 +4470,31 @@ async function runFxList(pi,list,srcCard){
         const j=randInt(TZ.battle.length);
         await destroyWithReplace(tp,TZ.battle[j]);
       }
-    }else if(f.t==="destroyPick"||f.t==="manaPick"||f.t==="bouncePick"||f.t==="destroyElemPick"||f.t==="manaElemPick"||f.t==="bounceElemPick"){
-      if(!S.vs){toast("（ソロのためスキップ）");continue;}
+    }else if(f.t==="destroyPick"||f.t==="manaPick"||f.t==="bouncePick"||f.t==="destroyElemPick"||f.t==="manaElemPick"||f.t==="bounceElemPick"
+             ||f.t==="selfDestroy"||f.t==="selfMana"||f.t==="selfBounce"||f.t==="foeSelfDestroy"||f.t==="foeSelfMana"||f.t==="foeSelfBounce"){
       const isElem=f.t.includes("Elem");
-      const isDestroy=f.t.startsWith("destroy");
-      const isMana=f.t.startsWith("mana");
+      const isDestroy=f.t.toLowerCase().includes("destroy");
+      const isMana=f.t.toLowerCase().includes("mana");
       const act=isDestroy?"破壊":isMana?"マナ送り":"手札に戻す";
       const unit=isElem?"エレメント":"クリーチャー";
-      const pc=await askChoice(`🎯 ${act}（${n}${isElem?"個":"体"}）：対象プレイヤーを選択`,[`相手（${S.players[op].label}）`,`自分（${S.players[pi].label}）`]);
-      if(pc===null)continue;
-      const tp=(pc===0?op:pi);
+      // 対象プレイヤーの決定：self*=自分固定／foeSelf*=相手固定（相手自身）／それ以外=選択
+      let tp;
+      const fixedSelf=f.t.startsWith("self");
+      const fixedFoe=f.t.startsWith("foeSelf");
+      if(fixedSelf)tp=pi;
+      else if(fixedFoe){if(!S.vs){toast("（ソロのためスキップ）");continue;}tp=op;}
+      else{
+        if(!S.vs){toast("（ソロのためスキップ）");continue;}
+        const pc=await askChoice(`🎯 ${act}（${n}${isElem?"個":"体"}）：対象プレイヤーを選択`,[`相手（${S.players[op].label}）`,`自分（${S.players[pi].label}）`]);
+        if(pc===null)continue;
+        tp=(pc===0?op:pi);
+      }
       const TZ=zonesOf(tp);
+      const chooser=fixedFoe?`${S.players[tp].label}（相手自身）が選ぶ`:"";
       for(let i=0;i<n;i++){
         const pool=isElem?TZ.battle.slice():TZ.battle.filter(x=>isCreatureReg(getReg(x)));
         if(!pool.length){toast(`対象の${unit}がいません`);break;}
-        const j=await pickCard(`🎯 ${act}する${unit}を選択（${i+1}/${n}${isElem?"個":"体"}目・キャンセルで終了）`,pool,{sub:x=>x.tapped?"タップ":""});
+        const j=await pickCard(`🎯 ${chooser?chooser+"：":""}${act}する${unit}を選択（${i+1}/${n}${isElem?"個":"体"}目・キャンセルで終了）`,pool,{sub:x=>x.tapped?"タップ":""});
         if(j===null)break;
         const tgt=pool[j];
         if(isDestroy){
