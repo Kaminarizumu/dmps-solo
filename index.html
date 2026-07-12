@@ -1312,6 +1312,8 @@ body.shake{animation:bodyShake .4s ease-out}
           <option value="4">HM時：4枚ブレイク</option>
           <option value="all">HM時：ワールド</option>
         </select>
+        <label><input type="checkbox" id="fxHmLockSpell"> HM時：相手は呪文を唱えられない</label>
+        <input type="text" id="fxHmLockSpellF" placeholder="HM呪文ロックの対象条件（例：コスト5以下・空欄＝全て）" style="flex:1;min-width:170px">
 
         <span style="font-size:12px;font-weight:700">キリフダッシュ</span>
         <select id="fxKirifuda" style="width:auto;flex:0 0 90px" title="キリフダッシュのコスト（タップするマナ枚数）">
@@ -5146,10 +5148,14 @@ function stLockerOf(pi,key,filtKey,r,c){
   // pi=カードを使おうとしている側。相手のバトルゾーンにロック持ちがいればそのカードを返す
   if(!S.expert||!S.vs)return null;
   const op2=pi===0?1:0;
+  // ハイパーモード連動版のキー（例：stLockSpell→hmLockSpell）。そのカードがHM解放中(b.hyper)のときのみ有効
+  const hmKey="hm"+key.slice(2);
+  const hmFiltKey=filtKey?"hm"+filtKey.slice(2):filtKey;
   for(const b of zonesOf(op2).battle){
     const rb=getReg(b);
-    if(!rb||!rb[key]||isSealed(b)||isIgnored(b,op2))continue;
-    if(lockFilterOk(rb[filtKey],r,c))return b;
+    if(!rb||isSealed(b)||isIgnored(b,op2))continue;
+    if(rb[key]&&lockFilterOk(rb[filtKey],r,c))return b;
+    if(b.hyper&&rb[hmKey]&&lockFilterOk(rb[hmFiltKey],r,c))return b;
   }
   return null;
 }
@@ -5340,6 +5346,14 @@ function civilCount(reg,pi){
   }).length;
   return {ok:cnt>=need,cnt,need};
 }
+function soulXUnder(c){
+  if(!c||!c.under||!c.under.length)return [];
+  return c.under.filter(u=>{const ru=getReg(u);return ru&&ru.soulX;});
+}
+function soulXCipFx(c){
+  // 下の超魂Xカードの出た時(CIP)効果＝faces[0]
+  return soulXUnder(c).filter(u=>{const ru=getReg(u);return ru&&ru.faces&&ru.faces[0]&&ru.faces[0].length;});
+}
 function enqueueFx(pi,c){
   if(!S.expert)return;
   if(c._repPending)return;
@@ -5358,7 +5372,7 @@ function enqueueFx(pi,c){
   if([0,1].some(p=>zonesOf(p).battle.some(b=>b.gear&&b.gear.includes(c))))return;
   const reg=getReg(c);
   const hasFx=reg&&(reg.faces[0].length||(reg.twin&&reg.faces[1].length)||(reg.modeN|0)>0);
-  if(!hasFx&&!(reg&&reg.soulRaid))return;
+  if(!hasFx&&!(reg&&reg.soulRaid)&&!soulXCipFx(c).length)return;
   fxQueue.push({pi,c,reg});
   pumpFx();
 }
@@ -5387,16 +5401,16 @@ async function pumpFx(){
         await runFxList(pi,list,c);
       }
     };
-    if(reg.twin){
+    if(reg&&reg.twin){
       const pick=await askChoice(`《${faceNameOf(c)}》はツインパクトです。\nどちらの面の効果を処理しますか？`,
         [`上面：${fxSummary(reg.faces[0])}`,`下面：${fxSummary(reg.faces[1])}`,"処理しない"]);
       if(pick===0)await runTimes(reg.faces[0]);
       else if(pick===1)await runTimes(reg.faces[1]);
-    }else if(reg.faces[0].length){
+    }else if(reg&&reg.faces[0].length){
       toast(`⚡自動処理：${faceNameOf(c)}`);
       await runTimes(reg.faces[0]);
     }
-    const md=reg.modeN|0;
+    const md=reg?reg.modeN|0:0;
     if(md>0){
       const opts=String(reg.modeOpts||"").split("\n").map(x=>x.trim()).filter(Boolean);
       const rest=opts.slice();
@@ -5409,6 +5423,18 @@ async function pumpFx(){
         if(!reg.modeDup)rest.splice(j,1);
         toast(`✅ 効果宣言：${lb}`);
         renderAll();
+      }
+    }
+    // 🔗 超魂X：下に超魂Xカードがあれば、その出た時(CIP)効果を上のクリーチャーの能力として自動処理
+    if(zonesOf(pi).battle.some(x=>x.id===c.id)){
+      for(const sx of soulXUnder(c)){
+        const rsx=getReg(sx);
+        if(rsx&&rsx.faces&&rsx.faces[0]&&rsx.faces[0].length){
+          toast(`🔗 超魂X：${faceNameOf(c)} が下の《${faceNameOf(sx)}》の能力を発動`);
+          await runFxList(pi,rsx.faces[0],c);
+        }
+        const hasManual=rsx&&(((rsx.watchFx||[]).length)||(rsx.modeN|0)>0);
+        if(hasManual)toast(`🔗 超魂X：《${faceNameOf(sx)}》に攻撃時/誘発の手動能力があります（攻撃時のパネル・またはメニューから処理）`);
       }
     }
     // 🔥 超魂レイド（出た時：山上3枚→進化元1枚を下に置く）。バトルゾーンにいる時のみ。
@@ -6514,6 +6540,7 @@ async function startAttack(pi,id){
   const tg=targets[pick];
   c._atkFxDone=false; // 新規アタック宣言のたびにアタック時効果を再有効化（保留→再開は別経路なので影響なし）
   c._allyAtkDone=false;
+  c._sxAtkDone=false;
   const wnames=watchNames(pi,tg.kind==="creature"?"atkC":"atkP");
   if(wnames.length){
     const q=await askChoice(`⚡誘発確認（${tg.kind==="creature"?"クリーチャーへの攻撃":"プレイヤーへの攻撃"}時）\n${wnames.join("、")}\n\n効果を処理しますか？`,
@@ -6618,6 +6645,28 @@ async function execAttack(pi,id,tg){
         }
       }
     }
+  }
+  // 🔗 超魂X：攻撃時、下の超魂Xカードの能力を上のクリーチャーで処理できるパネルを出す
+  if(S.expert&&!c._sxAtkDone){
+    const sxs=soulXUnder(c);
+    for(const sx of sxs){
+      const rsx=getReg(sx);
+      if(!rsx)continue;
+      const atkFx=(rsx.watchFx||[]).filter(w=>["selfAtk","selfAtkC","selfAtkP"].includes(w.ev)&&w.fx&&w.fx.length).flatMap(w=>w.fx);
+      const cipFx=(rsx.faces&&rsx.faces[0]&&rsx.faces[0].length)?rsx.faces[0]:null;
+      if(!atkFx.length&&!cipFx)continue;
+      const opts=[];
+      if(atkFx.length)opts.push("⚡ 攻撃時の能力を実行");
+      if(cipFx)opts.push("✨ 登録効果を実行（任意）");
+      opts.push("使わない");
+      const j=await askChoice(`🔗 超魂X（攻撃時）：下の《${faceNameOf(sx)}》の能力（攻撃：${faceNameOf(c)}）`,opts);
+      if(j===null||opts[j]==="使わない")continue;
+      snap();
+      if(opts[j].startsWith("⚡")){toast(`🔗 超魂X 攻撃時：${faceNameOf(sx)}`);await runFxList(pi,atkFx,c);}
+      else{toast(`🔗 超魂X：${faceNameOf(sx)} の登録効果を実行`);await runFxList(pi,cipFx,c);}
+      if(!Z.battle.find(x=>x.id===id)){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
+    }
+    c._sxAtkDone=true;
   }
   // ⚡ 味方全体付与の攻撃時誘発（allyAtk）：自分の場のクリーチャー／シールドのG城が「自分のクリーチャーが攻撃する時」を付与している場合
   if(S.expert&&!c._allyAtkDone){
@@ -7876,6 +7925,8 @@ function renderFxEditor(){
   $("fxHmBlocker").checked=!!FXEDIT.hmBlocker;
   $("fxHmSlayer").checked=!!FXEDIT.hmSlayer;
   $("fxHmBk").value=FXEDIT.hmBk||"";
+  $("fxHmLockSpell").checked=!!FXEDIT.hmLockSpell;
+  $("fxHmLockSpellF").value=FXEDIT.hmLockSpellF||"";
 
   $("fxSInvade").value=FXEDIT.sInvade||"";
   $("fxSympathy").value=FXEDIT.sympathy||"";
@@ -8335,7 +8386,18 @@ function parseCardText(txt,mode){
       out.notes.push({msg:`🌑 ${mg==="zetsu"?"無月の門・絶（場+墓の魔導具6・各ターン終了時／手札・墓地から）":mg==="kyomu"?"虚無月の門（場+墓の魔導具4・揃った時）":"無月の門（場2+墓2の魔導具・揃った時）"}を設定。魔導具は種族「魔導具」で登録すると自動カウントされます`,q:""});}
   }
   // 常在ロック
-  if(/相手は呪文を唱えられない/.test(t))out.set.stLockSpell=true;
+  {
+    const mSL=t.match(/相手は(?:、)?(?:コスト(\d+)以下の)?呪文を(?:唱えられない|唱えることができない)/);
+    if(mSL){
+      const filt=mSL[1]?`コスト${mSL[1]}以下`:"";
+      // ハイパーモード/Zラッシュのカードは、その呪文ロックをHM連動（解放中のみ）として登録
+      if(/ハイパーモード|Ｚラッシュ|Zラッシュ/.test(t)){
+        out.set.hmLockSpell=true; if(filt)out.set.hmLockSpellF=filt;
+      }else{
+        out.set.stLockSpell=true; if(filt)out.set.stLockSpellF=filt;
+      }
+    }
+  }
   if(/相手は(?:クリーチャーを)?(?:バトルゾーンに)?クリーチャーを出せない/.test(t))out.set.stLockCre=true;
   // 条件付きS・トリガー付与（「〜あれば/なら、…S・トリガーを与える」）→ 条件ST欄のみ設定（無条件STはONにしない）
   if(/S・?トリガー」?を与える/.test(t)){
@@ -8635,6 +8697,8 @@ function openFxEditor(key){
     hmBlocker:cur?!!(cur.hmBlocker||cur.hmBK):false,
     hmSlayer:cur?!!(cur.hmSlayer||cur.hmSL):false,
     hmBk:cur&&cur.hmBk||"",
+    hmLockSpell:cur?!!cur.hmLockSpell:false,
+    hmLockSpellF:cur&&cur.hmLockSpellF||"",
 
     sInvade:cur&&cur.sInvade||"",
     sympathy:cur&&cur.sympathy||"",
@@ -8903,6 +8967,8 @@ $("fxSave").addEventListener("click",async ()=>{
     hmBlocker:$("fxHmBlocker").checked,
     hmSlayer:$("fxHmSlayer").checked,
     hmBk:$("fxHmBk").value||"",
+    hmLockSpell:$("fxHmLockSpell").checked,
+    hmLockSpellF:$("fxHmLockSpellF").value.trim(),
 
     sInvade:$("fxSInvade").value||"",
     sympathy:$("fxSympathy").value.trim(),
@@ -9189,6 +9255,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.hmBlocker)attrs.push("HM時ブロッカー");
     if(v.hmSlayer)attrs.push("HM時スレイヤー");
     if(v.hmBk)attrs.push(`HM時ブレイク${v.hmBk==="all"?"：ワールド":v.hmBk+"枚"}`);
+    if(v.hmLockSpell)attrs.push(`HM時：相手は${v.hmLockSpellF?v.hmLockSpellF+"の":""}呪文を唱えられない`);
 
     if(v.invadeZero)attrs.push("侵略ZERO");
     if(v.rev0)attrs.push("革命0");
@@ -11191,6 +11258,7 @@ function cardEl(pi,zone,c){
       if(r0.slayer||(c.buff&&c.buff.slayer)||(r0.hmSlayer&&c.hyper))ics.push("☠");
       const bk0=c.hyper&&r0.hmBk?r0.hmBk:r0.breaks;
       if(bk0&&bk0!=="1")ics.push(bk0==="2"?"W":bk0==="3"?"T":bk0==="all"?"∀":bk0+"B");
+      if(soulXUnder(c).length)ics.push("🔗");
       if(ics.length){
         const ib=document.createElement("span");
         ib.textContent=ics.join("");
@@ -11627,6 +11695,7 @@ function renderAll(){
           else parts.push(`⏸ ${faceNameOf(x)}：クリーチャー制限は進化状態のみ有効（現在は進化していないため無効）`);
         }
         if(rx.stLockSpell)parts.push(`🔒 ${faceNameOf(x)}：${S.players[foe].label}は呪文を唱えられない${rx.stLockSpellF?`（${rx.stLockSpellF}）`:""}`);
+        if(rx.hmLockSpell&&x.hyper)parts.push(`🔒⚡ ${faceNameOf(x)}（HM）：${S.players[foe].label}は${rx.hmLockSpellF?rx.hmLockSpellF+"の":""}呪文を唱えられない`);
         if(rx.repIn)parts.push(`🔁 ${faceNameOf(x)}：置換ロック（${rx.repIn==="manaOverMax"?"最大マナ超→マナ":rx.repIn==="grave"?"→墓地":"→山下"}）`);
         if(rx.qqqx)parts.push(`🔀 ${faceNameOf(x)}：Q.Q.QX（${S.players[foe].label}は山札シャッフル/確認/公開不可）`);
       }
@@ -16810,13 +16879,13 @@ $("bListView").addEventListener("click",()=>{
     $("builderOlay").classList.add("open");
   };
   const t=(m)=>Array.from(m.values()).reduce((a,b)=>a+b,0);
-  $("vTitle").textContent=`📋 現在のリスト（メイン${t(B.counts.main)} / GR${t(B.counts.gr)} / 超次元${t(B.counts.hy)} / ゲーム外${t(B.counts.ex)}）`;
-  $("vHint").textContent="閉じるとビルダーに戻ります";
+  $("vHint").textContent="タップで＋1／左上の「−」で−1（⌘/Ctrl＋タップでも−1）。ゲーム外はタップで枚数入力。0で一覧から外れます。閉じるとビルダーに戻ります";
   $("vSearch").style.display="none";
   $("vOk").style.display="none";
   $("vStatus").textContent="";
-  const g=$("vGrid");g.innerHTML="";
-  const sec=(title,m)=>{
+  const modeMax=mk=>mk==="gr"?2:4;
+  const sec=(title,m,mk)=>{
+    const g=$("vGrid");
     const h=document.createElement("div");
     h.style.cssText="grid-column:1/-1;font-weight:900;font-size:13px;color:var(--accent);border-bottom:1px solid var(--line);padding:6px 2px 3px";
     h.textContent=`${title}（${t(m)}枚）`;
@@ -16829,18 +16898,62 @@ $("bListView").addEventListener("click",()=>{
     }
     for(const [k,n] of m){
       const el=vCardEl(dispName.get(k)||k);
+      el.style.position="relative";
       const b=document.createElement("span");
       b.style.cssText="position:absolute;top:2px;right:2px;background:var(--accent);color:#000;font-size:11px;font-weight:900;padding:1px 6px;border-radius:8px;z-index:5";
       b.textContent="×"+n;
-      el.style.position="relative";
       el.appendChild(b);
+      const minus=document.createElement("button");
+      minus.textContent="−";
+      minus.title="1枚減らす";
+      minus.style.cssText="position:absolute;top:2px;left:2px;width:24px;height:24px;line-height:1;border:none;border-radius:50%;background:rgba(0,0,0,.72);color:#fff;font-size:16px;font-weight:900;z-index:6;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center";
+      minus.addEventListener("click",ev=>{
+        ev.stopPropagation();
+        const cur=m.get(k)||0;
+        const next=Math.max(0,cur-1);
+        if(next===0)m.delete(k);else m.set(k,next);
+        paint();
+      });
+      el.appendChild(minus);
+      el.addEventListener("click",async ev=>{
+        const cur=m.get(k)||0;
+        let next;
+        if(ev.metaKey||ev.ctrlKey){
+          next=Math.max(0,cur-1);
+        }else if(mk==="ex"){
+          const v=await askNumber(`${dispName.get(k)||k} の枚数（0で外す・上限なし）`,cur+1,999);
+          if(v===null)return;
+          next=Math.max(0,v);
+        }else{
+          const mx=modeMax(mk);
+          if(cur>=mx){
+            const j=await askChoice(`${dispName.get(k)||k}：現在${cur}枚（通常上限${mx}枚）`,
+              ["0枚に戻す","1枚減らす","制限なし → 枚数を入力（4枚超え対応）"]);
+            if(j===null)return;
+            if(j===0)next=0;
+            else if(j===1)next=cur-1;
+            else{const v=await askNumber(`${dispName.get(k)||k} の枚数（上限なし・0で外す）`,cur+1,99);if(v===null)return;next=Math.max(0,v);}
+          }else next=cur+1;
+        }
+        if(next===0)m.delete(k);else m.set(k,next);
+        paint();
+      });
       g.appendChild(el);
     }
   };
-  sec("メイン",B.counts.main);
-  sec("超GR",B.counts.gr);
-  sec("超次元",B.counts.hy);
-  sec("ゲーム外",B.counts.ex);
+  const paint=()=>{
+    const g=$("vGrid");
+    const sc=g.scrollTop;
+    $("vTitle").textContent=`📋 現在のリスト（メイン${t(B.counts.main)} / GR${t(B.counts.gr)} / 超次元${t(B.counts.hy)} / ゲーム外${t(B.counts.ex)}）`;
+    g.innerHTML="";
+    sec("メイン",B.counts.main,"main");
+    sec("超GR",B.counts.gr,"gr");
+    sec("超次元",B.counts.hy,"hy");
+    sec("ゲーム外",B.counts.ex,"ex");
+    g.scrollTop=sc;
+    bTotals();
+  };
+  paint();
   $("viewerOlay").classList.add("open");
 });
 $("bSearch").addEventListener("input",bRender);
