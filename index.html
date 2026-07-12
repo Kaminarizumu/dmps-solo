@@ -3388,7 +3388,13 @@ const EFFECTS=[
        for(const x of zonesOf(foe).battle){const rx=getReg(x);if(rx&&rx.cost!=null&&+rx.cost===+n&&isCreatureReg(rx)){x.noAtkBlock=true;cnt++;}}
        if(cnt)toast(`🎲 シャッフ：${S.players[foe].label}のコスト${n}クリーチャー${cnt}体を攻撃/ブロック不可に（既存個体のみ）`);
      }
-     if(modeKey==="tenshi")toast(`🎵 立ち上がれ型：コスト${n}のエレメントの能力を無視（能力無視は手動で処理してください）`);
+     if(modeKey==="tenshi"){
+       // 🎵 立ち上がれ型：相手の同コストのエレメントの能力を無視（宣言者=piの次のターン開始まで）
+       const foe=pi?0:1;
+       let cnt=0;
+       for(const x of zonesOf(foe).battle){const rx=getReg(x);if(rx&&rx.cost!=null&&+rx.cost===+n){x.buff=x.buff||{};x.buff.ignoreAbility=true;markBuffNext(x,["ignoreAbility"],pi);cnt++;}}
+       toast(cnt?`🎵 立ち上がれ：${S.players[foe].label}のコスト${n}エレメント${cnt}体の能力を無視（次の${S.players[pi].label}のターン開始まで）`:`🎵 立ち上がれ：コスト${n}の相手エレメントはいません（呪文ロックは有効）`);
+     }
      sfx("ok");renderAll();
      toast(`🔢 ${S.players[pi].label} が「${n}」を宣言（${["ラッキーナンバー","シャッフ","オーパーツ","立ち上がれ"][mode]}型）！画面上部に表示`);
    }},
@@ -5139,8 +5145,8 @@ function perTurnCapHit(pi,kind){
     let lim=null;
     if(kind==="spell"&&r.stSpellPT>0)lim=+r.stSpellPT;
     if(kind==="creature"&&r.stCrePT>0){
-      // stCrePTevo（進化時のみ）：そのカードが今、進化状態（下に置かれている）である場合のみ有効
-      if(!r.stCrePTevo||(x.under&&x.under.length))lim=+r.stCrePT;
+      // stCrePTevo（進化時のみ）：そのカードが今、進化状態（NEO進化フラグ or 下に進化元）である場合のみ有効
+      if(!r.stCrePTevo||isNeoEvoInstance(x))lim=+r.stCrePT;
     }
     if(lim==null)continue;
     if(best==null||lim<best.limit)best={limit:lim,by:x};
@@ -6193,7 +6199,12 @@ async function breakShields(op,count,attacker,forceIdx){
         continue;
       }
       sh.tapped=false;sh.mark=false;
-      (sh.under&&sh.under.length?sh.under.splice(0):[]).forEach(u=>{u.faceup=true;u.tapped=false;OZ.grave.push(u);});
+      // 🌙 G城の下に重なっているカード（ザ・ラムーン等）は、シールドの重なりとして手札へ（G城本体のみ墓地）
+      if(sh.under&&sh.under.length){
+        const kids=sh.under.splice(0);
+        kids.forEach(u=>{u.faceup=true;u.tapped=false;OZ.hand.push(u);});
+        toast(`🌙 《${faceNameOf(sh)}》の下の${kids.length}枚は手札に加わった`);
+      }
       OZ.grave.push(sh);
       sfx("grave");
       toast(`🏰 G城：《${faceNameOf(sh)}》は離れるかわりに墓地へ（手札に加わらない・S・トリガーなし）`);
@@ -6620,6 +6631,7 @@ async function execAttack(pi,id,tg){
         const bi=Z.battle.findIndex(x=>x.id===c.id);
         hcard.faceup=true;
         hcard.tapped=c.tapped;
+        if(srcZone==="hyper")hcard.isPsy=true; // 🌌 超次元から出たP侵略/P革命チェンジ体は離れると超次元へ戻る
         if(r.invade||r.sInvade||r.pInvade){
           hcard.under=[c,...(c.under?c.under.splice(0):[]),...(hcard.under||[])];
           Z.battle[bi]=hcard;
@@ -6631,11 +6643,12 @@ async function execAttack(pi,id,tg){
           for(const bc of backs){
             bc.tapped=false;bc.faceup=true;bc.rot=0;
             const rb=getReg(bc);
-            if(bc.isGR){bc.faceup=false;bc.under=[];Z.gr.push(bc);}
+            if(r.pKakumei){bc.face=0;bc.rot=0;bc.isPsy=false;bc.under=[];Z.hyper.push(bc);} // 🌌 P革命チェンジ：チェンジ元は超次元ゾーンへ送られる
+            else if(bc.isGR){bc.faceup=false;bc.under=[];Z.gr.push(bc);}
             else if(rb&&rb.ctype==="dragheart"){bc.face=0;bc.rot=0;Z.hyper.push(bc);}
             else Z.hand.push(bc);
           }
-          toast(`${isJ?"🃏J・チェンジ":"♻革命チェンジ"}！ ${faceNameOf(hcard)}（${faceNameOf(c)}は${c.isGR?"GRゾーンの下":"手札"}へ・攻撃継続）`);
+          toast(`${isJ?"🃏J・チェンジ":r.pKakumei?"🌌P革命チェンジ":"♻革命チェンジ"}！ ${faceNameOf(hcard)}（${faceNameOf(c)}は${c.isGR?"GRゾーンの下":r.pKakumei?"超次元ゾーン":"手札"}へ・攻撃継続）`);
         }
         markArrive(hcard);
         emitEvent(pi,"summon");
@@ -9675,7 +9688,15 @@ function numDeclBlocked(card,pTo,kind){
   if(!S.expert||!S.numDecl||S.freePlay)return null;
   const rW=getReg(card);
   if(!rW)return null;
-  const costs=[rW.cost,rW.cost2].filter(v=>v!=null).map(v=>+v);
+  // ツインパクトは「実行する面」のコストだけを判定（クリーチャー面=cost／呪文面=cost2）。
+  // 使わない面のコストが宣言されていても、使う面が宣言外なら実行できる。
+  let costs;
+  if(rW.twin&&rW.cost2!=null){
+    costs=(kind==="spell")?[rW.cost2]:[rW.cost];
+  }else{
+    costs=[rW.cost,rW.cost2];
+  }
+  costs=costs.filter(v=>v!=null).map(v=>+v);
   if(!costs.length)return null;
   const blocks=(mode)=>{
     if(mode==="ooparts"||!mode)return true;           // 全実行（旧データはoopartsとして扱う）
@@ -11491,7 +11512,10 @@ function renderAll(){
         const foe=k?0:1;
         if(rx.stLockCre)parts.push(`🔒 ${faceNameOf(x)}：${S.players[foe].label}はクリーチャーを出せない${rx.stLockCreF?`（${rx.stLockCreF}）`:""}`);
         if(rx.stSpellPT>0)parts.push(`🔒 ${faceNameOf(x)}：${S.players[foe].label}は呪文 各ターン${rx.stSpellPT}回まで（今${(S.spellTurn&&S.spellTurn[foe])||0}回）`);
-        if(rx.stCrePT>0&&(!rx.stCrePTevo||(x.under&&x.under.length)))parts.push(`🔒 ${faceNameOf(x)}：${S.players[foe].label}はクリーチャー 各ターン${rx.stCrePT}体まで（今${(S.playedTurn&&S.playedTurn[foe])||0}体）`);
+        if(rx.stCrePT>0){
+          if(!rx.stCrePTevo||isNeoEvoInstance(x))parts.push(`🔒 ${faceNameOf(x)}：${S.players[foe].label}はクリーチャー 各ターン${rx.stCrePT}体まで（今${(S.playedTurn&&S.playedTurn[foe])||0}体）`);
+          else parts.push(`⏸ ${faceNameOf(x)}：クリーチャー制限は進化状態のみ有効（現在は進化していないため無効）`);
+        }
         if(rx.stLockSpell)parts.push(`🔒 ${faceNameOf(x)}：${S.players[foe].label}は呪文を唱えられない${rx.stLockSpellF?`（${rx.stLockSpellF}）`:""}`);
         if(rx.repIn)parts.push(`🔁 ${faceNameOf(x)}：置換ロック（${rx.repIn==="manaOverMax"?"最大マナ超→マナ":rx.repIn==="grave"?"→墓地":"→山下"}）`);
         if(rx.qqqx)parts.push(`🔀 ${faceNameOf(x)}：Q.Q.QX（${S.players[foe].label}は山札シャッフル/確認/公開不可）`);
