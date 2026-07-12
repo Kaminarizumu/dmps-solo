@@ -4570,9 +4570,11 @@ async function runFxList(pi,list,srcCard){
     }else if(f.t==="reveal"){
       for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;Z.reveal.push(c);}
       renderAll();openRevealPanel(pi,"reveal");
+      await new Promise(r=>{const iv=setInterval(()=>{if(!$("revealOlay").classList.contains("open")){clearInterval(iv);r();}},200);});
     }else if(f.t==="look"){
       for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;Z.look.push(c);}
       renderAll();openRevealPanel(pi,"look");
+      await new Promise(r=>{const iv=setInterval(()=>{if(!$("revealOlay").classList.contains("open")){clearInterval(iv);r();}},200);});
     }else if(f.t==="tapAllOp"){
       const OZt=zonesOf(op);
       let tn=0;
@@ -5457,7 +5459,7 @@ async function offerSoulRaid(pi,c){
   // 進化元候補（クリーチャーを推奨表示・実際の進化条件はプレイヤー判断）。下に置くのは任意（キャンセル＝置かない）
   const j=await pickCard(`🔥 超魂レイド（${faceNameOf(c)}）※下に置くのは任意\nこの下に置く進化元を1枚選択（下部の「閉じる」で置かない）`,look,
     {hint:"タップで下に置く／「閉じる」で置かない（任意・残りは山札の下へ）",
-     sub:x=>{const rx=getReg(x);return (isCreatureReg(rx))?"進化元候補":"";}});
+     sub:x=>{const rx=getReg(x);return rx&&rx.shinkalize?"シンカライズ（進化元）":(isCreatureReg(rx)?"進化元候補":"");}});
   if(j!==null){
     const chosen=look.splice(j,1)[0];
     chosen.faceup=true;chosen.tapped=false;
@@ -8271,9 +8273,10 @@ function parseCardText(txt,mode){
       if(cvm)out.set.civilCiv={"光":"light","水":"water","闇":"dark","火":"fire","自然":"nature"}[cvm[1]];
     }
   }
-  // 🔥 超魂レイド／🔗 超魂X
+  // 🔥 超魂レイド／🔗 超魂X／🌱 シンカライズ
   if(/超魂レイド/.test(t))out.set.soulRaid=true;
   if(/超魂[ＸX]/.test(t))out.set.soulX=true;
+  if(/シンカライズ/.test(t))out.set.shinkalize=true;
   // G城（表向きの新しいシールドとして実行）
   if(/[GＧ]城/.test(t)&&!out.set.ctype)out.set.ctype="gcastle";
   // セイント・キャッスル型：ブレイク肩代わり
@@ -16659,7 +16662,10 @@ function zoneCondOk(expr,pi){
       .replace(/≧|≥/g,">=").replace(/≦|≤/g,"<=")
       .replace(/>=+/g,">=").replace(/<=+/g,"<=")
       .replace(/　/g," ").replace(/\s+/g,"")
-      .replace(/鬼タイム/g,"盾合計<=6");  // 鬼タイム＝両者の盾合計6枚以下
+      .replace(/鬼タイム/g,"盾合計<=6")  // 鬼タイム＝両者の盾合計6枚以下
+      .replace(/(\d+)(?:体|枚|つ|個)?以上/g,">=$1")
+      .replace(/(\d+)(?:体|枚|つ|個)?以下/g,"<=$1")
+      .replace(/(\d+)(?:体|枚|つ|個)ちょうど/g,"=$1");
     const terms=ex.split(/[＆&]/).map(t=>t.trim()).filter(Boolean);
     if(!terms.length)return false;
     const zoneCnt=(nm)=>{
@@ -16683,7 +16689,7 @@ function zoneCondOk(expr,pi){
       }
       const m=t.match(/^(マナ|墓地合計|相手墓地|墓地|盾合計|相手盾|盾|相手バトル|バトル|相手手札|手札|山札)(?:：|:)?([^<>=]*)(>=|<=|=)(\d+)$/);
       if(!m)return false;
-      const zn=m[1],filt=(m[2]||"").trim(),opr=m[3],n=+m[4];
+      const zn=m[1],filt=(m[2]||"").trim().replace(/^[のにはがを、]+/,"").replace(/[のにはがを、]+$/,""),opr=m[3],n=+m[4];
       const arrs={"マナ":Z.mana,"墓地":Z.grave,"相手墓地":OZ.grave,"墓地合計":[...Z.grave,...OZ.grave],"盾":Z.shield,"相手盾":OZ.shield,"盾合計":[...Z.shield,...OZ.shield],"バトル":Z.battle,"相手バトル":OZ.battle,"手札":Z.hand,"相手手札":OZ.hand,"山札":Z.deck}[zn];
       if(!arrs)return false;
       let cnt;
@@ -16706,13 +16712,21 @@ function zoneCondOk(expr,pi){
     });
   }catch(e){return false;}
 }
+function normRace(s){
+  return String(s||"").normalize("NFC")
+    .replace(/[・･·]/g,"")
+    .replace(/[\s\u3000]+/g,"")
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0))
+    .toLowerCase();
+}
 function raceMatch(reg,word){
   if(!reg||!word)return false;
   const pool=[...(reg.races||[]),...(reg.races2||[])];
   if(!pool.length)return false;
-  const words=String(word).split(/[／\/、,]/).map(w=>w.trim()).filter(Boolean);
+  const words=String(word).split(/[／\/、,]/).map(w=>normRace(w)).filter(Boolean);
   if(!words.length)return false;
-  return words.some(w=>pool.some(r=>r&&r.includes(w)));
+  const npool=pool.map(normRace).filter(Boolean);
+  return words.some(w=>npool.some(r=>r.includes(w)));
 }
 function typeMatch(k,tf){
   if(!tf)return true;
