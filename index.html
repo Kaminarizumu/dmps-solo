@@ -5017,11 +5017,12 @@ async function runFxList(pi,list,srcCard){
           const idx=TZ.battle.findIndex(x=>x.id===tgt.id);
           if(idx<0)continue;
           const removed=TZ.battle.splice(idx,1)[0];
-          if(removed.under&&removed.under.length){removed.under.splice(0).forEach(u=>{u.faceup=true;TZ.grave.push(u);});}
+          const _um=(removed.under&&removed.under.length)?removed.under.splice(0):[];
           if(removed.gear&&removed.gear.length){removed.gear.splice(0).forEach(gg=>{gg.faceup=true;TZ.grave.push(gg);});}
           removed.tapped=false;removed.sideways=false;removed.rot=0;removed.buff=null;removed.seals=[];removed.faceup=true;
           if(isMana){TZ.mana.push(removed);toast(`💎 ${faceNameOf(removed)} をマナゾーンへ`);}
           else{removed.mark=false;TZ.hand.push(removed);toast(`↩ ${faceNameOf(removed)} を手札に戻した`);}
+          _um.forEach(u=>{u.faceup=true;u.tapped=false;u.sideways=false;u.rot=0;u.buff=null;u.seals=[];u.mark=false;u.neoEvo=false;u.under=u.under||[];u.gear=u.gear||[];if(isMana)TZ.mana.push(u);else if(typeof toHand==="function")toHand(TZ,u);else TZ.hand.push(u);});
         }
         renderAll();
       }
@@ -5048,11 +5049,12 @@ async function runFxList(pi,list,srcCard){
         const idx=TZ.battle.findIndex(x=>x.id===tgt.id);
         if(idx<0)continue;
         const removed=TZ.battle.splice(idx,1)[0];
-        if(removed.under&&removed.under.length){removed.under.splice(0).forEach(u=>{u.faceup=true;TZ.grave.push(u);});}
+        const _um2=(removed.under&&removed.under.length)?removed.under.splice(0):[];
         if(removed.gear&&removed.gear.length){removed.gear.splice(0).forEach(gg=>{gg.faceup=true;TZ.grave.push(gg);});}
         removed.tapped=false;removed.sideways=false;removed.rot=0;removed.buff=null;removed.seals=[];removed.faceup=true;removed.mark=false;
         TZ.hand.push(removed);
-        toast(`↩ ${faceNameOf(removed)} を${S.players[owp].label}の手札に戻した`);
+        _um2.forEach(u=>{u.faceup=true;u.tapped=false;u.sideways=false;u.rot=0;u.buff=null;u.seals=[];u.mark=false;u.neoEvo=false;u.under=u.under||[];u.gear=u.gear||[];if(typeof toHand==="function")toHand(TZ,u);else TZ.hand.push(u);});
+        toast(`↩ ${faceNameOf(removed)} を${S.players[owp].label}の手札に戻した${_um2.length?`（重ねていた${_um2.length}枚も一緒に）`:""}`);
         renderAll();
       }
       sfx("move");
@@ -8731,12 +8733,18 @@ function parseCardText(txt,mode){
   {
     const mSL=t.match(/相手は(?:、)?(?:コスト(\d+)以下の)?呪文を(?:唱えられない|唱えることができない)/);
     if(mSL){
-      const filt=mSL[1]?`コスト${mSL[1]}以下`:"";
-      // ハイパーモード/Zラッシュのカードは、その呪文ロックをHM連動（解放中のみ）として登録
-      if(/ハイパーモード|Ｚラッシュ|Zラッシュ/.test(t)){
-        out.set.hmLockSpell=true; if(filt)out.set.hmLockSpellF=filt;
+      // 「攻撃中」「攻撃する時」「このターン」等の一時的ロックは常在にしない（手動運用）
+      const ctx=t.slice(Math.max(0,mSL.index-26),mSL.index);
+      if(/攻撃中|攻撃する時|攻撃している|このターン|その(?:クリーチャーの)?攻撃|バトル中/.test(ctx)){
+        out.notes.push("💡「攻撃中は相手は呪文を唱えられない」等の一時的ロックは常在ではありません。常在の呪文ロックはOFFのまま、攻撃時に手動でロック運用してください");
       }else{
-        out.set.stLockSpell=true; if(filt)out.set.stLockSpellF=filt;
+        const filt=mSL[1]?`コスト${mSL[1]}以下`:"";
+        // ハイパーモード/Zラッシュのカードは、その呪文ロックをHM連動（解放中のみ）として登録
+        if(/ハイパーモード|Ｚラッシュ|Zラッシュ/.test(t)){
+          out.set.hmLockSpell=true; if(filt)out.set.hmLockSpellF=filt;
+        }else{
+          out.set.stLockSpell=true; if(filt)out.set.stLockSpellF=filt;
+        }
       }
     }
   }
@@ -10406,17 +10414,16 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   if(!(fromZone==="hand"&&toZone==="battle"))c.buff=null;
   // 🔧 NEO進化フラグは移動でリセット（進化状態は下の進化元 under で判定。踏み倒し/バウンス後の残留を防ぐ）
   c.neoEvo=false;
-  // 🔗 重ね（進化元／無月の門で敷いた魔導具／超魂クロス等）を持つカードがバトルゾーンを離れる時：
-  //   最上段（このカード）だけが移動先へ。下に重なっていたカード・クロスギア・封印は持ち主の墓地へ（デュエプレ標準）。
-  //   ※バトル内移動（battle→battle）では剥がさない。破壊経路・一部バウンスパネルは各自で処理済みだが、
-  //     シールド送り/マナ送り/手札戻し等 moveCardX 経由の全経路をここで統一する。
+  // 🔗 デュエプレ：重ねた進化元／無月の門の魔導具などは、最上段と一緒に同じ移動先ゾーンへ移動する
+  //   （手札へ戻す場合は手札上限を超えた分だけ墓地。※以前の「進化元→墓地」は誤りだったため修正）
+  let _stackMove=null;
   if(fromZone==="battle"&&toZone!=="battle"){
     const OWZ=zonesOf(pFrom);
     if(c.under&&c.under.length){
-      const r0=getReg(c);
-      const d0=(r0&&r0.dest)||"grave";
-      c.under.splice(0).forEach(u=>{u.tapped=false;u.faceup=true;u.sideways=false;u.rot=0;u.buff=null;u.seals=[];u.mark=false;u.neoEvo=false;(OWZ[d0]||OWZ.grave).push(u);});
+      _stackMove=c.under.splice(0);
+      _stackMove.forEach(u=>{u.tapped=false;u.sideways=false;u.rot=0;u.buff=null;u.seals=[];u.mark=false;u.neoEvo=false;u.frozen=false;u.jd=false;u.gl=false;u.face=0;u.under=u.under||[];u.gear=u.gear||[];});
     }
+    // クロスギア・封印は「重ね」ではないため従来どおり持ち主の墓地へ
     if(c.gear&&c.gear.length){c.gear.splice(0).forEach(g=>gearOut(OWZ,g));}
     if(c.seals&&c.seals.length){c.seals.splice(0).forEach(x=>{x.faceup=true;OWZ.grave.push(x);});}
   }
@@ -10465,6 +10472,24 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   }
   else placeCard(Z,toZone,c);
   markArrive(c); // 🔧 配置後に呼ぶ（バトルゾーンに入ってから召喚数カウント/召喚酔い判定を行う）
+  // 🔗 重ねていた進化元などを同じ移動先へ（手札は上限超過分だけ墓地）
+  if(_stackMove&&_stackMove.length){
+    const ZT=zonesOf(pTo);
+    let toGrave=0;
+    for(const u of _stackMove){
+      if(toZone==="hand"){
+        if(typeof toHand==="function"){if(!toHand(ZT,u))toGrave++;}
+        else ZT.hand.push(u);
+      }else if(toZone==="shield"||toZone==="shieldUp"){
+        u.faceup=(toZone==="shieldUp");u.mark=S.turn>0;ZT.shield.push(u);
+      }else{
+        u.faceup=(toZone==="deck")?false:true;
+        placeCard(ZT,toZone,u);
+      }
+    }
+    const zl=(typeof ZLOG!=="undefined"&&ZLOG[toZone])||toZone;
+    toast(`🔗 重ねていた${_stackMove.length}枚も一緒に${S.players[pTo].label}の${zl}へ${toGrave?`（上限超過${toGrave}枚は墓地）`:""}`);
+  }
   if(toZone==="mana"&&S.tapMultiMana){
     const rgm=getReg(c);
     if(rgm&&rgm.civs&&rgm.civs.length>=2){
@@ -17086,35 +17111,60 @@ $("btnHelp").addEventListener("click",()=>{
       ・⌘/Ctrl＋タップ：ビルダーで−1枚／各パネルで複数選択<br>
       ・攻撃：クリーチャーをタップ→「攻撃」→対象選択。侵略/チェンジ/DDD/NS/トリガー等は自動で確認が出ます（EXモード時）<br>
       ・盾タップ→「⚡ブレイクする」でトリガー処理つきブレイク<br><br>
-      <b>■ 条件式の書式（条件付きST／条件付き常在で共通）</b><br>
-      基本形：<code>ゾーン:フィルタ 比較 数値</code>　複数条件は <code>＆</code>（AND）でつなぐ<br><br>
+
+      <b>■ カード登録（テキスト自動解析）</b><br>
+      効果登録で「⭐名前から設定」にカードテキストを貼ると、カードタイプ／コスト／パワー／文明／種族／キーワードを自動で入れます。<br>
+      ・対応表記：公式紹介形式（<code>カードタイプ クリーチャー ／ 種族 X ／ コスト3 パワー3500</code>）、コンパクト表記（<code>名前 VR 無色[種族] (9)</code>／<code>呪文：種族</code>）<br>
+      ・全角数字・括弧コスト<code>(9)</code>・無色/ゼロ文明・「／」区切りの複数種族に対応<br><br>
+
+      <b>■ 選択肢への自動処理の紐づけ（＠記法）</b><br>
+      「選択効果（モード）」の各行の末尾に <code>＠コマンドN</code> を付けると、その選択肢を選んだ時に自動処理します（無い行は宣言のみ＝手動）。<br>
+      例：<code>山上2枚を墓地へ ＠墓地肥やし2</code>／<code>1枚ドロー ＠ドロー1</code>／<code>山上1枚をマナ ＠マナ加速1</code><br>
+      コマンド：墓地肥やしN／相手墓地肥やしN／ドローN／マナ加速N（ブースト・チャージ）／タップマナN／公開N／見るN。複数は「＋」で連結。表示は「＠」より左だけ。<br><br>
+
+      <b>■ 条件式【系統A：状況条件】</b>（代替コスト・条件つき常在・自由条件式・各効果の発動条件・革命の条件 で共通）<br>
+      「ゾーンに何枚あるか」を判定。基本形：<code>ゾーン：フィルタ 比較 数値</code>（「：」は省略可）。複数条件は <code>＆</code>（AND）でつなぐ。<br><br>
       <u>ゾーン一覧</u><br>
-      <code>マナ</code>／<code>墓地</code>／<code>相手墓地</code>／<code>墓地合計</code>（自分＋相手）／<code>盾</code>／<code>相手盾</code>／<code>盾合計</code>（自分＋相手）／<code>バトル</code>／<code>相手バトル</code>／<code>手札</code>／<code>相手手札</code>／<code>山札</code><br><br>
-      <u>フィルタ（省略可・「:」の後に書く）</u><br>
-      ・種族：部分一致。<code>ドラゴン</code>でアーマード・ドラゴン等の括り全体にヒット<br>
-      ・文明：<code>光</code>／<code>水</code>／<code>闇</code>／<code>火</code>／<code>自然</code><br>
-      ・<code>多色</code>：2文明以上のカード<br>
-      ・カード名の一部でも可<br><br>
-      <u>比較演算子</u>：<code>&gt;=</code>（以上）／<code>&lt;=</code>（以下）／<code>=</code>（ちょうど）※≧≦＝も可<br>
-      <u>特殊条件</u>：<code>相手ターン</code>／<code>自分ターン</code>（数値なしで単独使用）<br><br>
-      <u>記入パターン例</u><br>
-      ・<code>マナ:ドラゴン>=3</code> … マナにドラゴンが3枚以上<br>
-      ・<code>マナ:多色>=2</code> … マナに多色が2枚以上<br>
-      ・<code>墓地合計>=13</code> … お互いの墓地の合計13枚以上（ガリュザーク型）<br>
-      ・<code>盾合計<=6</code> … お互いの盾の合計6枚以下（鬼タイム型）※<code>鬼タイム</code>と書いても同じ<br>
-      ・<code>盾>=5</code> … 自分の盾5枚以上の間有効（DG系など）<br>
-      ・<code>手札<=1</code> … 手札1枚以下（G・G・G型）<br>
-      ・<code>相手バトル>=3</code> … 相手のクリーチャー3体以上<br>
-      ・<code>盾<=2＆相手ターン</code> … 自分の盾2枚以下かつ相手ターン中<br>
-      ・<code>墓地:魔導具>=4＆マナ:闇>=1</code> … 複合条件<br><br>
-      <u>使える場所</u>：①条件付きST（達成でブレイクパネルに⚡バッジ）②条件付き常在（達成中：離れない/破壊されない/SA/ブロックされない）<br>
-      <u>シンパシー専用の追加書式</u>：<code>12000以上</code>（パワー）／<code>コスト5以上</code>も対象指定に使えます（「／」区切りで種族と併用可）<br><br>
-      <b>■ 種族・シンパシーの書式</b><br>
-      ・部分一致（「ドラゴン」でアーマード・ドラゴン等もヒット）<br>
-      ・「／」区切りで複数OR（例：ドラゴン／コマンド）<br>
-      ・シンパシーは追加で「12000以上」「コスト5以上」も使用可<br><br>
+      <code>マナ</code>／<code>墓地</code>／<code>盾</code>／<code>バトル</code>／<code>手札</code>／<code>山札</code>／<code>バトルマナ</code>（自分のバトル＋マナ合計）／<code>相手墓地</code>／<code>相手盾</code>／<code>相手バトル</code>／<code>相手手札</code>／<code>墓地合計</code>・<code>盾合計</code>（両者合計）<br><br>
+      <u>フィルタ（系統Aで使えるもの・1ゾーンにつき1つ）</u><br>
+      ・種族名（部分一致。<code>ドラゴン</code>でアーマード・ドラゴン等もヒット。中黒有無どちらでも）<br>
+      ・文明：<code>光</code>／<code>水</code>／<code>闇</code>／<code>火</code>／<code>自然</code>　・<code>多色</code>（2文明以上）<br>
+      ・<code>呪文</code>／<code>クリーチャー</code>／<code>ツインパクト</code>　・カード名の一部<br>
+      ※系統Aではコスト/パワー指定や「／」ANDは不可（複数条件は <code>＆</code> を使用）<br><br>
+      <u>比較演算子</u>：<code>&gt;=</code>（以上）／<code>&lt;=</code>（以下）／<code>=</code>（ちょうど）※≧≦＝や全角数字も可<br>
+      <u>自然文・特殊語（自動変換）</u>：<code>N枚以上</code>→<code>&gt;=N</code>／<code>N枚以下</code>→<code>&lt;=N</code>／<code>革命N</code>→<code>盾&lt;=N</code>／<code>鬼タイム</code>→<code>盾合計&lt;=6</code>／<code>相手ターン</code>・<code>自分ターン</code><br>
+      <u>ゾーン対ゾーン比較</u>：数の代わりにゾーンを置ける。<code>盾&gt;=手札</code>／<code>バトル&gt;相手バトル</code><br><br>
+      <u>例</u><br>
+      ・<code>マナ:エンジェル・コマンド>=3</code>（マナにエンジェル・コマンド3体以上）<br>
+      ・<code>バトルマナ:ジョーカーズ>=11</code>（バトル＋マナのジョーカーズ11枚以上／G・ゼロ型）<br>
+      ・<code>盾<=2</code>（＝革命2）／<code>墓地:ドラゴン>=5</code>／<code>手札<=1</code><br>
+      ・<code>マナ:光>=5＆相手ターン</code>／<code>盾合計<=6</code>（鬼タイム）<br><br>
+
+      <b>■ 条件式【系統B：対象フィルタ】</b>（条件バウンス・回収・呪文/クリーチャーロックの対象条件 で共通）<br>
+      「どのカードを対象にするか」を絞る式。<br>
+      ・コスト：<code>コスト5以下</code>／<code>コスト7以上</code>　・パワー：<code>パワー3000以下</code>／<code>パワー6000以上</code><br>
+      ・文明：<code>光</code>／<code>水</code>／<code>闇</code>／<code>火</code>／<code>自然</code>／<code>ゼロ</code>　・<code>多色</code>／<code>単色</code><br>
+      ・種族名／カード名の一部　・否定：<code>〜以外</code>（例：<code>光以外</code>）<br>
+      ・<b>AND は「／」区切り</b>（例：<code>コスト5以下／光以外</code>）　・空欄＝全て<br><br>
+
+      <b>■ 条件式の自動生成</b><br>
+      ・<b>G・ゼロ</b>：テキストにあれば代替コスト0＋条件式を自動生成（例：「バトルゾーンまたはマナゾーンに自分の◯◯が合計N枚以上」→ <code>バトルマナ:◯◯>=N</code>）<br>
+      ・<b>代替コスト</b>：「〜があれば、コストを支払うかわりに/支払わずに」→ 条件式を代替コスト欄へ<br>
+      ・<b>条件式候補</b>：本文中の「[ゾーン]に〜がN枚以上/以下」を検出し、取り込み結果の「案内・注意」に <code>💡 条件式候補：…</code> として表示（該当効果の条件欄にコピー可）<br><br>
+
+      <b>■ 新メカニクス</b><br>
+      ・<b>究極進化</b>：テキストの「究極進化：」で自動設定。対戦中は「⤴ 進化する」で進化クリーチャーを進化元に選び重ね<br>
+      ・<b>ルナティック進化</b>：1枚2面カードとして「🔁多面カード登録」（1面＝通常進化／2面＝究極進化）。本文から進化先・コスト自動。メニュー「🌙ルナティック進化」で変形<br>
+      ・<b>覚醒/龍解/禁断解放（裏返り時効果）</b>：多面登録し、発動効果をその面の出た時効果に。対戦中「変形」→「変形後の効果を発動しますか？」<br>
+      ・<b>革命N</b>：<code>革命0/1/2</code>を自動判定（革命0トリガー・革命チェンジは別）。自分の盾N枚以下で出た時効果が発動。常在/攻撃時は条件欄に <code>革命2</code> 等と記入<br>
+      ・<b>超魂X</b>：上に進化クリーチャーが乗ると出た時効果を自動発動、攻撃時はパネル、🔗バッジ表示<br>
+      ・<b>封印はずし</b>：自分のコマンドが出た時、文明一致の封印を1つ外す案内（ドルマゲドンX型は召喚/侵略ZEROのみ・登録欄で区別）<br><br>
+
+      <b>■ 重ね（進化元・無月の魔導具）の移動（デュエプレ準拠）</b><br>
+      重ねたカードを持つクリーチャーが場を離れる時、下のカードも<b>一緒に同じ移動先ゾーンへ</b>移動（手札は上限超過分だけ墓地／破壊は全部墓地）。クロスギア・封印は持ち主の墓地。<br><br>
+
       <b>■ サーチの2方式</b><br>
-      ・TCG式：山札全体から自由選択　・デュエプレ式：候補のみ表示・該当なしは不発（初期値＝自分の名前で同名サーチ）<br><br>
+      ・TCG式：山札全体から自由選択　・デュエプレ式：候補のみ表示・該当なしは不発<br><br>
       <b>■ 攻撃時の手動効果</b><br>
       ・効果「⏸ 処理中にする」で攻撃を保留→盤面で解決→左下「▶ 攻撃を再開」<br><br>
       <b>■ オフライン（機内モード）</b><br>
