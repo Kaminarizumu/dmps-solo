@@ -6775,6 +6775,7 @@ async function startAttack(pi,id){
   c._atkFxDone=false; // 新規アタック宣言のたびにアタック時効果を再有効化（保留→再開は別経路なので影響なし）
   c._allyAtkDone=false;
   c._sxAtkDone=false;
+  c._mbDone=false;
   const wnames=watchNames(pi,tg.kind==="creature"?"atkC":"atkP");
   if(wnames.length){
     const q=await askChoice(`⚡誘発確認（${tg.kind==="creature"?"クリーチャーへの攻撃":"プレイヤーへの攻撃"}時）\n${wnames.join("、")}\n\n効果を処理しますか？`,
@@ -6938,6 +6939,16 @@ async function execAttack(pi,id,tg){
       if(!Z.battle.find(x=>x.id===id)){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
     }
     c._allyAtkDone=true;
+  }
+  // 💣 マジボンバー／W・マジボンバー（攻撃する時）：侵略・革命チェンジより先に処理する
+  if(S.expert){
+    const rMB0=getReg(c);
+    if(rMB0&&rMB0.magib&&(+rMB0.magibN>0)&&!isSealed(c)&&!isIgnored(c,pi)&&!c._mbDone){
+      c._mbDone=true;
+      await doMagibomber(pi,c,rMB0);
+      renderAll();
+      if(!Z.battle.find(x=>x.id===id)){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
+    }
   }
   // 侵略・革命チェンジ・S級侵略（ゾーン横断・複数回可・重ねた順に処理）
   let invadedOnce=false;
@@ -7194,11 +7205,13 @@ async function execAttack(pi,id,tg){
       }
     }
   }
-  // 💣 マジボンバー／W・マジボンバー（攻撃する時：山札の上を見て、コストN以下のクリーチャーを手札/山上から出す）
+  // 💣 マジボンバー：侵略・革命チェンジで新たにマジボンバー持ちが最上段になった場合のみ追加処理（二重発動しない）
   if(S.expert){
-    const rMB=getReg(c);
-    if(rMB&&rMB.magib&&(+rMB.magibN>0)&&!isSealed(c)&&!isIgnored(c,pi)){
-      await doMagibomber(pi,c,rMB);
+    const atkNow=Z.battle.find(x=>x.id===id)||c;
+    const rMB=getReg(atkNow);
+    if(rMB&&rMB.magib&&(+rMB.magibN>0)&&!isSealed(atkNow)&&!isIgnored(atkNow,pi)&&!atkNow._mbDone){
+      atkNow._mbDone=true;
+      await doMagibomber(pi,atkNow,rMB);
       renderAll();
     }
   }
@@ -17171,7 +17184,13 @@ $("btnHelp").addEventListener("click",()=>{
       <u>例</u>：<code>マナ:ドラゴン>=3</code>／<code>マナ:多色>=2</code>／<code>墓地合計>=13</code>／<code>盾合計<=6</code>／<code>手札<=1</code>／<code>相手バトル>=3</code>／<code>盾<=2＆相手ターン</code>／<code>バトルマナ:ジョーカーズ>=11</code><br><br>
 
       <b>■ 条件式【系統B：対象フィルタ】</b>（条件バウンス・回収・ロックの対象条件で共通）<br>
-      <code>コスト5以下</code>／<code>コスト7以上</code>／<code>パワー3000以下</code>／<code>パワー6000以上</code>／文明<code>光水闇火自然ゼロ</code>／<code>多色</code>・<code>単色</code>／種族名／カード名の一部／否定<code>〜以外</code>／<b>AND は「／」区切り</b>（例：<code>コスト5以下／光以外</code>）／空欄＝全て<br><br>
+      <code>コスト5以下</code>／<code>コスト7以上</code>／<code>パワー3000以下</code>／<code>パワー6000以上</code>／文明<code>光水闇火自然ゼロ</code>／<code>多色</code>・<code>単色</code>／種族名／カード名の一部／否定<code>〜以外</code>／<b>AND は「／」区切り</b>／空欄＝全て（※系統Bでは「クリーチャー/呪文」は使えません）<br>
+      <u>例</u>：<code>コスト3以下</code>（コスト3以下だけ）／<code>パワー4000以下</code>／<code>ドラゴン</code>（種族）／<code>火／コスト5以下</code>（火かつコスト5以下）／<code>光以外</code>／<code>多色</code>／<code>ボルシャック</code>（名前の一部）<br>
+      <u>使用場面の例</u>：<br>
+      ・「相手のコスト3以下のクリーチャーを手札に戻す」→ 条件バウンスの条件欄に <code>コスト3以下</code><br>
+      ・「相手はコスト5以下の呪文を唱えられない」→ 呪文ロックの対象条件に <code>コスト5以下</code><br>
+      ・「墓地から闇のカードを2枚 手札に戻す」→ 回収の条件欄に <code>闇</code>（実行時に墓地を選択）<br>
+      ・「相手のパワー3000以下をすべて破壊」→ 全体破壊の対象条件に <code>パワー3000以下</code><br><br>
 
       <b>■ サーチの2方式</b><br>
       ・TCG式：山札全体から自由選択　・デュエプレ式：候補のみ表示・該当なしは不発<br><br>
