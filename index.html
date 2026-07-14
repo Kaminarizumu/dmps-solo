@@ -1350,6 +1350,15 @@ body.shake{animation:bodyShake .4s ease-out}
             <option value="2">革命2（盾2枚以下）</option>
           </select>
         </label>
+        <label style="display:flex;align-items:center;gap:6px">⚙ クロスコスト（クロスギア用・クロス①等）
+          <input type="number" id="fxGearCrossN" style="width:70px" value="0" min="0">
+        </label>
+        <label><input type="checkbox" id="fxAccel"> 🅰 アクセル（クロスギアがクロスされている時に能力を得る）</label>
+        <label><input type="checkbox" id="fxKorin"> 🕊 光臨／P'S光臨（自分のターン終了時、タップ状態なら山上を見て指定クリーチャーを出す）</label>
+        <input type="text" id="fxKorinFilt" placeholder="光臨で出す対象（例：オラクル／コスト5以下・系統B書式）" style="flex:1;min-width:200px">
+        <label style="display:flex;align-items:center;gap:6px">見る枚数
+          <input type="number" id="fxKorinLook" style="width:70px" value="6" min="1">
+        </label>
         <label><input type="checkbox" id="fxSilent"> サイレントスキル（アンタップの代わりに効果発動）</label>
         <label><input type="checkbox" id="fxGuardman"> ガードマン（味方が攻撃された時、タップして身代わり）</label>
         <label><input type="checkbox" id="fxSA"> スピードアタッカー（召喚酔いしない）</label>
@@ -2800,6 +2809,36 @@ function nextTurn(){
       const isMine=pi2===cur2;
       runWatchFxCond(pi2,(ev)=>ev==="turnEndBoth"||(isMine&&ev==="turnEndMine")||(!isMine&&ev==="turnEndOpp"));
     }
+    // 🕊 光臨／P'S光臨：自分のターン終了時、タップされていれば山上を見て指定クリーチャーをバトルゾーンに出す
+    {
+      const ZK=zonesOf(cur2);
+      const korins=ZK.battle.filter(x=>{const r=getReg(x);return r&&r.korin&&x.tapped&&(!r.accel||(x.gear&&x.gear.length))&&!isSealed(x)&&!isIgnored(x,cur2);});
+      if(korins.length){
+        (async()=>{
+          for(const kc of korins){
+            const r=getReg(kc);
+            if(!ZK.battle.find(x=>x.id===kc.id)||!kc.tapped)continue;
+            const look=(+r.korinLook)||6;
+            const filt=r.korinFilt||"";
+            const top=ZK.deck.slice(0,look);
+            const cands=top.filter(x=>{const rx=getReg(x);return isCreatureReg(rx)&&(!filt||lockFilterOk(filt,rx,x));});
+            if(!cands.length){toast(`🕊 光臨（${faceNameOf(kc)}）：山上${look}枚に該当クリーチャーなし`);continue;}
+            const j=await askChoice(`🕊 光臨（${faceNameOf(kc)}）：山上${look}枚から出すクリーチャーを選択${filt?`（${filt}）`:""}`,[...cands.map(x=>faceNameOf(x)),"出さない"]);
+            if(j===null||j>=cands.length)continue;
+            snap();
+            const pick=cands[j];
+            const di=ZK.deck.findIndex(x=>x.id===pick.id);
+            if(di<0)continue;
+            ZK.deck.splice(di,1);
+            pick.faceup=true;pick.tapped=false;
+            if(battleSlotFull(cur2)){ZK.grave.push(pick);toast(`🟥 バトルゾーン7面のため《${faceNameOf(pick)}》は墓地へ`);}
+            else{ZK.battle.push(pick);markArrive(pick);emitEvent(cur2,"summon");enqueueFx(cur2,pick);toast(`🕊 光臨！ ${faceNameOf(pick)} をバトルゾーンへ`);}
+            renderAll();
+            await waitFxIdle();
+          }
+        })();
+      }
+    }
     // B・A・D：軽減召喚したクリーチャーはターンの終わりに破壊
     {
       const ZB=zonesOf(cur2);
@@ -3469,9 +3508,15 @@ let FX_PI=null;
 function fxActor(){return (FX_PI!=null)?FX_PI:(S.vs?S.who:0);}
 /* 踏み倒し・サーチ等でバトルゾーンへ出す前の共通ロック判定（常在＋ターン限定＋未登録）
    戻り値: true=出してOK / false=ブロック（呼び出し側は出すのを中止） */
-/* 🟥 デュエプレモード：バトルゾーンは7体まで。8体目以降は出せない（TCG/フリープレイは無制限） */
+/* 🟥 デュエプレモード：バトルゾーンは7面まで。クロスギアはジェネレート中もクロス中も1面に数える（TCG/フリープレイは無制限） */
+function battleSlotCount(pi){
+  const Z=zonesOf(pi);
+  let n=Z.battle.length; // 場のオブジェクト（クリーチャー／ジェネレート済みクロスギア等）
+  for(const c of Z.battle){if(c.gear&&c.gear.length)n+=c.gear.length;} // クロス中のギアも継続カウント
+  return n;
+}
 function battleSlotFull(pi){
-  return S.gameMode!=="tcg"&&S.expert&&!S.freePlay&&zonesOf(pi).battle.length>=7;
+  return S.gameMode!=="tcg"&&S.expert&&!S.freePlay&&battleSlotCount(pi)>=7;
 }
 /* 効果でクリーチャーを出す時：7体埋まっていればバトルゾーンを経由せず直接墓地へ。
    出せた場合はtrue（呼び出し側でmarkArrive済み）、墓地に送った場合はfalse */
@@ -8160,6 +8205,11 @@ function renderFxEditor(){
   $("fxInvadeZero").checked=!!FXEDIT.invadeZero;
   $("fxRev0").checked=!!FXEDIT.rev0;
   $("fxRevoN").value=String(FXEDIT.revoN==null?-1:FXEDIT.revoN);
+  $("fxGearCrossN").value=FXEDIT.gearCrossN||0;
+  $("fxAccel").checked=!!FXEDIT.accel;
+  $("fxKorin").checked=!!FXEDIT.korin;
+  $("fxKorinFilt").value=FXEDIT.korinFilt||"";
+  $("fxKorinLook").value=FXEDIT.korinLook||6;
   $("fxSilent").checked=!!FXEDIT.silent;
   $("fxGuardman").checked=!!FXEDIT.guardman;
   $("fxSA").checked=!!FXEDIT.sa;
@@ -8515,6 +8565,29 @@ function parseCardText(txt,mode){
     if(mR){
       const v=+String(mR[1]).replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0));
       if(v>=0&&v<=2)out.set.revoN=v;
+    }
+  }
+  // ⚙ クロスコスト（クロス①/クロス1）※「クロスした」等は除外
+  {
+    const circ="①②③④⑤⑥⑦⑧⑨⑩";
+    const tn2=t.replace(/[①-⑩]/g,ch=>String(circ.indexOf(ch)+1));
+    const mCross=tn2.match(/クロス\s*[〔〈［\[（(]?\s*(\d+)/);
+    if(mCross)out.set.gearCrossN=+mCross[1];
+  }
+  // 🅰 アクセル（クロスギアがクロスされている時に能力を得る）
+  if(/アクセル/.test(t))out.set.accel=true;
+  // 🕊 光臨／P'S光臨（ターン終了時タップで山上を見て指定クリーチャーを出す）
+  {
+    const mK=t.match(/(?:P.?S)?光臨[：:]?\s*(?:「[^」]*?：)?\s*(?:コスト(\d+)以下の)?([ァ-ヶ一-龠ーヴ\u30fc・]{2,20})/);
+    if(mK){
+      out.set.korin=true;
+      const race=mK[2]?mK[2].replace(/を得る.*$/,""):"";
+      const parts=[];
+      if(race&&!/^(コスト|クリーチャー|カード)/.test(race))parts.push(race);
+      if(mK[1])parts.push(`コスト${mK[1]}以下`);
+      if(parts.length)out.set.korinFilt=parts.join("／");
+      const mLk=t.match(/山札の上から(\d+)枚/);
+      if(mLk)out.set.korinLook=+mLk[1];
     }
   }
   // 数値：パワー（「パワー 15000+」／公式コピペ「コスト9 15000+ マナ1」／表形式「コスト パワー 6 9000」に対応）
@@ -9048,6 +9121,11 @@ function openFxEditor(key){
     invadeZero:cur?!!cur.invadeZero:false,
     rev0:cur?!!cur.rev0:false,
     revoN:cur&&cur.revoN!=null?cur.revoN:-1,
+    gearCrossN:cur&&cur.gearCrossN||0,
+    accel:cur?!!cur.accel:false,
+    korin:cur?!!cur.korin:false,
+    korinFilt:cur&&cur.korinFilt||"",
+    korinLook:cur&&cur.korinLook||6,
     silent:cur?!!cur.silent:false,
     guardman:cur?!!cur.guardman:false,
     sa:cur?!!cur.sa:false,
@@ -9322,6 +9400,11 @@ $("fxSave").addEventListener("click",async ()=>{
     invadeZero:$("fxInvadeZero").checked,
     rev0:$("fxRev0").checked,
     revoN:parseInt($("fxRevoN").value,10),
+    gearCrossN:+$("fxGearCrossN").value||0,
+    accel:$("fxAccel").checked,
+    korin:$("fxKorin").checked,
+    korinFilt:$("fxKorinFilt").value.trim(),
+    korinLook:+$("fxKorinLook").value||6,
     silent:$("fxSilent").checked,
     guardman:$("fxGuardman").checked,
     sa:$("fxSA").checked,
@@ -9632,6 +9715,9 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.invadeZero)attrs.push("侵略ZERO");
     if(v.rev0)attrs.push("革命0トリガー");
     if(v.revoN!=null&&v.revoN>=0)attrs.push(`🚩革命${v.revoN}（盾${v.revoN}枚以下で有効）`);
+    if(v.gearCrossN)attrs.push(`⚙クロス${v.gearCrossN}`);
+    if(v.accel)attrs.push("🅰アクセル（クロス中に能力獲得）");
+    if(v.korin)attrs.push(`🕊光臨（終了時タップで山上${v.korinLook||6}枚→出す${v.korinFilt?`：${v.korinFilt}`:""}）`);
     if(v.silent)attrs.push("サイレントスキル");
     if(v.guardman)attrs.push("ガードマン");
     if(v.sa)attrs.push("SA");
@@ -10337,6 +10423,12 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
     const rQ=getReg(f.card);
     // 効果未登録（rQ=null）も、バトルゾーンに出す以上クリーチャー扱いにしてロック対象とする
     const isCre=!rQ||["creature","dream","evo","neoevo","starevo","smaxevo","onismaxevo","gneo","neodream","gneodream","twinpact","lunatic","ultimate"].includes(rQ.ctype)||rQ.twin||!rQ.ctype;
+    // 🟥 デュエプレ：クロスギア／タマシード／D2フィールドもバトルゾーンの7面に数える（設置時に上限判定）
+    if(!isCre && rQ && (rQ.ctype==="crossgear"||rQ.ctype==="tamaseed"||rQ.ctype==="d2"||rQ.fieldKind==="d2") && battleSlotFull(pTo)){
+      sfx("flip");
+      toast(`🟥 バトルゾーン上限（7面）：${S.players[pTo].label} はこれ以上出せません（クロスギア/タマシード/D2フィールドも1面）`);
+      MOVE_BLOCKED=true;return;
+    }
     if(isCre){
       // 🟥 デュエプレ：バトルゾーン7体上限。手動召喚（8体目）はブロック（効果での踏み倒しはenterBattleOrGraveで墓地へ）
       if(battleSlotFull(pTo)){
@@ -11665,6 +11757,7 @@ function cardEl(pi,zone,c){
       const bk0=c.hyper&&r0.hmBk?r0.hmBk:r0.breaks;
       if(bk0&&bk0!=="1")ics.push(bk0==="2"?"W":bk0==="3"?"T":bk0==="all"?"∀":bk0+"B");
       if(soulXUnder(c).length)ics.push("🔗");
+      if(r0.accel&&c.gear&&c.gear.length)ics.push("🅰");
       if(ics.length){
         const ib=document.createElement("span");
         ib.textContent=ics.join("");
@@ -13664,15 +13757,39 @@ function openCardSheet(ctx){
       box.appendChild(actBtn(`🔗 超魂X：下の《${faceNameOf(sx)}》の能力を処理（付与された能力）`,async ()=>{
         closeSheet();closeSel();
         const rsx=getReg(sx);
-        if(!rsx||!rsx.faces||!rsx.faces[0]||!rsx.faces[0].length){
-          toast(`🔗 超魂X：${faceNameOf(sx)} に処理できる登録効果がありません（付与内容を効果登録してください）`);
+        const f0=rsx&&rsx.faces&&rsx.faces[0]&&rsx.faces[0].length?rsx.faces[0]:null;
+        const f1=rsx&&rsx.twin&&rsx.faces&&rsx.faces[1]&&rsx.faces[1].length?rsx.faces[1]:null;
+        const md=rsx?(rsx.modeN|0):0;
+        if(!f0&&!f1&&md<=0){
+          toast(`🔗 超魂X：《${faceNameOf(sx)}》に処理できる登録効果がありません。喜像エル等の付与内容を、その超魂Xカードの「自動処理」または「選択効果」に登録してください`);
           return;
         }
         snap();
         toast(`🔗 超魂X：${faceNameOf(c)} が下の《${faceNameOf(sx)}》の能力を得て発動`);
-        // 付与元カードの登録効果を、付与先クリーチャー(c)の主として処理
-        await runFxList(ctx.p,rsx.faces[0],c);
-        await waitFxIdle();
+        // ツインパクトはどちらの面かを選択
+        if(f0&&f1){
+          const pk=await askChoice(`《${faceNameOf(sx)}》はツインパクトです。どちらの面の効果を処理しますか？`,["上面","下面","処理しない"]);
+          if(pk===0)await runFxList(ctx.p,f0,c);
+          else if(pk===1)await runFxList(ctx.p,f1,c);
+        }else if(f0){
+          await runFxList(ctx.p,f0,c);
+        }
+        // 選択式（モード）：付与先クリーチャーの能力として選ぶ
+        if(md>0){
+          const parsed=String(rsx.modeOpts||"").split("\n").map(x=>x.trim()).filter(Boolean).map(parseModeChoice);
+          const rest=parsed.slice();
+          for(let i=0;i<md;i++){
+            const list2=rsx.modeDup?parsed:rest;
+            if(!list2.length)break;
+            const j=await askChoice(`《${faceNameOf(sx)}》選択効果（${i+1}/${md}回目）`,[...list2.map(o=>o.label),"以降選ばない"]);
+            if(j===null||j>=list2.length)break;
+            const chosen=list2[j];
+            if(!rsx.modeDup)rest.splice(j,1);
+            toast(`✅ 効果宣言：${chosen.label}`);
+            renderAll();
+            if(chosen.fx&&chosen.fx.length)await runFxList(ctx.p,chosen.fx,c);
+          }
+        }
         renderAll();
       },"",true));
     }
@@ -14142,9 +14259,20 @@ function openCardSheet(ctx){
       const Z2=zonesOf(ctx.p);
       const pool=Z2.battle.filter(x=>x.id!==c.id&&(()=>{const r2=getReg(x);return !r2||r2.ctype!=="crossgear";})());
       if(!pool.length){toast("クロスできるクリーチャーがいません");return;}
-      const j=pool.length===1?0:await pickCard("クロスする対象を選択（コストは手動で支払ってください）",pool);
+      const j=pool.length===1?0:await pickCard("クロスする対象を選択",pool);
       if(j===null)return;
-      snap();
+      const rG=getReg(c);
+      // クロスコスト：TCG＝カードのコスト（ジェネレートと同じ）／デュエプレ＝ギア個別のクロスコスト
+      const xc=(S.gameMode==="tcg")?((rG&&rG.cost!=null?+rG.cost:0)||0):((rG&&+rG.gearCrossN)||0);
+      if(S.expert&&xc>0&&!S.freePlay){
+        const untapped=Z2.mana.filter(m=>!m.tapped);
+        if(untapped.length<xc){
+          const go=await ask(`クロスコスト${xc}のマナが足りません（未タップ${untapped.length}）。それでもクロスしますか？`);
+          if(!go)return;
+        }
+        snap();
+        for(let k=0;k<xc&&k<untapped.length;k++)untapped[k].tapped=true;
+      }else snap();
       const i2=Z2.battle.findIndex(x=>x.id===c.id);
       Z2.battle.splice(i2,1);
       const host=pool[j];
@@ -14152,7 +14280,7 @@ function openCardSheet(ctx){
       host.gear=host.gear||[];
       host.gear.push(c);
       sfx("ok");closeSheet();closeSel();renderAll();
-      toast(`⚙ クロス！ ${faceNameOf(c)} → ${faceNameOf(host)}（付け替えもコスト支払いで可能）`);
+      toast(`⚙ クロス！ ${faceNameOf(c)} → ${faceNameOf(host)}${xc?`（クロスコスト${xc}）`:""}`);
     },"primary",true));
   }
   if(ctx.zone==="hyper"||(isAura&&["hand","grave","battle"].includes(ctx.zone))){
