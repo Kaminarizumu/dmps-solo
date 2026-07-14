@@ -1243,6 +1243,7 @@ body.shake{animation:bodyShake .4s ease-out}
           <option value="リキッド・ピープル"><option value="リキッド・ピープル閃"><option value="レインボー・ファントム"><option value="レクスターズ"><option value="レッド・コマンド・ドラゴン"><option value="ロスト・クルセイダー"><option value="ロック・ビースト"><option value="ワーム"><option value="ワールド・コマンド"><option value="ワールド・ドラゴン">
           <option value="ワイルド・ベジーズ"><option value="革命軍"><option value="鬼レクスターズ"><option value="禁断"><option value="月光王国"><option value="最終禁断"><option value="侵略者"><option value="超化獣"><option value="超竜"><option value="不死樹王国">
           <option value="暴拳王国"><option value="魔導具"><option value="無色">
+          <option value="ルナティック"><option value="ルナティック・エンペラー"><option value="ナイトメア"><option value="ブレインジャッカー"><option value="リビング・デッド"><option value="チルドレン"><option value="ソルダート"><option value="ロボット">
         </datalist>
       </div>
       <div class="row" style="gap:12px">
@@ -8438,7 +8439,9 @@ function extractEffects(text,mode){
 }
 function parseCardText(txt,mode){
   const out={set:{},fx:[],notes:[],twinHint:false};
-  const t=txt.replace(/\s+/g," ");
+  const t=txt.replace(/\s+/g," ").replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0));
+  // カードタイプ・ラベルから呪文を補完（クリーチャー/進化系は下で判定）
+  if(/カードタイプ[\s　]*呪文/.test(t))out.set.ctype="spell";
   // 「〜を与える」系の付与テキストを除外した本文（キーワード誤検出防止：I amのワールド・ブレイカー付与など）
   const tSelf=t.replace(/「[^」]*」を与え[^。■]*[。]?/g,"").replace(/[^■。]*ブレイカー」?を与える[^。■]*[。]?/g,"");
   // ツインパクトの手掛かり：コスト「7/3」形式、カードタイプ「クリーチャー/呪文」
@@ -8455,6 +8458,8 @@ function parseCardText(txt,mode){
     else if(/G・?NEO進化/.test(t))out.set.ctype="gneo";
     else if(/ルナティック進化/.test(t))out.set.ctype="lunatic";
     else if(/進化クリーチャー/.test(t)&&/進化[：:]/.test(t))out.set.ctype="evo";
+    else if(!out.set.ctype&&/カードタイプ[\s　]*NEOクリーチャー/.test(t))out.set.ctype="neoevo";
+    else if(!out.set.ctype&&/カードタイプ[\s　]*クリーチャー/.test(t))out.set.ctype="creature";
     // 🌙 ルナティック進化：能力「このクリーチャーを《X》に究極進化させる」＋起動コスト（丸数字⑦等に対応）
     if(/ルナティック進化/.test(t)){
       const circ="①②③④⑤⑥⑦⑧⑨⑩⑪⑫";
@@ -8501,15 +8506,18 @@ function parseCardText(txt,mode){
   // 種族（表形式「種族 タイプ <種族> クリーチャー…」/ インライン両対応。連結種族を辞書で分割）
   {
     let rseg=null;
-    // 表形式：種族(＋タイプヘッダ)の後、タイプ語の手前までを種族とみなす
-    let mR=t.match(/種族(?:\s*タイプ)?\s*([ァ-ヶ一-龠ーヴ・／\/]+?)-?\s*(?:クリーチャー|呪文|進化|NEO|フィールド|クロスギア|タマシード|D2|サイキック)/);
+    // 種族ラベル以降を、次の停止語（コスト/パワー/カードタイプ/各カードタイプ語/■/【/文末）の手前まで取得。
+    // 新表記（種族の後がコストや本文■）でも取れるようテンパード方式で判定。
+    const STOP="コスト|パワー|カードタイプ|クリーチャー|呪文|進化|NEO|フィールド|クロスギア|タマシード|サイキック|D2|オレガオーラ|■|【|$";
+    let mR=t.match(new RegExp("種族(?:\\s*タイプ)?[\\s　]*((?:(?!"+STOP+")[ァ-ヶ一-龠ーヴ\u30fc・／\\/A-Za-z0-9'’])+?)\\s*(?="+STOP+")"));
     if(mR)rseg=mR[1];
     if(rseg){
       rseg=rseg.replace(/[-−―\s　]/g,"").trim();
       if(rseg.length>=2&&rseg.length<=40){
         let races=[];
-        if(/[・／\/]/.test(rseg)){
-          races=rseg.split(/[・／\/]/).map(s=>s.trim()).filter(Boolean);
+        if(/[／\/]/.test(rseg)){
+          // 「／」は種族の区切り。中黒「・」は種族名の一部（ファイアー・バード等）なので分割しない。
+          races=rseg.split(/[／\/]/).map(s=>s.trim()).filter(Boolean);
         }else if(typeof KNOWN_RACES!=="undefined"&&KNOWN_RACES.length){
           let rest=rseg;
           while(rest.length){
