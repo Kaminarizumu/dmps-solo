@@ -1540,6 +1540,7 @@ body.shake{animation:bodyShake .4s ease-out}
           <input type="text" id="fxPowPerFilt" list="raceList" placeholder="対象条件（種族/文明/コスト等・「／」区切り・空欄＝全部）" style="flex:1;min-width:150px">
           <label style="font-size:12px"><input type="checkbox" id="fxPowPerExSelf"> このカード自身は数えない</label>
           <label style="font-size:12px"><input type="checkbox" id="fxPowPerAtk"> 攻撃している時だけ</label>
+          <label style="font-size:12px"><input type="checkbox" id="fxPowPerBattle"> バトル中だけ</label>
         </div>
         <div class="row" style="gap:6px 12px;flex-wrap:wrap;align-items:center">
           <span style="font-size:12px;font-weight:700">常在付与（自分のクリーチャー全員）：</span>
@@ -6139,9 +6140,10 @@ function dispCost(c,pi){
   cost=Math.max(floor,cost);
   return cost!==base?{cost,base,up:cost>base}:null;
 }
-function powPerBonus(c,r,attacking){
+function powPerBonus(c,r,attacking,inBattle){
   if(!r||!r.powPer)return 0;
   if(r.powPerAtk&&!attacking)return 0; // 「攻撃している時だけ」＝攻撃時以外は0（ボルシャック・NEX型）
+  if(r.powPerBattle&&!inBattle)return 0; // 「バトル中だけ」＝バトル中以外は0
   const own=[0,1].find(pp=>zonesOf(pp)&&zonesOf(pp).battle.includes(c));
   if(own==null)return 0;
   const foe=own?0:1;
@@ -6199,7 +6201,7 @@ async function effPower(c,attacking,inBattle){
   if(inBattle&&r&&r.pb)p+=(+r.pb||0);
   if(c.sfActive&&r&&r.sforceFx==="pw"&&r.sforceN)p+=(+r.sforceN||0);
   if(c.buff)p+=(c.buff.pa||0)+(c.buff.pm||0);
-  if(r)p+=powPerBonus(c,r,attacking);
+  if(r)p+=powPerBonus(c,r,attacking,inBattle);
   // 条件付きパワー強化（「〔条件〕あれば、このクリーチャーのパワーを+N」）
   if(r&&r.cstPow&&r.cstPowCond){
     const own=[0,1].find(pp=>zonesOf(pp)&&zonesOf(pp).battle.includes(c));
@@ -8566,6 +8568,7 @@ function renderFxEditor(){
   $("fxPowPerFilt").value=FXEDIT.powPerFilt||"";
   $("fxPowPerExSelf").checked=!!FXEDIT.powPerExSelf;
   $("fxPowPerAtk").checked=!!FXEDIT.powPerAtk;
+  {const e=$("fxPowPerBattle");if(e)e.checked=!!FXEDIT.powPerBattle;}
   $("fxAGMach").checked=!!FXEDIT.agMach;
   $("fxAGBlocker").checked=!!FXEDIT.agBlocker;
   $("fxAGSlayer").checked=!!FXEDIT.agSlayer;
@@ -8857,6 +8860,15 @@ function parseCardText(txt,mode){
    if(mCU){out.set.stCostUp=mCU[2]?+mCU[2]:1;if(mCU[1]==="呪文")out.set.stCostUpT="spell";else if(mCU[1]==="クリーチャー")out.set.stCostUpT="creature";}}
   // ハンデス耐性（自分の手札は相手の効果で捨てられない）
   if(/(?:自分の)?手札は[、,]?[\s\S]{0,14}相手[\s\S]{0,14}捨てられない/.test(t))out.set.stNoHandes=true;
+  // 💥 「〔バトル中/攻撃中〕、〔自分/相手〕の〔ゾーン〕にある〔種族〕1枚につきパワーを+N」（ボルシャック・NEX/墓地ファイアー・バード型）
+  {const mPP=t.match(/(バトル中|攻撃中|攻撃時|攻撃する時)?[、,]?(?:(自分|相手)の)?(マナ|墓地|手札|バトルゾーン|シールド|山札)(?:ゾーン)?(?:にある|の)?([ァ-ヶー・ｦ-ﾟ一-龠]{2,12})?[^。■]{0,4}?(\d+)枚につき[^。■]{0,8}?パワーを\s*\+?\s*(\d{3,5})/);
+   if(mPP){out.set.powPer=+mPP[6];
+     out.set.powPerZone={"マナ":"mana","墓地":"grave","手札":"hand","バトルゾーン":"battle","シールド":"shield","山札":"deck"}[mPP[3]]||"grave";
+     out.set.powPerWho=mPP[2]==="相手"?"opp":"self";
+     if(mPP[4]&&!/ゾーン/.test(mPP[4]))out.set.powPerFilt=mPP[4].trim();
+     if(mPP[1]==="バトル中")out.set.powPerBattle=true;
+     else if(mPP[1])out.set.powPerAtk=true;
+   }}
   // 💪 条件付きパワー強化（「〔条件〕あれば、（この）クリーチャーのパワーを+N（する）」）。条件はcondExprFromで汎用的に。
   {const mCP=t.match(/([^。■\n]*?(?:あれば|いれば|なら))[、,]?[^。■\n]*?(?:この)?(?:クリーチャーの)?パワーを\s*\+?\s*(\d{3,5})/);
    if(mCP&&!/相手[^。■\n]{0,12}パワーを\s*\+/.test(t)){const cond=condExprFrom(mCP[1]);if(cond){out.set.cstPow=+mCP[2];out.set.cstPowCond=cond;out.notes.push({msg:`💪 条件付きパワー+${mCP[2]}（${cond}）を設定しました`,q:"条件付きパワー"});}}}
@@ -9606,6 +9618,7 @@ function openFxEditor(key){
     powPerFilt:cur&&cur.powPerFilt||"",
     powPerExSelf:cur?!!cur.powPerExSelf:false,
     powPerAtk:cur?!!cur.powPerAtk:false,
+    powPerBattle:cur?!!cur.powPerBattle:false,
     agMach:cur?!!cur.agMach:false,
     agBlocker:cur?!!cur.agBlocker:false,
     agSlayer:cur?!!cur.agSlayer:false,
@@ -9893,6 +9906,7 @@ $("fxSave").addEventListener("click",async ()=>{
     powPerFilt:$("fxPowPerFilt").value.trim(),
     powPerExSelf:$("fxPowPerExSelf").checked,
     powPerAtk:$("fxPowPerAtk").checked,
+    powPerBattle:$("fxPowPerBattle")?$("fxPowPerBattle").checked:false,
     agMach:$("fxAGMach").checked,
     agBlocker:$("fxAGBlocker").checked,
     agSlayer:$("fxAGSlayer").checked,
