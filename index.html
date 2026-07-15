@@ -1399,6 +1399,11 @@ body.shake{animation:bodyShake .4s ease-out}
         </select>
       </div>
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:12px;font-weight:700">💠 各ターン最初の召喚を軽減</span>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px">コスト−<input type="number" id="fxFirstRed" min="0" placeholder="0" style="width:56px"></label>
+        <input type="text" id="fxFirstRedF" list="raceList" placeholder="対象（種族/名前・「／」区切り・空欄＝すべてのクリーチャー）・コッコ・ルピア型" style="flex:1;min-width:150px">
+      </div>
+      <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
         <span style="font-size:12px;font-weight:700">シンパシー</span>
         <input type="text" id="fxSympathy" list="raceList" placeholder="種族/名前／12000以上／コスト5以上（「／」区切り複数OK）" style="flex:1;min-width:130px">
         <select id="fxSymX" style="width:auto;flex:0 0 96px">
@@ -1407,11 +1412,6 @@ body.shake{animation:bodyShake .4s ease-out}
         </select>
         <span style="font-size:12px;font-weight:700">G・ゼロ</span>
         <input type="text" id="fxGZero" placeholder="条件（メモ）空欄=なし" style="flex:1;min-width:130px">
-      </div>
-      <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
-        <span style="font-size:12px;font-weight:700">💠 各ターン最初の召喚を軽減</span>
-        <label style="font-size:12px;display:flex;align-items:center;gap:4px">コスト−<input type="number" id="fxFirstRed" min="0" placeholder="0" style="width:56px"></label>
-        <input type="text" id="fxFirstRedF" list="raceList" placeholder="対象（種族/名前・「／」区切り・空欄＝すべてのクリーチャー）・コッコ・ルピア型" style="flex:1;min-width:150px">
       </div>
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
         <span style="font-size:12px;font-weight:700">マナ武装</span>
@@ -4115,6 +4115,7 @@ function manaTapIn(c){
 const FX_TYPES=[
   ["draw","n枚ドロー"],
   ["tapAllOp","相手のクリーチャーをすべてタップ（スパーク型）"],
+  ["tapOpN","相手のクリーチャーをn体まで選んでタップ（「〜体までタップ」型）"],
   ["turnLock","⛔ ターン限定ロックを設定（実行時に対象/種別/条件/期間を指定・5000VT後半効果型）"],
   ["foeAtkLockP","⚔ 今バトルゾーンにいる相手クリーチャーは、次の自分のターン開始時までプレイヤーを攻撃できない（ドギラゴールデン型・後から出た分は対象外）"],
   ["charge","n枚マナ加速（山上→マナ）"],
@@ -4164,6 +4165,7 @@ const FX_TYPES=[
   ["flip","この多面カードを裏返す（次の面へ・チャクラ/ディアスZ型・確認あり）"],
   ["handShieldUp","手札から1枚選んで表向きにシールド化（サッヴァーク型・任意/新規盾or重ねるを選択）"],
   ["freeSummon","コストを支払わずにクリーチャーを召喚（実行時に元ゾーンとカードを選択・踏み倒し）"],
+  ["deckRecruit","🔎 山札から条件に合うカードをn体バトルゾーンへ（超探索踏み倒し・条件欄で対象を指定・ボルシャック・NEX型）→山札シャッフル"],
   ["freeCast","コストを支払わずに呪文を唱える（実行時に元ゾーンとカードを選択・解決中へ）"],
   ["underDeck","山札の上からn枚を裏向きでこのカードの下に置く（G城/クリーチャーの下・ザ・ラムーン型）"],
   ["atkNoLeaveSelf","攻撃中のクリーチャーは離れない（このターン・味方攻撃時付与allyAtkと併用）"],
@@ -4741,7 +4743,7 @@ async function runFxList(pi,list,srcCard){
   for(const f of list){
     const Z=zonesOf(pi), OZ=zonesOf(op);
     const n=Math.max(1,f.n|0);
-    if(f.cond&&f.t!=="nextCost"&&f.t!=="bounceFilt"&&f.t!=="retrieveHand"&&f.t!=="diaBliz"&&!zoneCondOk(f.cond,pi)){
+    if(f.cond&&f.t!=="nextCost"&&f.t!=="bounceFilt"&&f.t!=="retrieveHand"&&f.t!=="diaBliz"&&f.t!=="deckRecruit"&&!zoneCondOk(f.cond,pi)){
       toast(`条件未達（${f.cond}）：効果をスキップ`);
       continue;
     }
@@ -4836,6 +4838,18 @@ async function runFxList(pi,list,srcCard){
       for(const b of OZt.battle){if(!b.tapped){b.tapped=true;tn++;}}
       sfx("move");renderAll();
       toast(`⚡ スパーク！ 相手のクリーチャーをすべてタップ（${tn}体）`);
+    }else if(f.t==="tapOpN"){
+      // ⤵ 相手のクリーチャーをn体まで選んでタップ
+      let cnt=0;
+      for(let i=0;i<n;i++){
+        const pool=OZ.battle.filter(x=>!x.tapped);
+        if(!pool.length)break;
+        const j=await pickCard(`⤵ 相手のクリーチャーをタップ（${i+1}/${n}・キャンセルで終了）`,pool,{hint:"タップで選択"});
+        if(j===null)break;
+        pool[j].tapped=true;cnt++;renderAll();
+      }
+      if(cnt>0){sfx("move");toast(`⤵ 相手のクリーチャー${cnt}体をタップ`);}
+      renderAll();
     }else if(f.t==="turnLock"){
       const tgt=S.vs?await askChoice("⛔ ロック対象のプレイヤー",[`相手（${S.players[op].label}）`,`自分（${S.players[pi].label}）`]):0;
       if(tgt===null)continue;
@@ -5246,6 +5260,27 @@ async function runFxList(pi,list,srcCard){
       }
       sfx("ok");renderAll();
       toast(`⚔ ${srcCard?faceNameOf(srcCard):"効果"}：相手のクリーチャー${cnt}体は次の自分のターンまでプレイヤーを攻撃できない（今バトルゾーンにいる分のみ・後から出た分は対象外）`);
+    }else if(f.t==="deckRecruit"){
+      // 🔎 山札から条件(f.cond)に合うカードをn体バトルゾーンへ（超探索踏み倒し・ボルシャック・NEX型）→シャッフル
+      const filt=String(f.cond||"").trim();
+      let put=0;
+      for(let i=0;i<n;i++){
+        const pool=Z.deck.filter(x=>{const rx=getReg(x);return rx&&(!filt||lockFilterOk(filt,rx,x));});
+        if(!pool.length){if(i===0)toast(`山札に該当カードなし${filt?`（${filt}）`:""}`);break;}
+        const j=await pickCard(`🔎 超探索（${i+1}/${n}）：山札から出すカードを選択${filt?`（${filt}）`:""}`,pool,{hint:"タップで選択／キャンセルで終了"});
+        if(j===null)break;
+        const tgt=pool[j];
+        const di=Z.deck.findIndex(x=>x.id===tgt.id);
+        if(di<0)continue;
+        const cc=Z.deck.splice(di,1)[0];cc.faceup=true;cc.tapped=false;
+        Z.battle.push(cc);markArrive(cc);
+        emitEvent(pi,"summon");enqueueFx(pi,cc);
+        put++;
+        toast(`🔎 超探索：${faceNameOf(cc)} をバトルゾーンへ`);
+        renderAll();await waitFxIdle();
+      }
+      if(put>0){shuffle(Z.deck);toast("🔀 山札をシャッフル");}
+      renderAll();
     }else if(f.t==="shieldPickNew"||f.t==="shieldPickTuck"){
       if(!S.vs){toast("（ソロのためスキップ）");continue;}
       const isTuck=f.t==="shieldPickTuck";
@@ -8685,12 +8720,21 @@ function extractEffects(text,mode){
     }
     // 全タップ（スパーク）
     if(/相手の.*クリーチャーを.*(?:すべて|全て).*タップ/.test(cl))fx.push({t:"tapAllOp",n:1});
+    else if(/相手の.*クリーチャーを.*タップ/.test(cl))fx.push({t:"tapOpN",n:numOf(cl,/(\d+)体/)});
     // GR召喚
     if(/GR召喚|超GR/.test(cl)){const n=numOf(cl,/(\d+)体/);fx.push({t:"grsummon",n});}
     // サーチ（山札から手札）
     if(/山札(?:を見て|から).*手札に加える/.test(cl)){
       const n=numOf(cl,/(\d+)枚/);
       fx.push({t:/すべて見|全て見|好きな/.test(cl)?"tutor":"tutorDMPS",n});
+    }
+    // 🔎 超探索踏み倒し（山札から条件に合うカードをバトルゾーンへ・ボルシャック・NEX型）
+    if(/山札(?:から|を見て|を見る)/.test(cl)&&/バトルゾーンに出/.test(cl)&&!/相手/.test(cl)){
+      let filt="";
+      const mN=cl.match(/名前に《([^》]+)》とある/);
+      if(mN)filt=mN[1];
+      else{const mR=cl.match(/([ァ-ヶー・ｦ-ﾟ一-龠]{2,12})を(?:超)?探索/);if(mR&&!/山札/.test(mR[1]))filt=mR[1];}
+      fx.push({t:"deckRecruit",n:numOf(cl,/(\d+)(?:枚|体)/),cond:filt});
     }
     // 横差し（終葬/Q.Q.QX）
     if(/山札の上から4枚目.*?横向き/.test(cl)||/横向き.*?山札の上から4枚目/.test(cl))fx.push({t:"deckPin4",n:1});
@@ -8736,7 +8780,9 @@ function parseCardText(txt,mode){
   const out={set:{},fx:[],notes:[],twinHint:false};
   const t=txt.replace(/\s+/g," ").replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0));
   // カードタイプ・ラベルから呪文を補完（クリーチャー/進化系は下で判定）
-  if(/カードタイプ[\s　]*呪文/.test(t)||/タイプ[^\n]*\n[^\n]*?呪文/.test(t))out.set.ctype="spell";
+  const isTwinType=/コスト\s*(?:パワー\s*)?\d{1,2}\s*[\/／]\s*\d{1,2}/.test(t)||/クリーチャー\s*[\/／]\s*呪文/.test(t);
+  if(isTwinType)out.set.twin=true;
+  if(!isTwinType&&(/カードタイプ[\s　]*呪文/.test(t)||/タイプ[^\n]*\n[^\n]*?呪文/.test(t)))out.set.ctype="spell";
   // 相手の呪文/クリーチャーのコスト増加（メタ）
   {const mCU=t.match(/相手の(呪文|クリーチャー)?(?:を唱える|の召喚|を召喚する|を?出す|の)?コストは?(\d+)?多くなる/);
    if(mCU){out.set.stCostUp=mCU[2]?+mCU[2]:1;if(mCU[1]==="呪文")out.set.stCostUpT="spell";else if(mCU[1]==="クリーチャー")out.set.stCostUpT="creature";}}
@@ -8762,7 +8808,7 @@ function parseCardText(txt,mode){
     else if(/ルナティック進化/.test(t))out.set.ctype="lunatic";
     else if(/進化クリーチャー/.test(t)&&/進化[：:]/.test(t))out.set.ctype="evo";
     else if(!out.set.ctype&&/カードタイプ[\s　]*NEOクリーチャー/.test(t))out.set.ctype="neoevo";
-    else if(!out.set.ctype&&(/カードタイプ[\s　]*クリーチャー/.test(t)||/タイプ[^\n]*\n[^\n]*?クリーチャー/.test(t)))out.set.ctype="creature";
+    else if(!out.set.ctype&&!isTwinType&&(/カードタイプ[\s　]*クリーチャー/.test(t)||/タイプ[^\n]*\n[^\n]*?クリーチャー/.test(t)))out.set.ctype="creature";
     // 🌙 ルナティック進化：能力「このクリーチャーを《X》に究極進化させる」＋起動コスト（丸数字⑦等に対応）
     if(/ルナティック進化/.test(t)){
       const circ="①②③④⑤⑥⑦⑧⑨⑩⑪⑫";
@@ -9000,7 +9046,8 @@ function parseCardText(txt,mode){
     m=t.match(/コスト\s*(\d+)\s*以上/); if(m)out.set.invCost=+m[1];
   }
   // ブレイカー（付与文除外・OCR/コピペ誤認「エ・ブレイカー」→Tとして扱う）
-  if(/[∞Ｉ]\s*・?\s*ブレイカー|インフィニティ・?ブレイカー/.test(tSelf))out.set.breaks="inf";
+  if(/パワード・?ブレイカー/.test(tSelf))out.set.breaks="powered";
+  else if(/[∞Ｉ]\s*・?\s*ブレイカー|インフィニティ・?ブレイカー/.test(tSelf))out.set.breaks="inf";
   else if(/ワールド・?ブレイカー/.test(tSelf))out.set.breaks="all";
   else if(/Q・?ブレイカー/.test(tSelf))out.set.breaks="4";
   else if(/[TＴエ]・?ブレイカー/.test(tSelf))out.set.breaks="3";
