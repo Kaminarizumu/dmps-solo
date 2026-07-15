@@ -1502,7 +1502,7 @@ body.shake{animation:bodyShake .4s ease-out}
           <option value="noDestroyGrp">破壊されない（対象フィルタで指定）</option>
         </select>
         <input type="text" id="fxGGGGrp" placeholder="対象（例：火／コスト7以下・「／」＝AND・空欄＝自身のみ）" style="flex:1;min-width:170px">
-        <label><input type="checkbox" id="fxNoLose"> ゲームに負けない（このカードが場にある間、敗北確定時に警告）</label>
+        <label style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap"><input type="checkbox" id="fxNoLose"> ゲームに負けない（このカードが場にある間、敗北確定時に警告）／条件<input type="text" id="fxNoLoseCond" placeholder="条件式（例：盾<=0＝革命0・空欄＝常時）" style="width:210px"></label>
         <label><input type="checkbox" id="fxSoulShift"> ソウルシフト（進化時、進化元のコスト分軽減）</label>
         <label><input type="checkbox" id="fxGaiash"> 相手のターンの終わりに手札から出せる（ガイアッシュ型・条件はプレイヤー判断）</label>
         <label><input type="checkbox" id="fxSForce"> シールド・フォース（出た時、盾を1つ指定。その盾がある間有効）</label>
@@ -1545,6 +1545,7 @@ body.shake{animation:bodyShake .4s ease-out}
           <span style="font-size:12px">パワー＋</span>
           <input type="number" id="fxStAuraPow" placeholder="0" step="500" style="width:90px">
           <label style="font-size:12px"><input type="checkbox" id="fxStAuraSA"> SAを与える</label>
+          <label style="font-size:12px"><input type="checkbox" id="fxStAuraPB"> パワード・ブレイカーを与える（パワー6000ごとに＋1枚）</label>
           <label style="font-size:12px"><input type="checkbox" id="fxStAuraOthers"> このカード自身は含まない（「自分の他の〜」型）</label>
           <input type="text" id="fxStAuraFilt" list="raceList" placeholder="対象条件（例：ドラゴン／ルピア・空欄＝クリーチャー全部）" style="flex:1;min-width:180px">
         </div>
@@ -1588,6 +1589,7 @@ body.shake{animation:bodyShake .4s ease-out}
             <option value="mana">相手クリーチャーは出るかわりにマナへ（コナユキ型／「召喚は対象外」併用推奨）</option>
           </select>
           <label><input type="checkbox" id="fxRepInNC"> 召喚は対象外（侵略/チェンジ/超次元/踏み倒し/侵略ZERO等のみ置換・マバユキ型）</label>
+          <label><input type="checkbox" id="fxRepInOppTurn"> 相手のターン中のみ置換（コナユキ'26型）</label>
           <input type="text" id="fxRepInF" list="raceList" placeholder="対象条件（単色/多色/文明/種族/名前・「／」区切り・空欄＝全て）" style="flex:1;min-width:170px">
         </div>
         <div style="flex:1 1 100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -3113,10 +3115,11 @@ function nextTurn(){
   if(frz.length)toast(`❄ フリーズ：${frz.join("、")} はアンタップしない`);
   let jdN=[];
   Z.battle.forEach(c=>{if(c.jd){c.jd=false;jdN.push(faceNameOf(c));}});
-  // ✨ 次の自分のターン開始まで持続していた付与を、その持ち主(pi)のターン開始時に解除
+  // ✨ 次の自分のターン開始まで持続していた付与を、その持ち主(pi)のターン開始時に解除。
+  //    相手のクリーチャーに付けたロック（相手ゾーンにある）も解除するため、両者のバトルゾーンを走査する。
   {
     const endN=[];
-    Z.battle.forEach(c=>{
+    for(const pp of [0,1])zonesOf(pp).battle.forEach(c=>{
       if(c.buff&&c.buff._n&&c.buff._n.length&&c.buff._nOwner===pi){
         for(const k of c.buff._n)delete c.buff[k];
         delete c.buff._n;delete c.buff._nOwner;
@@ -4222,6 +4225,7 @@ const FX_TYPES=[
   ["deckShield","🛡 自分の山札の上からn枚を裏向きでシールドゾーンに加える（シールド追加・シールド化）"],
   ["freeSummon","コストを支払わずにクリーチャーを召喚（実行時に元ゾーンとカードを選択・踏み倒し）"],
   ["deckRecruit","🔎 山札から条件に合うカードをn体バトルゾーンへ（超探索踏み倒し・5種提示・条件欄で対象を指定・ボルシャック・NEX型）→山札シャッフル"],
+  ["deckTopRecruitMana","🃏 山札の上からn枚を表向きにし、その中の条件に合うクリーチャーを好きな数バトルゾーンへ・残りをマナゾーンへ（条件欄で対象を指定・ボルシャック究極進化型）"],
   ["deckSearch","🔎 山札から条件に合うカードをn体バトルゾーンへ（探索踏み倒し・3種提示のランダム・条件欄で対象を指定）→山札シャッフル"],
   ["graveRecruit","⚰ 墓地から条件に合うクリーチャーをn体バトルゾーンへ（蘇生・条件欄で対象を指定）"],
   ["handRecruit","✋ 手札から条件に合うクリーチャーをn体バトルゾーンへ（踏み倒し・条件欄で対象を指定）"],
@@ -4856,7 +4860,7 @@ async function runFxList(pi,list,srcCard){
   for(const f of list){
     const Z=zonesOf(pi), OZ=zonesOf(op);
     const n=Math.max(1,f.n|0);
-    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","diaBliz","deckRecruit","deckSearch","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone"]);
+    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","diaBliz","deckRecruit","deckTopRecruitMana","deckSearch","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone"]);
     if(f.cond&&!FILT_COND.has(f.t)&&!zoneCondOk(f.cond,pi)){
       toast(`条件未達（${f.cond}）：効果をスキップ`);
       continue;
@@ -5501,6 +5505,43 @@ async function runFxList(pi,list,srcCard){
       toast(`↪ ${faceNameOf(mv)} を${znJa}に置いた`);
     }else if(f.t==="deckRecruit"){
       await deckRecruitCore(pi,String(f.cond||"").trim(),n,5,"超探索");
+    }else if(f.t==="deckTopRecruitMana"){
+      // 🃏 山札の上からn枚を表向きにし、その中の条件に合うクリーチャーを好きな数バトルゾーンへ。残りはマナゾーンへ（ボルシャック究極進化型）
+      // 厳密な順序：公開→出す→残りマナ（＝この効果の解決）を先に終え、出したクリーチャーの「出た時」はその後にまとめて発動
+      const filt=String(f.cond||"").trim();
+      const revealed=[];
+      for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;revealed.push(c);}
+      if(!revealed.length){toast("山札にカードがありません");}
+      else{
+        toast(`🃏 山札の上${revealed.length}枚を公開：${revealed.map(faceNameOf).join("、")}`);
+        renderAll();
+        const played=[];
+        while(true){
+          const pool=revealed.filter(x=>{const rx=getReg(x);return rx&&isCreatureReg(rx)&&(!filt||lockFilterOk(filt,rx,x));});
+          if(!pool.length)break;
+          const j=await pickCard(`🃏 バトルゾーンに出すクリーチャーを選択${filt?`（${filt}）`:""}（好きな数・キャンセルで確定）`,pool,{hint:"タップで1枚ずつ・出し終わったらキャンセル"});
+          if(j===null)break;
+          const tgt=pool[j];const ri=revealed.findIndex(x=>x.id===tgt.id);if(ri<0)continue;
+          const cc=revealed.splice(ri,1)[0];cc.faceup=true;cc.tapped=false;
+          Z.battle.push(cc);markArrive(cc);played.push(cc);
+          toast(`🃏 ${faceNameOf(cc)} をバトルゾーンへ`);
+          renderAll();
+        }
+        // 残りをマナゾーンへ（ここまでがこの効果の解決）
+        if(revealed.length){
+          for(const cc of revealed){cc.faceup=true;cc.tapped=false;cc.sideways=false;Z.mana.push(cc);}
+          bumpEv("manaAccel",pi,revealed.length);
+          toast(`💎 残り${revealed.length}枚をマナゾーンへ：${revealed.map(faceNameOf).join("、")}`);
+        }
+        sfx("move");renderAll();
+        // 出したクリーチャーの「出た時」は、この効果の解決後にまとめて発動（1体ずつ）
+        for(const cc of played){
+          if(!Z.battle.some(x=>x.id===cc.id))continue;
+          LAST_ARRIVED=cc;
+          emitEvent(pi,"summon");enqueueFx(pi,cc);
+          await waitFxIdle();
+        }
+      }
     }else if(f.t==="deckSearch"){
       await deckRecruitCore(pi,String(f.cond||"").trim(),n,3,"探索");
     }else if(f.t==="graveRecruit"){
@@ -5816,11 +5857,17 @@ function lockFilterOk(filt,r,c,lockPi){
     return !!((r&&raceMatch(r,tk))||String(faceNameOf(c)||c.name||"").includes(tk));
   };
   const toks=String(filt).split(/[／\/、,]/).map(x=>x.trim()).filter(Boolean);
-  return toks.every(tk=>{
+  // 種族・名前のトークンは「いずれか（OR）」、コスト/パワー/タイプ/文明/多色単色/「以外」は「すべて（AND）」。
+  // 例：「ボルシャック／ルピア／コスト7以下」＝（名前にボルシャック または ルピア）かつ コスト7以下
+  const isCons=tk=>/^コスト/.test(tk)||/^パワー\d+(?:以下|以上)$/.test(tk)||tk==="多色"||tk==="単色"||tk==="クリーチャー"||tk==="呪文"||tk==="ツインパクト"||!!civMap[tk]||/以外$/.test(tk);
+  const cons=toks.filter(isCons), names=toks.filter(tk=>!isCons(tk));
+  const consOk=cons.every(tk=>{
     const m0=tk.match(/^(.+?)以外$/);
     if(m0)return !one(m0[1]);
     return one(tk);
   });
+  const nameOk=!names.length||names.some(tk=>one(tk));
+  return consOk&&nameOk;
 }
 function stLockerOf(pi,key,filtKey,r,c){
   // pi=カードを使おうとしている側。相手のバトルゾーンにロック持ちがいればそのカードを返す
@@ -8064,6 +8111,24 @@ async function execAttack(pi,id,tg){
     else if(bk==="masterw")n=2;
     else n=parseInt(bk,10)||1;
     if(typeof n==="number"){
+      // ✨ 常在付与：パワード・ブレイカー（味方から付与されていれば、パワー由来のブレイク数と比べて多い方）
+      {
+        let auraPB=false;
+        const rcA=getReg(c);
+        for(const b of Z.battle){
+          const rb=getReg(b);
+          if(!rb||!rb.stAuraPB)continue;
+          if(isSealed(b)||isIgnored(b,pi))continue;
+          if(rb.stAuraOthers&&b.id===c.id)continue;
+          if(rb.stAuraFilt&&!(rcA&&lockFilterOk(rb.stAuraFilt,rcA,c)))continue;
+          auraPB=true;break;
+        }
+        if(auraPB){
+          const P=await effPower(c,true);
+          const pn=Math.max(1,1+Math.floor(P/6000));
+          if(pn>n){n=pn;toast(`✨ 付与：パワード・ブレイカー！ パワー${P} → ${n}枚ブレイク`);}
+        }
+      }
       const rSF=getReg(c);
       if(c.sfActive&&rSF&&rSF.sforceFx==="break"&&rSF.sforceN){n+=rSF.sforceN;toast(`🛡✨ SF有効：ブレイク数＋${rSF.sforceN} → ${n}枚`);}
       if(c.buff&&c.buff.breakPlus){n+=c.buff.breakPlus;toast(`💥 バフ：ブレイク数＋${c.buff.breakPlus} → ${n}枚`);}
@@ -8724,6 +8789,7 @@ function renderFxEditor(){
   {const e=$("fxStSickAll");if(e)e.value=FXEDIT.stSickAll||"";}
   {const e=$("fxStAuraPow");if(e)e.value=FXEDIT.stAuraPow||"";}
   {const e=$("fxStAuraSA");if(e)e.checked=!!FXEDIT.stAuraSA;}
+  {const e=$("fxStAuraPB");if(e)e.checked=!!FXEDIT.stAuraPB;}
   {const e=$("fxStAuraOthers");if(e)e.checked=!!FXEDIT.stAuraOthers;}
   {const e=$("fxStAuraFilt");if(e)e.value=FXEDIT.stAuraFilt||"";}
   $("fxCantAtkP").checked=!!FXEDIT.cantAtkP;
@@ -8853,6 +8919,7 @@ function renderFxEditor(){
   $("fxAtkChance").value=FXEDIT.atkChance||"";
   $("fxUSaber").value=FXEDIT.usaber||"";
   $("fxNoLose").checked=!!FXEDIT.noLose;
+  {const e=$("fxNoLoseCond");if(e)e.value=FXEDIT.noLoseCond||"";}
   $("fxSoulShift").checked=!!FXEDIT.soulshift;
   $("fxGaiash").checked=!!FXEDIT.gaiash;
   $("fxSForce").checked=!!FXEDIT.sforce;
@@ -8890,6 +8957,7 @@ function renderFxEditor(){
   $("fxRepIn").value=FXEDIT.repIn||"";
   $("fxRepInF").value=FXEDIT.repInF||"";
   $("fxRepInNC").checked=!!FXEDIT.repInNC;
+  {const e=$("fxRepInOppTurn");if(e)e.checked=!!FXEDIT.repInOppTurn;}
   $("fxMadness").value=FXEDIT.madness||"";
   $("fxIgnore").value=FXEDIT.ignore||"";
   $("fxCivil").value=String(FXEDIT.civil||0);
@@ -9048,6 +9116,15 @@ function extractEffects(text,mode){
   // 🛡 「自分の〔対象〕すべてに「ブロッカー」を与える」（次の自分のターン開始時まで）
   {const mTB=textFx.match(/自分の([ァ-ヶ一-龠ーヴ\u30fc・／\/A-Za-z0-9]{2,20}?)?(?:クリーチャー)?\s*すべてに「ブロッカー」を与える/);
    if(mTB){const flt=(mTB[1]||"").replace(/の$/,"").trim();fx.push({t:"tempBlockerAll",n:1,cond:flt});textFx=textFx.replace(mTB[0],"");}}
+  // 🃏 「山札の上からn枚を表向き（見る）→その中の〔対象〕を好きな数バトルゾーン、残りマナ」（ボルシャック究極進化型）。文をまたぐので先に全文から検出
+  {const mTR=textFx.match(/山札の上から(\d+)枚を(?:表向きにする|見る)[。\s]*その中から([\s\S]{0,50}?)を好きな数[\s\S]{0,20}?バトルゾーンに出し[、,]?\s*残り[\s\S]{0,10}?マナ(?:ゾーン)?に置く/);
+   if(mTR){
+     const names=[...mTR[2].matchAll(/《([^》]+)》/g)].map(m=>m[1]);
+     let flt=names.join("／");
+     if(!flt){const rr=mTR[2].match(/([ァ-ヶ一-龠ーヴ\u30fc・]{2,12})/);if(rr)flt=rr[1];}
+     fx.push({t:"deckTopRecruitMana",n:+mTR[1],cond:flt});
+     textFx=textFx.replace(mTR[0],"■");
+   }}
   const clauses=textFx.split(/[■●。\n]/).map(x=>x.trim()).filter(x=>x.length>1);
   // 「使用可能マナは増えない」＝置いたマナはそのターン使えない＝タップして置く扱い
   const _noUsableMana=/使用可能(?:な)?マナ(?:は|が)?[^。]{0,6}(?:増えない|多くならない)/.test(text);
@@ -9278,6 +9355,13 @@ function parseCardText(txt,mode){
       const v=+String(mR[1]).replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0));
       if(v>=0&&v<=2)out.set.revoN=v;
     }
+    // 🏆 革命N「自分は（ゲームに）負けない」→ 条件付き「負けない」（盾N枚以下の間）
+    const mNL=t.match(/革命([0-9０-９])(?!トリガー)[^■]{0,80}?(?:自分は)?(?:ゲームに)?負けない/);
+    if(mNL){
+      const v2=+String(mNL[1]).replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0));
+      out.set.noLose=true;out.set.noLoseCond=`盾<=${v2}`;
+      out.notes.push({msg:`🏆 革命${v2}「負けない」を設定しました（自分の盾${v2}枚以下の間、敗北確定時に警告してキャンセルを促します）`,q:"負けない"});
+    }
   }
   // ⚙ クロスコスト（クロス①/クロス1）※「クロスした」等は除外
   {
@@ -9472,8 +9556,9 @@ function parseCardText(txt,mode){
      const seg=t.slice(t.indexOf(mAu[0]));
      const upto=seg.split(/[■●]/)[0];
      if(/スピードアタッカー/.test(upto)&&/を与える/.test(upto))out.set.stAuraSA=true;
-     out.notes.push({msg:`✨ 常在「自分の他の${flt||"クリーチャー"}にパワー+${mAu[2]}${out.set.stAuraSA?"・SA":""}を付与」を設定しました`,q:"味方に付与"});
-     if(/パワード・?ブレイカー|かわりにバトルゾーンにとどまる/.test(upto))out.notes.push("💡 「パワード・ブレイカー」「かわりにバトルゾーンにとどまる」の付与は未対応です。ブレイク数・離場は盤面で手動調整してください");
+     if(/パワード・?ブレイカー/.test(upto)&&/を与える/.test(upto))out.set.stAuraPB=true;
+     out.notes.push({msg:`✨ 常在「自分の他の${flt||"クリーチャー"}に${["パワー+"+mAu[2],out.set.stAuraSA?"SA":"",out.set.stAuraPB?"パワード・ブレイカー":""].filter(Boolean).join("・")}を付与」を設定しました`,q:"味方に付与"});
+     if(/かわりにバトルゾーンにとどまる/.test(upto))out.notes.push("💡 「かわりにバトルゾーンにとどまる」の付与は未対応です。相手の効果で離れる場面ではキャンセル（または⌘Zで戻す）で対応してください");
    }}
   // 💡 未対応メカニズムの案内（手動運用）
   if(/\[S\]/.test(t))
@@ -9482,8 +9567,11 @@ function parseCardText(txt,mode){
     out.notes.push("💡 「マナゾーンから召喚してもよい」は未対応です。マナのカードを手動でバトルゾーンへ出してください（コスト支払いはマナタップで）");
   if(/そのターン中に[^■。]{0,20}?(\d+)体以上破壊されていたら[^■。]{0,30}?手札からバトルゾーンに出す/.test(t))
     out.notes.push("💡 「そのターン中の破壊数を数えて手札から出す」は未対応です。条件を満たしたら手札から手動で出してください（出た時効果は自動処理されます）");
-  if(/相手のターン中[、,]?相手がコストを支払わずに[^■。]{0,20}?出す時[、,]?かわりにマナゾーンに置く/.test(t))
-    out.notes.push("💡 「相手の踏み倒しをかわりにマナに置く」（相手ターン中のみ）は未対応です。該当場面で手動でマナへ移動してください");
+  // 🔒 コナユキ'26型：「相手のターン中、相手がコストを支払わずにクリーチャーを出す時、かわりにマナゾーンに置く」
+  if(!out.set.repIn&&/相手のターン中[、,]?相手がコストを支払わずに[^■。]{0,20}?出す時[、,]?かわりにマナ(?:ゾーン)?に置く/.test(t)){
+    out.set.repIn="mana";out.set.repInNC=true;out.set.repInOppTurn=true;
+    out.notes.push({msg:"🔒 置換ロック（コナユキ'26型：相手ターン中・召喚以外→マナ）を設定しました。出た方法は実行時に確認されます",q:"置換ロック"});
+  }
   // 🧲 攻撃誘導 自動検出（被攻撃を明示する文のみ・誤検出防止）。タップ状態が条件なら「タップ時のみ（アリナティウス型）」
   if(!out.set.taunt){
     const attractedRe=/(?:攻撃されるように選|攻撃するように選|可能な限り[^。■]{0,20}?このクリーチャーを攻撃|可能なら[^。■]{0,20}?このクリーチャーを攻撃)/;
@@ -9927,7 +10015,7 @@ function fxKeyLabel(k){
     cstPow:"条件付きパワー強化",cstPowCond:"条件付きパワーの条件",
     firstRed:"各ターン最初の召喚軽減",firstRedF:"軽減の対象",
     cantAtkCond:"攻撃に必要な条件",stSickAll:"出たターン攻撃不可の除外対象",
-    stAuraPow:"味方へのパワー付与",stAuraSA:"味方へのSA付与",stAuraOthers:"付与は自分以外",stAuraFilt:"付与の対象条件",
+    stAuraPow:"味方へのパワー付与",stAuraSA:"味方へのSA付与",stAuraPB:"味方へのパワード・ブレイカー付与",stAuraOthers:"付与は自分以外",stAuraFilt:"付与の対象条件",
     pa:"パワーアタッカー",sst:"スーパー・S・トリガー",
     powPer:"数だけパワー",powPerFilt:"数だけパワーの対象",powPerZone:"数える場所",powPerWho:"数える側",powPerBattle:"バトル中限定",powPerAtk:"攻撃中限定",
     modeN:"選ぶ回数",modeOpts:"選択肢",modeAllCond:"全モード実行の条件",modeDup:"重複選択可",
@@ -10019,6 +10107,7 @@ function openFxEditor(key){
     stSickAll:cur&&cur.stSickAll||"",
     stAuraPow:cur&&(+cur.stAuraPow||0)||0,
     stAuraSA:cur?!!cur.stAuraSA:false,
+    stAuraPB:cur?!!cur.stAuraPB:false,
     stAuraOthers:cur?!!cur.stAuraOthers:false,
     stAuraFilt:cur&&cur.stAuraFilt||"",
     cantAtkP:cur?!!cur.cantAtkP:false,
@@ -10142,6 +10231,7 @@ function openFxEditor(key){
     atkChance:cur&&cur.atkChance||"",
     usaber:cur&&cur.usaber||"",
     noLose:cur?!!cur.noLose:false,
+    noLoseCond:cur&&cur.noLoseCond||"",
     soulshift:cur?!!cur.soulshift:false,
     gaiash:cur?!!cur.gaiash:false,
     sforce:cur?!!cur.sforce:false,
@@ -10179,6 +10269,7 @@ function openFxEditor(key){
     repIn:cur&&cur.repIn||"",
     repInF:cur&&cur.repInF||"",
     repInNC:cur?!!cur.repInNC:false,
+    repInOppTurn:cur?!!cur.repInOppTurn:false,
     madness:cur&&cur.madness||"",
     ignore:cur&&cur.ignore||"",
     ignoreN:cur&&cur.ignoreN||0,
@@ -10315,6 +10406,7 @@ $("fxSave").addEventListener("click",async ()=>{
     stSickAll:($("fxStSickAll")?$("fxStSickAll").value:"").trim(),
     stAuraPow:+($("fxStAuraPow")?$("fxStAuraPow").value:0)||0,
     stAuraSA:$("fxStAuraSA")?$("fxStAuraSA").checked:false,
+    stAuraPB:$("fxStAuraPB")?$("fxStAuraPB").checked:false,
     stAuraOthers:$("fxStAuraOthers")?$("fxStAuraOthers").checked:false,
     stAuraFilt:($("fxStAuraFilt")?$("fxStAuraFilt").value:"").trim(),
     cantAtkP:$("fxCantAtkP").checked,
@@ -10438,6 +10530,7 @@ $("fxSave").addEventListener("click",async ()=>{
     atkChance:$("fxAtkChance").value.trim(),
     usaber:$("fxUSaber").value.trim(),
     noLose:$("fxNoLose").checked,
+    noLoseCond:($("fxNoLoseCond")?$("fxNoLoseCond").value:"").trim(),
     soulshift:$("fxSoulShift").checked,
     gaiash:$("fxGaiash").checked,
     sforce:$("fxSForce").checked,
@@ -10475,6 +10568,7 @@ $("fxSave").addEventListener("click",async ()=>{
     repIn:$("fxRepIn").value||"",
     repInF:$("fxRepInF").value.trim(),
     repInNC:$("fxRepInNC").checked,
+    repInOppTurn:$("fxRepInOppTurn")?$("fxRepInOppTurn").checked:false,
     madness:$("fxMadness").value||"",
     ignore:$("fxIgnore").value||"",
     ignoreN:+$("fxIgnoreN").value||0,
@@ -10664,7 +10758,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.cantAtk)attrs.push("攻撃できない");
     if(v.cantAtkCond)attrs.push(`⛔ 条件を満たさないと攻撃できない（${v.cantAtkCond}）`);
     if(v.stSickAll)attrs.push(`🥶 常在：${v.stSickAll}以外は出たターン攻撃不可`);
-    if(v.stAuraPow||v.stAuraSA)attrs.push(`✨ 常在：${v.stAuraOthers?"他の":""}味方${v.stAuraFilt?`（${v.stAuraFilt}）`:""}に${v.stAuraPow?`パワー+${v.stAuraPow}`:""}${v.stAuraPow&&v.stAuraSA?"・":""}${v.stAuraSA?"SA":""}を付与`);
+    if(v.stAuraPow||v.stAuraSA||v.stAuraPB)attrs.push(`✨ 常在：${v.stAuraOthers?"他の":""}味方${v.stAuraFilt?`（${v.stAuraFilt}）`:""}に${[v.stAuraPow?`パワー+${v.stAuraPow}`:"",v.stAuraSA?"SA":"",v.stAuraPB?"パワード・ブレイカー":""].filter(Boolean).join("・")}を付与`);
     if(v.cantAtkP)attrs.push("プレイヤー攻撃不可");
     if(v.d2)attrs.push("D2");
     if(v.seal)attrs.push(`封印${v.seal}${v.sealSummonOnly?"(召喚/侵略ZEROで解除)":""}`);
@@ -10771,7 +10865,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.twice)attrs.push(v.twice==="onAtk"?"2回攻撃（攻撃時アンタップ）":"2回攻撃（攻撃後アンタップ）");
     if(v.atkChance)attrs.push(`アタック・チャンス：${v.atkChance}`);
     if(v.usaber)attrs.push(`ウルトラ・セイバー：${v.usaber}`);
-    if(v.noLose)attrs.push("ゲームに負けない");
+    if(v.noLose)attrs.push(v.noLoseCond?`ゲームに負けない（条件：${v.noLoseCond}）`:"ゲームに負けない");
     if(v.soulshift)attrs.push("ソウルシフト");
     if(v.gaiash)attrs.push("相手ターン終了時に出せる");
     if(v.sforce)attrs.push("シールド・フォース"+(v.sforceFx?`（${{noLeave:"離れない",noDestroy:"破壊されない"}[v.sforceFx]}）`:""));
@@ -10800,7 +10894,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.stNoHandes)attrs.push("常在：ハンデスされない");
     if(v.libWin)attrs.push("常在：山札0で勝利（シャコガイル型）");
     if(v.petensy)attrs.push("ペテンシー型（相手ターン終了時・3体以上で無料使用）");
-    if(v.repIn)attrs.push(`常在：置換ロック（${v.repIn==="manaOverMax"?"相手・最大マナ超のコスト→マナ（ヤドック型）":`${v.repInF||"相手全て"}${v.repInNC?"・召喚以外":""}→${v.repIn==="grave"?"墓地":v.repIn==="shield"?"シールド":v.repIn==="mana"?"マナ":"山下"}`}）`);
+    if(v.repIn)attrs.push(`常在：置換ロック（${v.repIn==="manaOverMax"?"相手・最大マナ超のコスト→マナ（ヤドック型）":`${v.repInF||"相手全て"}${v.repInNC?"・召喚以外":""}${v.repInOppTurn?"・相手ターンのみ":""}→${v.repIn==="grave"?"墓地":v.repIn==="shield"?"シールド":v.repIn==="mana"?"マナ":"山下"}`}）`);
     if(v.madness)attrs.push(v.madness==="baiken"?"マッドネス（バイケン型）":"マッドネス（永遠型）");
     if(v.ignore)attrs.push(v.ignore==="cost"?`能力無視：コスト${v.ignoreN}以下`:"能力無視：名前指定");
     if(v.stCostM)attrs.push(`常在：${v.stCostF?v.stCostF+"の":""}${v.stCostT==="creature"?"クリーチャーの":v.stCostT==="spell"?"呪文の":""}召喚コスト−${v.stCostM}`);
@@ -11689,7 +11783,8 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
       };
       const locker=isCreatureReg(rIn)?zonesOf(foeR).battle.find(x=>{
         const rx=getReg(x);
-        return rx&&rx.repIn&&matchR(rx.repInF);
+        // repInOppTurn＝「相手のターン中のみ」（コナユキ'26型）：出した側(pTo)のターン中だけ置換
+        return rx&&rx.repIn&&matchR(rx.repInF)&&(!rx.repInOppTurn||(S.vs&&S.who===pTo));
       }):null;
       if(locker){
         const rL=getReg(locker);
@@ -14017,7 +14112,7 @@ async function declareWin(winner,reason,askFirst=true){
   let warn="";
   if(S.expert){
     const loser=winner===0?1:0;
-    const nl=zonesOf(loser).battle.filter(x=>{const r=getReg(x);return r&&r.noLose;}).map(x=>faceNameOf(x));
+    const nl=zonesOf(loser).battle.filter(x=>{const r=getReg(x);return r&&r.noLose&&!isSealed(x)&&(!r.noLoseCond||zoneCondOk(r.noLoseCond,loser));}).map(x=>faceNameOf(x));
     if(nl.length)warn=`\n⚠️「ゲームに負けない」持ちが${S.players[loser].label}の場にいます：${[...new Set(nl)].join("、")}\n（負けない場合はキャンセルしてください）`;
     if(S.noLoseCnt&&S.noLoseCnt[loser]>0)warn+=`\n⚠️ ${S.players[loser].label}は「負けない」効果中（残り${S.noLoseCnt[loser]}ターン）→キャンセルしてください`;
   }
