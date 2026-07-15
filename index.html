@@ -1381,6 +1381,7 @@ body.shake{animation:bodyShake .4s ease-out}
         </label>
         <label><input type="checkbox" id="fxSilent"> サイレントスキル（アンタップの代わりに効果発動）</label>
         <label><input type="checkbox" id="fxGuardman"> ガードマン（味方が攻撃された時、タップして身代わり）</label>
+        <label style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap" title="味方の指定種族が相手クリーチャーとバトルする時、タップせずにこのクリーチャーがかわりにバトルする（ガードマンと違いタップしない）"><input type="checkbox" id="fxBattleSub"> 🥏 バトル肩代わり（タップなし）／対象種族<input type="text" id="fxBattleSubRace" placeholder="例：スノーフェアリー（空欄=すべて）" style="width:200px"></label>
         <label><input type="checkbox" id="fxSA"> スピードアタッカー（召喚酔いしない）</label>
         <label title="このカードがどこからでも自分の墓地に置かれる時、かわりにこのカードと自分の墓地を山札に加えてシャッフルする（悠久を統べる者 フォーエバー・プリンセス型）"><input type="checkbox" id="fxGraveShuffleRep"> ♾ 墓地に置かれる時、かわりに墓地＋自身を山札へシャッフル（フォーエバー・プリンセス型）</label>
         <label><input type="checkbox" id="fxMach"> マッハファイター（出たターン、クリーチャーを攻撃できる）</label>
@@ -1649,6 +1650,7 @@ body.shake{animation:bodyShake .4s ease-out}
           <option value="">なし</option>
           <option value="always">永続（可能なら常にこのクリーチャーへ）</option>
           <option value="first">各ターン最初の攻撃のみ誘導</option>
+          <option value="tapped">タップされている時のみ誘導（デコイ型）</option>
         </select>
         <span style="font-size:12px;font-weight:700">P'Sドロンゴー</span>
         <select id="fxDronGo" style="width:auto;flex:0 0 110px">
@@ -6624,7 +6626,34 @@ async function scheduleAutoResolve(pi,c){
   }
 }
 function hasSlayer(c){const r=getReg(c);return !!((r&&r.slayer)||(c.buff&&c.buff.slayer)||(c.hyper&&r&&(r.hmSlayer||r.hmSL)));}
+/* 🥏 バトル肩代わり：指定種族の味方がバトルする時、タップせずに別のクリーチャーがかわりにバトルできる。
+   ガードマン（味方が攻撃された時にタップして身代わり）とは異なり、タップしない・攻撃/被攻撃どちらのバトルにも働く。 */
+async function battleSubPick(pp,battler){
+  if(!S.expert)return battler;
+  const rBat=getReg(battler);
+  const subs=zonesOf(pp).battle.filter(x=>{
+    if(x.id===battler.id)return false;
+    if(isSealed(x))return false;
+    const r=getReg(x);
+    if(!r||!r.battleSub)return false;
+    if(r.battleSub==="any")return true;
+    return raceMatch(rBat,r.battleSub);
+  });
+  if(!subs.length)return battler;
+  const j=await askChoice(`🥏 ${S.players[pp].label}：バトル肩代わり！ ${faceNameOf(battler)} のバトルを、かわりに別のクリーチャーにさせますか？（タップしません）`,
+    [...subs.map(x=>faceNameOf(x)),"肩代わりしない"]);
+  if(j!==null&&j<subs.length){
+    snap();
+    const nb=subs[j];
+    toast(`🥏 バトル肩代わり：${faceNameOf(nb)} が ${faceNameOf(battler)} のかわりにバトル（タップなし）`);
+    return nb;
+  }
+  return battler;
+}
 async function doBattle(pa,a,pd,d){
+  // 🥏 バトル肩代わり（両者側で判定：攻撃側→a、防御側→d を差し替え）
+  a=await battleSubPick(pa,a);
+  d=await battleSubPick(pd,d);
   for(const [pp,x] of [[pa,a],[pd,d]]){
     const rx=getReg(x);
     if(rx&&rx.cstCond&&rx.cstFx==="slayer"&&!isSealed(x)&&zoneCondOk(rx.cstCond,pp)){
@@ -7806,6 +7835,7 @@ async function execAttack(pi,id,tg){
       const r2=getReg(x);
       if(!r2||!r2.taunt)return false;
       if(r2.taunt==="first"&&S.tauntUsed[op])return false;
+      if(r2.taunt==="tapped"&&!x.tapped)return false;
       if(x.jd)return false;
       if(!x.tapped&&!canHitUntapped)return false;
       return true;
@@ -8583,6 +8613,8 @@ function renderFxEditor(){
   $("fxKorinLook").value=FXEDIT.korinLook||6;
   $("fxSilent").checked=!!FXEDIT.silent;
   $("fxGuardman").checked=!!FXEDIT.guardman;
+  $("fxBattleSub").checked=!!FXEDIT.battleSub;
+  $("fxBattleSubRace").value=(FXEDIT.battleSub&&FXEDIT.battleSub!=="any")?FXEDIT.battleSub:"";
   $("fxSA").checked=!!FXEDIT.sa;
   $("fxGraveShuffleRep").checked=!!FXEDIT.graveShuffleRep;
   $("fxHEnergy").checked=!!FXEDIT.henergy;
@@ -9200,6 +9232,31 @@ function parseCardText(txt,mode){
     out.fx.push({t:"lockFoeAtkP",n:nn?+nn:1});
     out.notes.push("💡「相手クリーチャーを選んで相手プレイヤーを攻撃できなくする」効果として登録しました（次の自分のターン開始時まで）");
   }
+  // 🧲 攻撃誘導／デコイ 自動検出（被攻撃を明示する文のみ・誤検出防止）
+  if(!out.set.taunt){
+    const attractedRe=/(?:攻撃されるように選|攻撃するように選|可能な限り[^。■]{0,20}?このクリーチャーを攻撃|可能なら[^。■]{0,20}?このクリーチャーを攻撃)/;
+    if(/デコイ/.test(t)){
+      out.set.taunt="tapped";
+      out.notes.push({msg:"🧲 デコイ＝攻撃誘導（タップされている時のみ）として設定しました",q:"攻撃誘導"});
+    }else if(attractedRe.test(t)){
+      if(/タップ[^。■]{0,20}(?:限り|とき|時|されている|している)/.test(t)){
+        out.set.taunt="tapped";
+        out.notes.push({msg:"🧲 攻撃誘導（タップ時のみ・デコイ型）として設定しました",q:"攻撃誘導"});
+      }else{
+        out.set.taunt="always";
+        out.notes.push({msg:"🧲 攻撃誘導（永続）として設定しました",q:"攻撃誘導"});
+      }
+    }
+  }
+  // 🥏 バトル肩代わり（タップなし・種族限定）自動検出：「他の〔種族〕が相手クリーチャーとバトルする時、かわりにこのクリーチャーにバトルさせる」
+  if(!out.set.battleSub){
+    const mBS=t.match(/(?:他の)?([ァ-ヶ一-龠ーヴ\u30fc・A-Za-z0-9／\/]{2,20}?)が[^。■]{0,12}?(?:相手の?)?クリーチャーとバトルする時[^。■]{0,24}?(?:かわりに|代わりに)[^。■]{0,12}?このクリーチャー[^。■]{0,10}?バトル/);
+    if(mBS){
+      const race=(mBS[1]||"").replace(/^自分の/,"").trim();
+      out.set.battleSub=race||"any";
+      out.notes.push({msg:`🥏 バトル肩代わり（対象種族：${race||"すべて"}・タップなし）として設定しました`,q:"バトル肩代わり"});
+    }
+  }
   // 条件付きキーワード付与（「〜あれば/なら、『ブロッカー』を得る」等）→ 条件常在(cstFx/cstCond)に。無条件フラグは外す
   {
     const CST=[[/ブロッカー/,"blocker","blocker"],[/スピードアタッカー/,"sa","sa"],[/スレイヤー/,"slayer","slayer"]];
@@ -9542,7 +9599,7 @@ function autoApplyNamed(){
 }
 function fxKeyLabel(k){
   const M={sa:"SA",blocker:"ブロッカー",slayer:"スレイヤー",gs:"G・ストライク",st:"S・トリガー",
-    guardman:"ガードマン",mach:"マッハF",jdiver:"ジャストダイバー",exlife:"EXライフ",escape:"エスケープ",
+    guardman:"ガードマン",battleSub:"バトル肩代わり",mach:"マッハF",jdiver:"ジャストダイバー",exlife:"EXライフ",escape:"エスケープ",
     lastburst:"ラストバースト",invade:"侵略",ninja:"ニンジャ",mugen:"ムゲンクライム",madness:"マッドネス",
     manaArm:"マナ武装",breaks:"ブレイカー",power:"パワー",cost:"コスト",cost2:"下面コスト",
     kakumei:"革命チェンジ",pkakumei:"P革命チェンジ",kirifuda:"キリフダッシュ",fushigi:"フシギバース",
@@ -9692,6 +9749,7 @@ function openFxEditor(key){
     korinLook:cur&&cur.korinLook||6,
     silent:cur?!!cur.silent:false,
     guardman:cur?!!cur.guardman:false,
+    battleSub:cur&&cur.battleSub||"",
     sa:cur?!!cur.sa:false,
     graveShuffleRep:cur?!!cur.graveShuffleRep:false,
     henergy:cur?!!cur.henergy:false,
@@ -9981,6 +10039,7 @@ $("fxSave").addEventListener("click",async ()=>{
     korinLook:+$("fxKorinLook").value||6,
     silent:$("fxSilent").checked,
     guardman:$("fxGuardman").checked,
+    battleSub:$("fxBattleSub").checked?($("fxBattleSubRace").value.trim()||"any"):"",
     sa:$("fxSA").checked,
     graveShuffleRep:$("fxGraveShuffleRep").checked,
     henergy:$("fxHEnergy").checked,
@@ -10334,6 +10393,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.korin)attrs.push(`🕊光臨（終了時タップで山上${v.korinLook||6}枚→出す${v.korinFilt?`：${v.korinFilt}`:""}）`);
     if(v.silent)attrs.push("サイレントスキル");
     if(v.guardman)attrs.push("ガードマン");
+    if(v.battleSub)attrs.push(v.battleSub==="any"?"バトル肩代わり":`バトル肩代わり（${v.battleSub}）`);
     if(v.sa)attrs.push("SA");
     if(v.graveShuffleRep)attrs.push("♾墓地→山札シャッフル置換");
     if(v.henergy)attrs.push("Hエナジー");
@@ -10369,7 +10429,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.dronGo)attrs.push(`P'Sドロンゴー${v.dronGo==="V"?"V":""}`);
     if(v.jdiver)attrs.push("ジャストダイバー");
     if(v.psyLink)attrs.push(`リンク：${v.psyLink}`);
-    if(v.taunt)attrs.push(v.taunt==="always"?"攻撃誘導（永続）":"攻撃誘導（最初の1回）");
+    if(v.taunt)attrs.push(v.taunt==="always"?"攻撃誘導（永続）":v.taunt==="tapped"?"攻撃誘導（タップ時・デコイ）":"攻撃誘導（最初の1回）");
     if(v.stWhen||v.stCond)attrs.push("条件ST");
     if(v.fieldKind)attrs.push({d2:"D2フィールド",dg:"DGフィールド",normal:"フィールド",kindan:"禁断フィールド",cho:"超フィールド"}[v.fieldKind]||"フィールド");
     if(v.bad)attrs.push("B・A・D");
