@@ -2385,6 +2385,15 @@ function faceNameOf(c){
   const k=faceKeyOf(c);
   return dispName.get(k)||c.name;
 }
+/* 差し替え用：画像ファイルを1枚だけ選ばせる */
+function pickOneImageFile(){
+  return new Promise(res=>{
+    const inp=document.createElement("input");
+    inp.type="file";inp.accept="image/*";
+    inp.onchange=()=>res((inp.files&&inp.files[0])||null);
+    inp.click();
+  });
+}
 async function registerImages(files){
   let n=0;
   for(const f of files){
@@ -8584,7 +8593,7 @@ function condExprFrom(clause){
   else if(/多色/.test(c))filt="多色";
   else{
     const civ=c.match(/(光|水|闇|火|自然)(?:のカード|のクリーチャー)?が/); if(civ)filt=civ[1];
-    else{const race=c.match(/([ァ-ヶ一-龠]{2,10})(?:のカード|のクリーチャー)?が\d/); if(race&&!/ゾーン|マナ|墓地|手札|シールド|バトル/.test(race[1]))filt=race[1];}
+    else{const race=c.match(/([ァ-ヶー・ｦ-ﾟ一-龠]{2,12})(?:のカード|のクリーチャー)?が\d/); if(race&&!/ゾーン|マナ|墓地|手札|シールド|バトル/.test(race[1]))filt=race[1];}
   }
   if(m)return `${zone}${filt?":"+filt:""}>=${m[1]}`;
   if(/(\d+)枚以下/.test(c)){const mm=c.match(/(\d+)枚以下/);return `${zone}${filt?":"+filt:""}<=${mm[1]}`;}
@@ -8693,7 +8702,12 @@ function parseCardText(txt,mode){
   const out={set:{},fx:[],notes:[],twinHint:false};
   const t=txt.replace(/\s+/g," ").replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0));
   // カードタイプ・ラベルから呪文を補完（クリーチャー/進化系は下で判定）
-  if(/カードタイプ[\s　]*呪文/.test(t))out.set.ctype="spell";
+  if(/カードタイプ[\s　]*呪文/.test(t)||/タイプ[^\n]*\n[^\n]*?呪文/.test(t))out.set.ctype="spell";
+  // 相手の呪文/クリーチャーのコスト増加（メタ）
+  {const mCU=t.match(/相手の(呪文|クリーチャー)?(?:を唱える|の召喚|を召喚する|を?出す|の)?コストは?(\d+)?多くなる/);
+   if(mCU){out.set.stCostUp=mCU[2]?+mCU[2]:1;if(mCU[1]==="呪文")out.set.stCostUpT="spell";else if(mCU[1]==="クリーチャー")out.set.stCostUpT="creature";}}
+  // ハンデス耐性（自分の手札は相手の効果で捨てられない）
+  if(/(?:自分の)?手札は[、,]?[\s\S]{0,14}相手[\s\S]{0,14}捨てられない/.test(t))out.set.stNoHandes=true;
   // 「〜を与える」系の付与テキストを除外した本文（キーワード誤検出防止：I amのワールド・ブレイカー付与など）
   const tSelf=t.replace(/「[^」]*」を与え[^。■]*[。]?/g,"").replace(/[^■。]*ブレイカー」?を与える[^。■]*[。]?/g,"");
   // ツインパクトの手掛かり：コスト「7/3」形式、カードタイプ「クリーチャー/呪文」
@@ -8711,7 +8725,7 @@ function parseCardText(txt,mode){
     else if(/ルナティック進化/.test(t))out.set.ctype="lunatic";
     else if(/進化クリーチャー/.test(t)&&/進化[：:]/.test(t))out.set.ctype="evo";
     else if(!out.set.ctype&&/カードタイプ[\s　]*NEOクリーチャー/.test(t))out.set.ctype="neoevo";
-    else if(!out.set.ctype&&/カードタイプ[\s　]*クリーチャー/.test(t))out.set.ctype="creature";
+    else if(!out.set.ctype&&(/カードタイプ[\s　]*クリーチャー/.test(t)||/タイプ[^\n]*\n[^\n]*?クリーチャー/.test(t)))out.set.ctype="creature";
     // 🌙 ルナティック進化：能力「このクリーチャーを《X》に究極進化させる」＋起動コスト（丸数字⑦等に対応）
     if(/ルナティック進化/.test(t)){
       const circ="①②③④⑤⑥⑦⑧⑨⑩⑪⑫";
@@ -8754,7 +8768,7 @@ function parseCardText(txt,mode){
     }
   }
   // 数値：パワー（「パワー 15000+」／公式コピペ「コスト9 15000+ マナ1」／表形式「コスト パワー 6 9000」に対応）
-  let m=t.match(/パワー\s*(\d{3,6})\+?/);
+  let m=t.match(/パワー\s*(\d{3,6})(?![\d０-９]|\s*以[下上])\+?/);
   if(!m)m=t.match(/コスト\s*\d{1,2}(?:\s*[\/／]\s*\d{1,2})?\s+(\d{4,6})\+?\s*マナ/);
   if(!m)m=t.match(/コスト\s*パワー\s*\d{1,2}\s+(\d{3,6})\+?/);
   if(m)out.set.power=+m[1];
@@ -9025,8 +9039,41 @@ function parseCardText(txt,mode){
     const cipSeg=t.split(/バトルゾーンに出た時[、,]?/)[1];
     if(cipSeg)seg=cipSeg.split(/[■●]/)[0];
   }
-  // 汎用抽出：本文を■/。で能力単位に分解し、各文から動詞・数値・対象を拾う
-  out.fx.push(...extractEffects(seg||t,mode));
+  // 破壊された時（pig）誘発：その効果を誘発として登録し、出た時/常在の抽出からは除外する
+  let tForFx=t;
+  {const mPig=t.match(/破壊された時[、,]?([\s\S]*?)(?=[■●]|$)/);
+   if(mPig&&mPig[1]&&mPig[1].trim()){
+     const pigFx=extractEffects(mPig[1],mode);
+     if(pigFx.length){
+       out.set.watchFx=(out.set.watchFx||[]);
+       for(const f of pigFx)out.set.watchFx.push({ev:"pig",t:f.t,n:f.n});
+       out.notes.push("💡「破壊された時」を誘発（pig）として登録しました。対象条件・枚数は効果欄で調整してください");
+     }
+     tForFx=t.replace(/破壊された時[、,]?[\s\S]*?(?=[■●]|$)/,"");
+   }}
+  // ▶ モード選択（「次のうちいずれか〜選ぶ」＋▶で始まる選択肢）を検出して選択式(modeN/modeOpts)へ。
+  //    検出時は個別効果(faces)に振り分けない。各モードは可能な範囲で@記法に変換、無理ならラベルのみ（手動）。
+  const modeLines=t.split(/[\n]/).map(x=>x.trim()).filter(x=>/^[▶▷➤]/.test(x));
+  if(modeLines.length>=2){
+    const mN=t.match(/いずれか\s*([0-9０-９]+|[1１一]つ|ひとつ|[2２二]つ)/);
+    out.set.modeN=(mN&&/[2２二]/.test(mN[1]))?2:1;
+    out.set.modeOpts=modeLines.map(line=>{
+      const body=line.replace(/^[▶▷➤]\s*/,"").trim();
+      const efx=extractEffects(body,mode);
+      const label=body.length>22?body.slice(0,22)+"…":body;
+      if(efx.length){
+        const cmd=efx.map(f=>`${f.t}${(f.n&&!FX_NO_N.has(f.t))?":"+f.n:""}`).join("+");
+        return `${label} @${cmd}`;
+      }
+      return label;
+    }).join("\n");
+    if(/両方選ぶ|すべて選ぶ|全て選ぶ/.test(t))
+      out.notes.push("💡「〜があれば両方選ぶ」型：条件を満たす時は選択回数を手動で増やしてください（選択式の回数）");
+    out.notes.push("💡 モード選択として登録しました。@記法が付かなかったモードは効果欄で対象や数値を手直ししてください");
+    out._modeDetected=true;
+  }
+  // 汎用抽出：本文を■/。で能力単位に分解し、各文から動詞・数値・対象を拾う（モード選択時は入れない）
+  if(!out._modeDetected)out.fx.push(...extractEffects(seg||tForFx,mode));
   // 重複除去（同じタイプ＋n）
   {const seen=new Set();out.fx=out.fx.filter(f=>{const k=f.t+":"+(f.n||"");if(seen.has(k))return false;seen.add(k);return true;});}
   {
@@ -9172,7 +9219,7 @@ async function autoFillFromText(){
   const grab=async(label)=>{
     return await askText(`📋 ${label}の効果テキストを貼り付けてください\n（公式サイト・dmwiki・神ゲー攻略のテキストをそのまま貼り付けOK。「🔎 カードを調べる」で開けます）`);
   };
-  const applySet=(set)=>{let n=0;for(const [k,v] of Object.entries(set)){FXEDIT[k]=v;n++;}return n;};
+  const applySet=(set)=>{let n=0;for(const [k,v] of Object.entries(set)){if(k==="watchFx"&&Array.isArray(v)){FXEDIT.watchFx=(FXEDIT.watchFx||[]).concat(v);}else FXEDIT[k]=v;n++;}return n;};
   const applyFx=(fx,face)=>{FXEDIT.faces[face]=FXEDIT.faces[face]||[];for(const f of fx)FXEDIT.faces[face].push({t:f.t,n:f.n});return fx.length;};
   // ツインパクトかどうか（既にチェック済みなら自動でツインパクトフロー）
   let isTwin=FXEDIT.twin;
@@ -16272,6 +16319,7 @@ function openImageManager(){
           ["✏️ 名前を変更",
            `↔️ 横向きカード：${reg0&&reg0.wide?"解除する":"登録する"}`,
            "⚡ 効果を登録/編集",
+           "🖼 画像だけ差し替え（効果登録・名前は保持）",
            "🗑 削除"]);
         if(act===0){
           await renameImage(k);
@@ -16289,6 +16337,16 @@ function openImageManager(){
           closeViewer();
           openFxEditor(k);
         }else if(act===3){
+          // 🖼 画像だけ差し替え：キー（カード名）を変えずに画像データだけ置換 → 効果登録・名前・多面リンク・登録順はそのまま保持
+          const f=await pickOneImageFile();
+          if(!f)return;
+          const okType=(f.type&&f.type.startsWith("image/"))||/\.(png|jpe?g|gif|webp|heic|heif|bmp|avif)$/i.test(f.name||"");
+          if(!okType){toast("画像ファイルを認識できませんでした");return;}
+          if(db)await idbPut("images",k,f);else memImages.set(k,f);
+          await loadAllImages();renderAll();
+          toast(`🖼「${name}」の画像を差し替えました（効果登録・名前はそのまま）`);
+          render();
+        }else if(act===4){
           if(!await ask(`画像「${name}」を削除しますか？`))return;
           await deleteImage(k);
           $("vTitle").textContent=`登録画像の管理（${imgURL.size}枚）`;
