@@ -1782,6 +1782,7 @@ body.shake{animation:bodyShake .4s ease-out}
           <option value="3">3回選ぶ</option>
         </select>
         <label style="font-size:11px"><input type="checkbox" id="fxModeDup"> 同じ項目を重複選択可</label>
+        <input type="text" id="fxModeAllCond" placeholder="この条件を満たせば全モード実行（例：マナ:ボルシャック／ルピア>=5・空欄＝なし）" style="flex:1;min-width:180px;font-size:11px">
       </div>
       <textarea id="fxModeOpts" rows="4" style="width:100%;background:#0d1119;color:var(--ink);border:1px solid var(--line);border-radius:8px;font-size:12px;padding:6px;box-sizing:border-box" placeholder="選択肢を1行に1つ。行末に「＠コマンドN」を付けると、その選択肢を選んだ時に自動処理します（省略可）。&#10;例）&#10;山上2枚を墓地へ ＠墓地肥やし2&#10;1枚ドローする ＠ドロー1&#10;山上1枚をマナ ＠マナ加速1&#10;相手1体に-3000（自動化なし）&#10;※コマンド例：墓地肥やし/ドロー/マナ加速/相手墓地肥やし/公開/見る＋数字。複数は「＋」で連結"></textarea>
       <div class="hint" style="margin-top:2px">選んだ選択肢に「＠コマンド」があればエキスパート時に自動実行。無い選択肢は宣言のみ（従来どおり手動処理）。</div>
@@ -4126,6 +4127,8 @@ const FX_TYPES=[
   ["turnLock","⛔ ターン限定ロックを設定（実行時に対象/種別/条件/期間を指定・5000VT後半効果型）"],
   ["foeAtkLockP","⚔ 今バトルゾーンにいる相手クリーチャーは、次の自分のターン開始時までプレイヤーを攻撃できない（ドギラゴールデン型・後から出た分は対象外）"],
   ["charge","n枚マナ加速（山上→マナ）"],
+  ["graveToMana","⚰→🔷 自分の墓地から条件に合うカードをn枚マナゾーンに置く（条件欄で対象を指定）"],
+  ["zoneMove","↔ 自分の〔元〕から条件に合うカードをn枚〔先〕へ移動（条件欄に「墓地→マナ:スノーフェアリー」のように元→先:対象を指定）"],
   ["chargeTap","n枚マナ加速（山上→タップしてマナに置く）"],
   ["mill","山上n枚を墓地へ"],
   ["millOpp","相手の山札の上からn枚を墓地へ"],
@@ -4751,6 +4754,15 @@ function parseModeChoice(line){
   }
   return {label:label||s.trim(),fx};
 }
+/* モードの選択回数を返す。条件付き全モード（「〜があれば両方選ぶ」）の条件を満たしていれば全モード数に増やす */
+function modeCountFor(reg,pi){
+  let md=reg?reg.modeN|0:0;
+  if(md>0&&reg.modeAllCond&&typeof zoneCondOk==="function"&&zoneCondOk(reg.modeAllCond,pi)){
+    const total=String(reg.modeOpts||"").split("\n").map(x=>x.trim()).filter(Boolean).length;
+    if(total>md){md=total;toast(`✨ 条件（${reg.modeAllCond}）達成：全${total}モードを実行できます`);}
+  }
+  return md;
+}
 /* 🔎 探索/超探索の踏み倒し共通処理：山札から条件に合うカードをn体バトルゾーンへ。
    searchN=3（探索）/5（超探索）＝候補をカード名でユニーク化し、種類が多ければランダムにsearchN種だけ提示（デュエプレ仕様）。searchN=0＝全部提示（確定）。 */
 async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone){
@@ -4788,7 +4800,7 @@ async function runFxList(pi,list,srcCard){
   for(const f of list){
     const Z=zonesOf(pi), OZ=zonesOf(op);
     const n=Math.max(1,f.n|0);
-    if(f.cond&&f.t!=="nextCost"&&f.t!=="bounceFilt"&&f.t!=="retrieveHand"&&f.t!=="diaBliz"&&f.t!=="deckRecruit"&&f.t!=="deckSearch"&&f.t!=="graveRecruit"&&f.t!=="handRecruit"&&f.t!=="destroyFilt"&&!zoneCondOk(f.cond,pi)){
+    if(f.cond&&f.t!=="nextCost"&&f.t!=="bounceFilt"&&f.t!=="retrieveHand"&&f.t!=="diaBliz"&&f.t!=="deckRecruit"&&f.t!=="deckSearch"&&f.t!=="graveRecruit"&&f.t!=="handRecruit"&&f.t!=="destroyFilt"&&f.t!=="graveToMana"&&f.t!=="zoneMove"&&!zoneCondOk(f.cond,pi)){
       toast(`条件未達（${f.cond}）：効果をスキップ`);
       continue;
     }
@@ -4811,6 +4823,44 @@ async function runFxList(pi,list,srcCard){
       bumpEv("manaAccel",pi,cc);
       if(tp.length)toast(`多色：${tp.join("、")} はタップしてマナゾーンへ`);
       sfx("move");
+    }else if(f.t==="graveToMana"){
+      // ⚰→🔷 自分の墓地から条件(f.cond)に合うカードをn枚マナゾーンに置く
+      const filt=String(f.cond||"").trim();
+      let put=0;
+      for(let i=0;i<n;i++){
+        const pool=Z.grave.filter(x=>{const rx=getReg(x);return !filt||lockFilterOk(filt,rx,x);});
+        if(!pool.length){if(i===0)toast(`墓地に該当カードなし${filt?`（${filt}）`:""}`);break;}
+        const j=await pickCard(`⚰→🔷 墓地からマナに置くカードを選択（${i+1}/${n}）${filt?`（${filt}）`:""}`,pool,{hint:"タップで選択・キャンセルで終了"});
+        if(j===null)break;
+        const tgt=pool[j];const di=Z.grave.findIndex(x=>x.id===tgt.id);if(di<0)continue;
+        const cc=Z.grave.splice(di,1)[0];cc.faceup=true;cc.tapped=false;cc.sideways=false;
+        Z.mana.push(cc);put++;
+        toast(`🔷 ${faceNameOf(cc)} を墓地からマナゾーンへ`);renderAll();
+      }
+      if(put>0)sfx("move");
+      renderAll();
+    }else if(f.t==="zoneMove"){
+      // ↔ 自分の〔元〕から条件に合うカードをn枚〔先〕へ移動。cond="元→先:対象"
+      const spec=String(f.cond||"").trim();
+      const m=spec.match(/^(マナ|墓地|手札|シールド|山札|バトル)\s*(?:→|->|―>|~>|>|→)\s*(マナ|墓地|手札|シールド|山札)[：:]?(.*)$/);
+      if(!m){toast("移動の指定が必要です（条件欄に「墓地→マナ:スノーフェアリー」のように書いてください）");}
+      else{
+        const zmap={"マナ":"mana","墓地":"grave","手札":"hand","シールド":"shield","山札":"deck","バトル":"battle"};
+        const from=zmap[m[1]],to=zmap[m[2]],filt=(m[3]||"").trim(),fromJa=m[1],toJa=m[2];
+        let put=0;
+        for(let i=0;i<n;i++){
+          const pool=(Z[from]||[]).filter(x=>{const rx=getReg(x);return !filt||lockFilterOk(filt,rx,x);});
+          if(!pool.length){if(i===0)toast(`${fromJa}に該当カードなし${filt?`（${filt}）`:""}`);break;}
+          const j=await pickCard(`↔ ${fromJa}→${toJa}：移動するカードを選択（${i+1}/${n}）${filt?`（${filt}）`:""}`,pool,{hint:"タップで選択・キャンセルで終了"});
+          if(j===null)break;
+          const tgt=pool[j];const di=Z[from].findIndex(x=>x.id===tgt.id);if(di<0)continue;
+          const cc=Z[from].splice(di,1)[0];cc.tapped=false;cc.sideways=false;cc.faceup=(to!=="deck"&&to!=="shield");
+          Z[to].push(cc);put++;
+          toast(`↔ ${faceNameOf(cc)} を${fromJa}から${toJa}へ`);renderAll();
+        }
+        if(put>0){sfx("move");if(to==="deck")shuffle(Z.deck);}
+        renderAll();
+      }
     }else if(f.t==="underDeck"){
       // 🌙 山札の上からn枚を裏向きでこのカードの下に置く（ザ・ラムーン型：G城/クリーチャーの下）
       const host=srcCard&&[0,1].map(p=>zonesOf(p)).flatMap(Z2=>[...Z2.battle,...Z2.shield]).find(x=>x.id===srcCard.id);
@@ -5897,7 +5947,7 @@ async function pumpFx(){
       toast(`⚡自動処理：${faceNameOf(c)}`);
       await runTimes(reg.faces[0]);
     }
-    const md=reg?reg.modeN|0:0;
+    const md=modeCountFor(reg,pi);
     if(md>0){
       const parsed=String(reg.modeOpts||"").split("\n").map(x=>x.trim()).filter(Boolean).map(parseModeChoice);
       const rest=parsed.slice();
@@ -7189,7 +7239,7 @@ async function execAttack(pi,id,tg){
       if(!rsx)continue;
       const atkFx=(rsx.watchFx||[]).filter(w=>["selfAtk","selfAtkC","selfAtkP"].includes(w.ev)&&w.fx&&w.fx.length).flatMap(w=>w.fx);
       const cipFx=(rsx.faces&&rsx.faces[0]&&rsx.faces[0].length)?rsx.faces[0]:null;
-      const md=(rsx.modeN|0);
+      const md=modeCountFor(rsx,pi);
       if(!atkFx.length&&!cipFx&&md<=0)continue;
       const opts=[];
       if(atkFx.length)opts.push("⚡ 攻撃時の能力を実行");
@@ -8683,6 +8733,7 @@ function renderFxEditor(){
   $("fxAuraNote").value=FXEDIT.auraNote||"";
   $("fxModeN").value=String(FXEDIT.modeN||0);
   $("fxModeDup").checked=!!FXEDIT.modeDup;
+  {const e=$("fxModeAllCond");if(e)e.value=FXEDIT.modeAllCond||"";}
   $("fxModeOpts").value=FXEDIT.modeOpts||"";
   const th=$("fxThumb");th.innerHTML="";
   const el=vCardEl(FXEDIT.name);
@@ -8773,6 +8824,17 @@ function extractEffects(text,mode){
     // マナ加速（山札上→マナ）
     if(/山札の上から.*?マナ(?:ゾーン)?に置く/.test(cl)||/マナ加速/.test(cl)){
       const n=numOf(cl,/上から(\d+)枚/); fx.push({t:(/タップして/.test(cl)||_noUsableMana)?"chargeTap":"charge",n});
+    }
+    // ↔ ゾーン間移動（〔元〕から〔マナ/墓地〕に置く）。元→先と対象を読み取る。手札/シールドへは専用検出に任せる
+    else if(/(?:自分の)?(墓地|手札|マナ(?:ゾーン)?|シールド|山札)から[^。■]*?(マナ(?:ゾーン)?|墓地)に置く/.test(cl)&&!/相手/.test(cl)){
+      const mm=cl.match(/(?:自分の)?(墓地|手札|マナ(?:ゾーン)?|シールド|山札)から[^。■]*?(マナ(?:ゾーン)?|墓地)に置く/);
+      const norm=z=>z.replace(/ゾーン/,"");
+      const fromJa=norm(mm[1]),toJa=norm(mm[2]);
+      let filt="";
+      const names=[...cl.matchAll(/《([^》]+)》/g)].map(m=>m[1]);
+      if(names.length)filt=names.join("／");
+      else{const mR=cl.match(/([ァ-ヶー・ｦ-ﾟ一-龠]{2,12})(?:を|\d*枚|1枚)/);if(mR&&!/墓地|マナ|手札|シールド|山札|カード/.test(mR[1]))filt=mR[1];}
+      fx.push({t:"zoneMove",n:numOf(cl,/(\d+)枚/),cond:`${fromJa}→${toJa}${filt?":"+filt:""}`});
     }
     // 山札を墓地（セルフ/相手）
     if(/山札の上から(\d+)枚を?墓地に置く/.test(cl)){
@@ -8895,7 +8957,7 @@ function parseCardText(txt,mode){
   // カードタイプ・ラベルから呪文を補完（クリーチャー/進化系は下で判定）
   const isTwinType=/コスト\s*(?:パワー\s*)?\d{1,2}\s*[\/／]\s*\d{1,2}/.test(t)||/クリーチャー\s*[\/／]\s*呪文/.test(t);
   if(isTwinType)out.set.twin=true;
-  if(!isTwinType&&(/カードタイプ[\s　]*呪文/.test(t)||/タイプ[^\n]*\n[^\n]*?呪文/.test(t)))out.set.ctype="spell";
+  if(!isTwinType&&(/カードタイプ[\s　]*呪文/.test(t)||/タイプ[^\n]*\n[^\n]*?呪文/.test(t)||/タイプ[\s　\t\-－ｰ]{0,6}呪文/.test(t)))out.set.ctype="spell";
   // 相手の呪文/クリーチャーのコスト増加（メタ）
   {const mCU=t.match(/相手の(呪文|クリーチャー)?(?:を唱える|の召喚|を召喚する|を?出す|の)?コストは?(\d+)?多くなる/);
    if(mCU){out.set.stCostUp=mCU[2]?+mCU[2]:1;if(mCU[1]==="呪文")out.set.stCostUpT="spell";else if(mCU[1]==="クリーチャー")out.set.stCostUpT="creature";}}
@@ -9092,12 +9154,18 @@ function parseCardText(txt,mode){
     [/エスケープ/,"escape"],[/ラストバースト/,"lastburst"],
     [/侵略/,"invade"],[/(?<![PＰ])革命チェンジ/,"kakumei"],[/[PＰ]革命チェンジ/,"pKakumei"],
     [/相手プレイヤー(?:を|に)?攻撃できない/,"cantAtkP"],[/攻撃できない/,"cantAtk"],
+    [/S・?バック/,"sback"],
   ];
   for(const [re,k] of KW)if(re.test(tSelf))out.set[k]=true;
   // P革命チェンジ検出時は通常革命チェンジフラグを外す（超次元からの誘発と混同しないため）
   if(out.set.pKakumei)delete out.set.kakumei;
   // 「相手プレイヤーを攻撃できない」は cantAtkP のみ（全攻撃不可の cantAtk は外す）
   if(out.set.cantAtkP)delete out.set.cantAtk;
+  // 「相手のクリーチャー1体を選ぶ…そのクリーチャーは相手プレイヤーを攻撃できない」は相手への一時付与＝自身の常在ではないので外す
+  if((out.set.cantAtkP||out.set.cantAtk)&&/(?:相手の)?クリーチャー\d*体?を選/.test(t)&&!/このクリーチャーは/.test(t)){
+    delete out.set.cantAtkP;delete out.set.cantAtk;
+    out.notes.push("💡「相手クリーチャー1体を選んで攻撃できなくする」型は、効果で相手クリーチャーに一時ロックを付ける処理です（自身の常在ではありません）。極限ファイナル革命P'S型の相手攻撃ロックか手動で設定してください");
+  }
   // 条件付きキーワード付与（「〜あれば/なら、『ブロッカー』を得る」等）→ 条件常在(cstFx/cstCond)に。無条件フラグは外す
   {
     const CST=[[/ブロッカー/,"blocker","blocker"],[/スピードアタッカー/,"sa","sa"],[/スレイヤー/,"slayer","slayer"]];
@@ -9282,8 +9350,12 @@ function parseCardText(txt,mode){
       }
       return label;
     }).join("\n");
-    if(/両方(?:を)?選ぶ|すべて選ぶ|全て選ぶ/.test(t))
-      out.notes.push("💡「〜があれば両方選ぶ」型：条件を満たす時は選択回数を手動で2にしてください（選択式の回数）");
+    if(/両方(?:を)?選ぶ|すべて選ぶ|全て選ぶ/.test(t)){
+      // 「〔条件〕あれば両方選ぶ」→ 条件を全モード条件に自動設定（達成時は自動で全モード）
+      const mAll=t.match(/([^。■\n]*?(?:あれば|いれば))[、,]?[^。■\n]*?(?:両方|すべて|全て)(?:を)?選ぶ/);
+      if(mAll){const ac=condExprFrom(mAll[1]);if(ac)out.set.modeAllCond=ac;}
+      out.notes.push("💡「〜があれば両方選ぶ」型：全モード条件を設定しました。条件を満たす場面では自動で全モードを実行します（未設定なら選ぶ回数を手動で増やしてください）");
+    }
     out.notes.push("💡 モード選択として登録しました。@記法が付かなかったモードは効果欄で対象や数値を手直ししてください");
     out._modeDetected=true;
   }
@@ -9735,6 +9807,7 @@ function openFxEditor(key){
     auraNote:cur&&cur.auraNote||"",
     modeN:cur&&cur.modeN||0,
     modeDup:cur?!!cur.modeDup:false,
+    modeAllCond:cur&&cur.modeAllCond||"",
     modeOpts:cur&&cur.modeOpts||"",
     watch:cur&&cur.watch?{...cur.watch}:{atkC:false,atkP:false,draw:false,summon:false,spell:false,turnEndMine:false,turnEndOpp:false,turnEndBoth:false},
   };
@@ -10023,6 +10096,7 @@ $("fxSave").addEventListener("click",async ()=>{
     auraNote:$("fxAuraNote").value.trim(),
     modeN:+$("fxModeN").value||0,
     modeDup:$("fxModeDup").checked,
+    modeAllCond:($("fxModeAllCond")?$("fxModeAllCond").value:"").trim(),
     modeOpts:$("fxModeOpts").value,
     watch:{
       atkC:$("fxWatchAtkC").checked, atkP:$("fxWatchAtkP").checked,
@@ -14282,7 +14356,7 @@ function openCardSheet(ctx){
         const rsx=getReg(sx);
         const f0=rsx&&rsx.faces&&rsx.faces[0]&&rsx.faces[0].length?rsx.faces[0]:null;
         const f1=rsx&&rsx.twin&&rsx.faces&&rsx.faces[1]&&rsx.faces[1].length?rsx.faces[1]:null;
-        const md=rsx?(rsx.modeN|0):0;
+        const md=rsx?modeCountFor(rsx,pi):0;
         if(!f0&&!f1&&md<=0){
           toast(`🔗 超魂X：《${faceNameOf(sx)}》に処理できる登録効果がありません。喜像エル等の付与内容を、その超魂Xカードの「自動処理」または「選択効果」に登録してください`);
           return;
