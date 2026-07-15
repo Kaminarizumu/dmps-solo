@@ -9025,7 +9025,7 @@ function parseCardText(txt,mode){
     else if(/ルナティック進化/.test(t))out.set.ctype="lunatic";
     else if(/進化クリーチャー/.test(t)&&/進化[：:]/.test(t))out.set.ctype="evo";
     else if(!out.set.ctype&&/カードタイプ[\s　]*NEOクリーチャー/.test(t))out.set.ctype="neoevo";
-    else if(!out.set.ctype&&!isTwinType&&(/カードタイプ[\s　]*クリーチャー/.test(t)||/タイプ[^\n]*\n[^\n]*?クリーチャー/.test(t)))out.set.ctype="creature";
+    else if(!out.set.ctype&&!isTwinType&&(/カードタイプ[\s　]*クリーチャー/.test(t)||/タイプ[^\n]*\n[^\n]*?クリーチャー/.test(t)||/(?:^|\n)\s*クリーチャー[：:]/.test(t)))out.set.ctype="creature";
     // 🌙 ルナティック進化：能力「このクリーチャーを《X》に究極進化させる」＋起動コスト（丸数字⑦等に対応）
     if(/ルナティック進化/.test(t)){
       const circ="①②③④⑤⑥⑦⑧⑨⑩⑪⑫";
@@ -9071,6 +9071,8 @@ function parseCardText(txt,mode){
   let m=t.match(/パワー\s*(\d{3,6})(?![\d０-９]|\s*以[下上])\+?/);
   if(!m)m=t.match(/コスト\s*\d{1,2}(?:\s*[\/／]\s*\d{1,2})?\s+(\d{4,6})\+?\s*マナ/);
   if(!m)m=t.match(/コスト\s*パワー\s*\d{1,2}\s+(\d{3,6})\+?/);
+  // wiki風「クリーチャー：種族/種族　1000」の末尾パワー
+  if(!m)m=t.match(/クリーチャー[：:][^\n]*?[\s　](\d{3,6})\+?(?:\s|　|$)/);
   if(m)out.set.power=+m[1];
   // コスト（ツインパクト「7/3」・表形式「コスト パワー 2／4」に対応）
   m=t.match(/コスト\s*(?:パワー\s*)?(\d{1,2})\s*[\/／]\s*(\d{1,2})/);
@@ -9372,12 +9374,12 @@ function parseCardText(txt,mode){
    }}
   // ▶ モード選択（「次のうちいずれか〜選ぶ」＋▶で始まる選択肢）を検出して選択式(modeN/modeOpts)へ。
   //    改行が無く1行に▶が並ぶ場合もあるため、改行ではなく▶の直前で区切る。
-  const modeLines=t.split(/(?=[▶▷➤])/).map(x=>x.trim()).filter(x=>/^[▶▷➤]/.test(x));
+  const modeLines=t.split(/(?=[▶▷➤►▸▹➢➣])/).map(x=>x.trim()).filter(x=>/^[▶▷➤►▸▹➢➣]/.test(x));
   if(modeLines.length>=2&&/いずれか|次の(?:うち|中から)/.test(t)){
     const mN=t.match(/いずれか\s*([0-9０-９]+|[1１一]つ|ひとつ|[2２二]つ)/);
     out.set.modeN=(mN&&/[2２二]/.test(mN[1]))?2:1;
     out.set.modeOpts=modeLines.map(line=>{
-      const body=line.replace(/^[▶▷➤]\s*/,"").trim();
+      const body=line.replace(/^[▶▷➤►▸▹➢➣]\s*/,"").trim();
       const efx=extractEffects(body,mode);
       const label=body.length>22?body.slice(0,22)+"…":body;
       if(efx.length){
@@ -9546,7 +9548,16 @@ function fxKeyLabel(k){
     kakumei:"革命チェンジ",pkakumei:"P革命チェンジ",kirifuda:"キリフダッシュ",fushigi:"フシギバース",
     magib:"マジボンバー",magibN:"マジボンバーN",buzz:"バズレンダ",
     sympathy:"シンパシー",gzero:"G・ゼロ",ctype:"タイプ",stSpellPT:"呪文回数制限",stCrePT:"召喚数制限",
-    stLockSpell:"呪文ロック",stLockCre:"召喚ロック",invRace:"侵略元種族",invCost:"侵略元コスト",jchange:"J・チェンジ"};
+    stLockSpell:"呪文ロック",stLockCre:"召喚ロック",invRace:"侵略元種族",invCost:"侵略元コスト",jchange:"J・チェンジ",
+    civs:"文明",races:"種族",twin:"ツインパクト",
+    stLockSpellF:"呪文ロックの対象条件",stLockCreF:"召喚ロックの対象条件",
+    stCostUp:"相手のコスト増加",stCostUpF:"コスト増加の対象",stCostUpT:"コスト増加の種別",
+    stNoHandes:"ハンデス耐性",sback:"S・バック",cantAtkP:"相手プレイヤー攻撃不可",cantAtk:"攻撃不可",
+    cstPow:"条件付きパワー強化",cstPowCond:"条件付きパワーの条件",
+    firstRed:"各ターン最初の召喚軽減",firstRedF:"軽減の対象",
+    powPer:"数だけパワー",powPerFilt:"数だけパワーの対象",powPerZone:"数える場所",powPerWho:"数える側",powPerBattle:"バトル中限定",powPerAtk:"攻撃中限定",
+    modeN:"選ぶ回数",modeOpts:"選択肢",modeAllCond:"全モード実行の条件",modeDup:"重複選択可",
+    pa:"パワーアタッカー",pb:"バトル中パワー",seal:"封印",altCost:"代替コスト",altCond:"代替コストの条件"};
   return M[k]||k;
 }
 async function autoFillFromText(){
