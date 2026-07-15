@@ -5221,7 +5221,11 @@ async function runFxList(pi,list,srcCard){
       sfx("move");
     }else if(f.t==="retrieveHand"){
       // 回収：マナ/墓地/シールド/山札から条件に合うカードをn枚、そのゾーンの持ち主の手札へ戻す
-      const filt=String(f.cond||"").trim();
+      // 条件欄に「マナ:クリーチャー」のようにゾーンを書くと、ゾーン選択を飛ばしてそのゾーンから直接回収する
+      let filt=String(f.cond||"").trim();
+      let fixedSide=null,fixedZone=null;
+      {const mZ=filt.match(/^(?:(相手|自分)の?)?(マナ|墓地|シールド|山札)[：:](.*)$/);
+       if(mZ){fixedSide=mZ[1]==="相手"?"opp":"self";fixedZone={"マナ":"mana","墓地":"grave","シールド":"shield","山札":"deck"}[mZ[2]];filt=(mZ[3]||"").trim();}}
       const zoneOpts=[
         ["self","mana","自分のマナゾーン"],
         ["self","grave","自分の墓地"],
@@ -5229,9 +5233,13 @@ async function runFxList(pi,list,srcCard){
         ["self","deck","自分の山札（中を見て選ぶ）"],
       ];
       if(S.vs){zoneOpts.push(["opp","mana","相手のマナゾーン"],["opp","grave","相手の墓地"]);}
-      const zj=await askChoice(`↩ ${filt?filt+"の":""}カードを${n}枚 手札に戻す：どのゾーンから？`,zoneOpts.map(o=>o[2]));
-      if(zj===null)continue;
-      const side=zoneOpts[zj][0], zn=zoneOpts[zj][1];
+      let side,zn;
+      if(fixedZone){side=fixedSide||"self";zn=fixedZone;}
+      else{
+        const zj=await askChoice(`↩ ${filt?filt+"の":""}カードを${n}枚 手札に戻す：どのゾーンから？`,zoneOpts.map(o=>o[2]));
+        if(zj===null)continue;
+        side=zoneOpts[zj][0];zn=zoneOpts[zj][1];
+      }
       const owp=side==="self"?pi:op;
       const OZ=zonesOf(owp);
       let did=0;
@@ -8726,6 +8734,8 @@ function extractEffects(text,mode){
     return [{t:"diaBliz",n:1,cond:mR?mR[1].trim():""}];
   }
   const clauses=text.split(/[■●。\n]/).map(x=>x.trim()).filter(x=>x.length>1);
+  // 「使用可能マナは増えない」＝置いたマナはそのターン使えない＝タップして置く扱い
+  const _noUsableMana=/使用可能(?:な)?マナ(?:は|が)?[^。]{0,6}(?:増えない|多くならない)/.test(text);
   const numOf=(s,re)=>{const m=s.match(re);return m?+m[1]:1;};
   for(const cl of clauses){
     const _before=fx.length;
@@ -8737,7 +8747,7 @@ function extractEffects(text,mode){
     }
     // マナ加速（山札上→マナ）
     if(/山札の上から.*?マナ(?:ゾーン)?に置く/.test(cl)||/マナ加速/.test(cl)){
-      const n=numOf(cl,/上から(\d+)枚/); fx.push({t:/タップして/.test(cl)?"chargeTap":"charge",n});
+      const n=numOf(cl,/上から(\d+)枚/); fx.push({t:(/タップして/.test(cl)||_noUsableMana)?"chargeTap":"charge",n});
     }
     // 山札を墓地（セルフ/相手）
     if(/山札の上から(\d+)枚を?墓地に置く/.test(cl)){
@@ -8781,13 +8791,17 @@ function extractEffects(text,mode){
       else{const mR=cl.match(/([ァ-ヶー・ｦ-ﾟ一-龠]{2,12})を(?:超)?探索/);if(mR&&!/山札/.test(mR[1]))filt=mR[1];}
       fx.push({t:/超探索/.test(cl)?"deckRecruit":"deckSearch",n:numOf(cl,/(\d+)(?:枚|体)/),cond:filt});
     }
-    // ↩ 回収（マナ/墓地/シールドから手札に戻す）。バトルゾーンからのバウンスは除外。対象タイプ/種族も読み取る
+    // ↩ 回収（マナ/墓地/シールドから手札に戻す）。バトルゾーンからのバウンスは除外。ゾーンと対象タイプ/種族を読み取る
     if(/(?:マナ(?:ゾーン)?|墓地|シールド)から[^。■]{0,24}?手札に(?:戻す|加える)/.test(cl)&&!/バトルゾーン/.test(cl)&&!/相手/.test(cl)){
+      let zonePfx="";
+      if(/マナ(?:ゾーン)?から/.test(cl))zonePfx="マナ:";
+      else if(/墓地から/.test(cl))zonePfx="墓地:";
+      else if(/シールドから/.test(cl))zonePfx="シールド:";
       let rfilt="";
       if(/クリーチャー(?!の効果)/.test(cl))rfilt="クリーチャー";
       else if(/呪文/.test(cl))rfilt="呪文";
       else{const mR=cl.match(/([ァ-ヶー・ｦ-ﾟ一-龠]{2,12})(?:を|\d*枚|1枚)[^。■]{0,6}手札に(?:戻す|加える)/);if(mR&&!/マナ|墓地|シールド|山札/.test(mR[1]))rfilt=mR[1];}
-      fx.push({t:"retrieveHand",n:numOf(cl,/(\d+)枚/),cond:rfilt});
+      fx.push({t:"retrieveHand",n:numOf(cl,/(\d+)枚/),cond:zonePfx+rfilt});
     }
     // 🛡 山札の上を自分のシールドに加える（シールド追加・シールド化）
     if(/山札の上から.{0,6}?(?:シールド化|シールド(?:ゾーン)?に(?:加え|置)|盾(?:に(?:加え|置)|化))/.test(cl)&&!/相手/.test(cl))fx.push({t:"deckShield",n:numOf(cl,/(\d+)枚/)});
