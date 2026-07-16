@@ -1383,14 +1383,14 @@ body.shake{animation:bodyShake .4s ease-out}
         <label style="display:flex;align-items:center;gap:6px">⚙ クロスコスト（クロスギア用・クロス①等）
           <input type="number" id="fxGearCrossN" style="width:70px" value="0" min="0">
         </label>
-        <label><input type="checkbox" id="fxAccel"> 🅰 アクセル（クロスギアがクロスされている時に能力を得る）</label>
+        <label title="オンにすると、このカードの光臨/P'S光臨などの能力は「クロスギアがクロスされている時だけ」有効になります（アクセル）。フリルのように『アクセル：「P'S光臨：〜」を得る』というカードは、これと下の『🕊 光臨／P'S光臨』の両方をオンにしてください。"><input type="checkbox" id="fxAccel"> 🅰 アクセル（オンにすると、このカードの光臨などは<b>クロスギア装備中だけ</b>有効になる）</label>
         <label title="このギアをクロスしたクリーチャーのパワーを常時+n（例：+500）">⚙ クロス先パワー+<input type="number" id="fxGearPow" min="0" step="500" value="0" style="width:76px"></label>
         <label title="このギアをクロスしたクリーチャーのパワーを相手のターン中だけ+n（例：+12000）">⚙ クロス先パワー+（相手ターン中のみ）<input type="number" id="fxGearPowOppT" min="0" step="500" value="0" style="width:86px"></label>
         <label title="このギアをクロスしたクリーチャーに「ブロッカー」を与える"><input type="checkbox" id="fxGearBlocker"> ⚙ クロス先に「ブロッカー」を与える</label>
         <label title="このギアをクロスしたクリーチャーに「エスケープP'S」を与える（破壊される時パワー0超なら、かわりにランダム盾1つを手札へ・ST不可・各ターン1回）"><input type="checkbox" id="fxGearEscapePS"> ⚙ クロス先に「エスケープP'S」を与える</label>
         <label title="このクリーチャー自身が「エスケープP'S」を持つ（破壊される時パワー0超なら、かわりにランダム盾1つを手札へ・ST不可・各ターン1回）"><input type="checkbox" id="fxEscapePS"> 🏃 エスケープP'S（自身）</label>
         <label title="常在：自分の対象カードの実行（召喚/詠唱）コストをn少なくする。最低1で止まる（一番隊/ギア型・ジェネレート中もクロス中も有効）">⚙ 常在：自分の<input type="text" id="fxCostRedAllyF" list="raceList" placeholder="対象（例：ゼニス／オラクル）" style="width:170px">のコスト−<input type="number" id="fxCostRedAllyN" min="0" max="9" value="0" style="width:52px"></label>
-        <label><input type="checkbox" id="fxKorin"> 🕊 光臨／P'S光臨（自分のターン終了時、タップ状態なら山上を見て指定クリーチャーを出す）</label>
+        <label title="自分のターン終了時、このクリーチャーがタップ状態なら、山上を見て指定クリーチャーを出す。上の『🅰 アクセル』もオンにすると、クロスギアが付いている時だけ発動します（フリルはアクセル＋この光臨の両方をオン）。P'S光臨は見る枚数が自動で6になります。"><input type="checkbox" id="fxKorin"> 🕊 光臨／P'S光臨（ターン終了時タップで山上を見て指定クリーチャーを出す。<b>🅰アクセルと併用すると「クロス中だけ」発動</b>）</label>
         <input type="text" id="fxKorinFilt" placeholder="光臨で出す対象（例：オラクル／コスト5以下・系統B書式）" style="flex:1;min-width:200px">
         <label style="display:flex;align-items:center;gap:6px">見る枚数
           <input type="number" id="fxKorinLook" style="width:70px" value="6" min="1">
@@ -2271,6 +2271,37 @@ async function playNeoCreature(p,zone,id){
   closeSel();
   sfx("ok");renderAll();
   toast(`⤴ NEO進化！ ${faceNameOf(evc)}（進化元：${faceNameOf(host)}）`);
+}
+/* ⤴ 進化クロスギアを、バトルゾーンのクロスギア（独立ギア or クロス中）に重ねて出す（進化）。
+   進化元があれば重ねてtrue、無ければ/中断ならfalse。ドラッグ配置・カードメニュー両方から共用。 */
+async function playEvoCrossGear(p,zone,id){
+  const Z2=zonesOf(p);
+  const bases=[];
+  Z2.battle.forEach(x=>{const rx=getReg(x);if(x.id!==id&&rx&&(rx.ctype==="crossgear"||rx.ctype==="evocrossgear"))bases.push({card:x,where:"battle"});});
+  Z2.battle.forEach(host=>{(host.gear||[]).forEach(g=>{const rg=getReg(g);if(rg&&(rg.ctype==="crossgear"||rg.ctype==="evocrossgear"))bases.push({card:g,where:"gear",host});});});
+  if(!bases.length){toast("進化元にできるクロスギアがバトルゾーンにありません");renderAll();return false;}
+  const j=bases.length===1?0:await pickCard("進化元のクロスギアを選択",bases.map(b=>b.card));
+  if(j===null){renderAll();return false;}
+  snap();
+  const base=bases[j];
+  const f2=findCard(p,zone,id);if(!f2){toast("進化カードが見つかりません");renderAll();return false;}
+  f2.arr.splice(f2.idx,1);
+  const evc=f2.card;evc.faceup=true;evc.tapped=false;
+  if(base.where==="battle"){
+    const bi=Z2.battle.findIndex(x=>x.id===base.card.id);
+    evc.under=[base.card,...(base.card.under?base.card.under.splice(0):[]),...(evc.under||[])];
+    Z2.battle[bi]=evc;
+  }else{
+    // クロス中のギアの上に重ねる：ホストにクロスしたまま進化ギアへ差し替え
+    const gi=base.host.gear.findIndex(x=>x.id===base.card.id);
+    evc.under=[base.card,...(base.card.under?base.card.under.splice(0):[]),...(evc.under||[])];
+    evc.isCross=true;
+    base.host.gear[gi]=evc;
+  }
+  markArrive(evc);emitEvent(p,"summon");enqueueFx(p,evc);
+  closeSheet();closeSel();sfx("ok");renderAll();
+  toast(`⤴ 進化クロスギア！ ${faceNameOf(base.card)} の上に ${faceNameOf(evc)} を重ねた${base.where==="gear"?"（クロス状態を継続）":""}`);
+  return true;
 }
 /* 踏み倒しでクリーチャーを場に出す（NEOクリーチャーなら通常/NEO進化を選択可）。出せたらtrue。
    emitEvent("summon")とenqueueFxまで行う。呼び出し側はsfx/toast/waitFxIdleのみ。
@@ -3282,16 +3313,18 @@ function runWatchFx(pi,type,trigCard){
             cnd=cnd.replace(/^他の/,"").trim();
           }
           if(cnd){
+            // 🔬 自分自身が出た時に条件で不発になった場合は、原因をトーストで知らせる（サイレント不発の防止）
+            const _diag=(why)=>{if(trigCard.id===c.id)toast(`💡 ${faceNameOf(c)} の「出た時」誘発は不発：条件「${cnd}」${why}。自身にも反応させるには条件欄を見直してください（種族の登録漏れ等）`);};
             // ＆区切りで「対象条件＆ゾーン条件式」を併用可（例：ブロッカー＆手札<=9）。ゾーン式はゾーン名で始まる項・ターン項
             const _parts=cnd.split(/[＆&]/).map(x=>x.trim()).filter(Boolean);
             const _isExpr=p2=>/^(?:相手|自分の?)?(?:マナ|墓地(?:合計)?|手札|盾(?:合計)?|シールド|バトル(?:マナ)?|山札)/.test(p2)||/^(?:自分|相手)ターン$/.test(p2)||/鬼タイム|革命\d/.test(p2);
             const _exprs=_parts.filter(_isExpr), _filts=_parts.filter(p2=>!_isExpr(p2));
             if(_parts.length>1||_exprs.length){
-              if(_exprs.length&&!zoneCondOk(_exprs.join("＆"),pi))return;
-              if(_filts.length){const rt=getReg(trigCard);if(!lockFilterOk(_filts.join("／"),rt,trigCard))return;}
+              if(_exprs.length&&!zoneCondOk(_exprs.join("＆"),pi)){_diag("のゾーン条件を満たしていません");return;}
+              if(_filts.length){const rt=getReg(trigCard);if(!lockFilterOk(_filts.join("／"),rt,trigCard)){_diag("に出たカード（自身）が合いません");return;}}
             }else{
-              if(/[<>=]|以上|以下/.test(cnd)){if(!zoneCondOk(cnd,pi))return;}
-              else{const rt=getReg(trigCard);if(!lockFilterOk(cnd,rt,trigCard))return;}
+              if(/[<>=]|以上|以下/.test(cnd)){if(!zoneCondOk(cnd,pi)){_diag("のゾーン条件を満たしていません");return;}}
+              else{const rt=getReg(trigCard);if(!lockFilterOk(cnd,rt,trigCard)){_diag("に出たカード（自身）が合いません");return;}}
             }
           }
           w2={...w,cond:""};
@@ -4055,10 +4088,10 @@ const EFFECTS=[
      if(n===null)return;
      snap();
      const OZ=zonesOf(op);
-     let moved=0;
-     for(let i=0;i<n&&OZ.deck.length;i++){const c=OZ.deck.shift();c.faceup=true;OZ.grave.push(c);moved++;}
+     let moved=0;const nmv=[];
+     for(let i=0;i<n&&OZ.deck.length;i++){const c=OZ.deck.shift();c.faceup=true;OZ.grave.push(c);nmv.push(faceNameOf(c));moved++;}
      renderAll();sfx("grave");
-     toast(`🗑 ${S.players[op].label} の山札を ${moved}枚 墓地へ`);
+     toast(`🗑 ${S.players[op].label} の山札を ${moved}枚 墓地へ：${nmv.join("、")}`);
      if(S.vs&&!OZ.deck.length)declareWin(pi,`山札破壊：${S.players[op].label} の山札が0枚`);
    }},
   {name:"探索/超探索（山札・墓地・マナ）",
@@ -5081,6 +5114,49 @@ async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone){
     const di=src.findIndex(x=>x.id===tgt.id);
     if(di<0)continue;
     const cc=src.splice(di,1)[0];cc.faceup=true;cc.tapped=false;
+    const rCC=getReg(cc);
+    // 🂠 進化クロスギア／進化クリーチャーは直接出せない。下敷き（進化元）に重ねる
+    if(rCC&&(rCC.ctype==="evocrossgear"||isEvoReg(rCC))){
+      const isEvoGear=rCC.ctype==="evocrossgear";
+      // 進化クロスギア→バトルゾーンの通常クロスギア（ジェネレート済み or クロス中）が下敷き
+      // 進化クリーチャー→バトルゾーンの自分クリーチャーが下敷き
+      const bases=[];
+      if(isEvoGear){
+        Z.battle.forEach(x=>{const rx=getReg(x);if(rx&&(rx.ctype==="crossgear"||rx.ctype==="evocrossgear"))bases.push({card:x,where:"battle"});});
+        Z.battle.forEach(host=>{(host.gear||[]).forEach(g=>{const rg=getReg(g);if(rg&&(rg.ctype==="crossgear"||rg.ctype==="evocrossgear"))bases.push({card:g,where:"gear",host});});});
+      }else{
+        Z.battle.forEach(x=>{if(x.id!==cc.id&&isCreatureReg(getReg(x)))bases.push({card:x,where:"battle"});});
+      }
+      if(!bases.length){
+        // 下敷きが無い→進化不成立。手札に戻す（デュエプレの挙動に合わせ、出せないものは出さない）
+        cc.faceup=true;Z.hand.push(cc);
+        toast(`⚠ 《${faceNameOf(cc)}》は${isEvoGear?"重ねられるクロスギア":"進化元のクリーチャー"}がないため出せません（手札へ）`);
+        renderAll();continue;
+      }
+      const bj=bases.length===1?0:await pickCard(`⤴ 《${faceNameOf(cc)}》を重ねる${isEvoGear?"クロスギア":"クリーチャー"}を選択`,bases.map(b=>b.card));
+      if(bj===null){cc.faceup=true;Z.hand.push(cc);toast(`（重ねずに手札へ戻しました）`);renderAll();continue;}
+      const base=bases[bj];
+      if(isEvoGear){
+        // 進化クロスギア：下敷きクロスギアの上に重ねる。クロス中ならクロス状態を継続
+        if(base.where==="battle"){const bi=Z.battle.findIndex(x=>x.id===base.card.id);if(bi>=0)Z.battle.splice(bi,1);cc.under=[base.card,...(base.card.under||[])];Z.battle.push(cc);}
+        else{const host=base.host;const gi=host.gear.findIndex(x=>x.id===base.card.id);if(gi>=0)host.gear.splice(gi,1);cc.under=[base.card,...(base.card.under||[])];cc.isCross=true;host.gear.push(cc);}
+        markArrive(cc);
+        toast(`⤴ 進化クロスギア！ 《${faceNameOf(base.card)}》の上に《${faceNameOf(cc)}》を重ねた${base.where==="gear"?"（クロス状態を継続）":""}`);
+      }else{
+        // 進化クリーチャー：下敷きの上に重ねる
+        const host=base.card;const bi=Z.battle.findIndex(x=>x.id===host.id);
+        cc.under=[host,...(host.under?host.under.splice(0):[]),...(cc.under||[])];
+        cc.tapped=host.tapped;
+        if(host.gear&&host.gear.length)cc.gear=[...(cc.gear||[]),...host.gear.splice(0)];
+        if(isNeoReg(rCC))cc.neoEvo=true;
+        Z.battle[bi]=cc;
+        transferAtkState([host.id],cc);markArrive(cc);
+        toast(`⤴ 進化！ 《${faceNameOf(host)}》の上に《${faceNameOf(cc)}》を重ねた`);
+      }
+      emitEvent(pi,"summon");enqueueFx(pi,cc);
+      put++;renderAll();await waitFxIdle();
+      continue;
+    }
     Z.battle.push(cc);markArrive(cc);
     emitEvent(pi,"summon");enqueueFx(pi,cc);
     put++;toast(`🔎 ${labelJa}：${faceNameOf(cc)} をバトルゾーンへ`);
@@ -5232,8 +5308,10 @@ async function runFxList(pi,list,srcCard){
       else toast(`🗲 ${S.players[tp].label}：クリーチャー${creM}体が墓地に置かれるまで山札を削った`);
       renderAll();
     }else if(f.t==="millOpp"){
-      for(let i=0;i<n&&OZ.deck.length;i++){const c=OZ.deck.shift();c.faceup=true;if(!graveShuffleRepApply(c,op))OZ.grave.push(c);}
+      const nmv3=[];
+      for(let i=0;i<n&&OZ.deck.length;i++){const c=OZ.deck.shift();c.faceup=true;nmv3.push(faceNameOf(c));if(!graveShuffleRepApply(c,op))OZ.grave.push(c);}
       sfx("grave");
+      if(nmv3.length)toast(`🗑 相手の山札${nmv3.length}枚を墓地へ：${nmv3.join("、")}`);
       if(S.vs&&!OZ.deck.length)declareWin(pi,`山札破壊：${S.players[op].label} の山札が0枚`);
     }else if(f.t==="reveal"){
       for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;Z.reveal.push(c);}
@@ -5540,15 +5618,22 @@ async function runFxList(pi,list,srcCard){
       const TZ=zonesOf(tp);
       const pickFilt=String(f.cond||"").trim(); // 条件欄（例：パワー4000以下／コスト6以上／種族）で対象を絞る
       const chooser=fixedFoe?`${S.players[tp].label}（相手自身）が選ぶ`:"";
+      // 🚫 選ばれない（アンタッチャブル）：相手の効果には選ばれない（選ぶ側≠持ち主の時だけ除外）。
+      //    相手自身が選ぶ foeSelf系は持ち主＝選ぶ側なので選べる。攻撃・ブロック・全体（すべて）効果には無関係。
+      const chooserPi=fixedFoe?tp:pi;
+      const _ncOk=x=>{const rx=getReg(x);return !(rx&&rx.noChoose&&chooserPi!==tp&&!isIgnored(x,tp));};
       for(let i=0;i<n;i++){
         let pool=isElem?TZ.battle.slice():TZ.battle.filter(x=>isCreatureReg(getReg(x)));
         if(pickFilt)pool=pool.filter(x=>lockFilterOk(pickFilt,getReg(x),x));
+        const _ncCut=pool.filter(x=>!_ncOk(x)).length;
+        pool=pool.filter(_ncOk);
+        if(_ncCut>0&&i===0)toast(`🚫 「選ばれない」${_ncCut}体は効果の対象から除外`);
         if(!pool.length){
           // 🔬 診断：どちらの場を見て・何が除外されたかを表示（対象がいない原因の切り分け用）
           const _tot=TZ.battle.length;
           const _nonCre=TZ.battle.filter(x=>!isCreatureReg(getReg(x))).length;
           const _filtOut=pickFilt?TZ.battle.filter(x=>isCreatureReg(getReg(x))&&!lockFilterOk(pickFilt,getReg(x),x)).length:0;
-          toast(`対象の${unit}がいません（対象：${S.players[tp].label}の場${_tot}枚${_nonCre?`・非クリーチャー${_nonCre}`:""}${pickFilt?`・条件「${pickFilt}」外${_filtOut}`:""}）`);
+          toast(`対象の${unit}がいません（対象：${S.players[tp].label}の場${_tot}枚${_nonCre?`・非クリーチャー${_nonCre}`:""}${pickFilt?`・条件「${pickFilt}」外${_filtOut}`:""}${_ncCut?`・選ばれない${_ncCut}`:""}）`);
           break;
         }
         const j=await pickCard(`🎯 ${chooser?chooser+"：":""}${act}する${unit}を選択${pickFilt?`（${pickFilt}）`:""}（${i+1}/${n}${isElem?"個":"体"}目・キャンセルで終了）`,pool,{sub:x=>x.tapped?"タップ":""});
@@ -5583,7 +5668,12 @@ async function runFxList(pi,list,srcCard){
       }
       for(let i=0;i<n;i++){
         const pool=[];
-        for(const owp of sides){for(const x of zonesOf(owp).battle){const rx=getReg(x);if(!filt||lockFilterOk(filt,rx,x))pool.push({x,owp});}}
+        let _ncCut2=0;
+        for(const owp of sides){for(const x of zonesOf(owp).battle){const rx=getReg(x);
+          if(filt&&!lockFilterOk(filt,rx,x))continue;
+          if(rx&&rx.noChoose&&owp!==pi&&!isIgnored(x,owp)){_ncCut2++;continue;} // 🚫 相手の「選ばれない」は選択不可
+          pool.push({x,owp});}}
+        if(_ncCut2>0&&i===0)toast(`🚫 「選ばれない」${_ncCut2}体は効果の対象から除外`);
         if(!pool.length){
           const _d=sides.map(pp=>`${S.players[pp].label}の場${zonesOf(pp).battle.length}枚`).join("・");
           toast(filt?`該当カードなし（${filt}／${_d}）`:`対象がいません（${_d}）`);
@@ -6200,7 +6290,10 @@ async function runFxList(pi,list,srcCard){
       for(let i=0;i<n;i++){
         // 対象クリーチャー（相手/自分どちらの場からでも選べるよう両方提示）
         const pool=[];
-        for(const owp of [op,pi]){for(const x of zonesOf(owp).battle){if(isCreatureReg(getReg(x)))pool.push({x,owp});}}
+        for(const owp of [op,pi]){for(const x of zonesOf(owp).battle){const rx=getReg(x);
+          if(!isCreatureReg(rx))continue;
+          if(rx&&rx.noChoose&&owp!==pi&&!isIgnored(x,owp))continue; // 🚫 相手の「選ばれない」は選択不可
+          pool.push({x,owp});}}
         if(!pool.length){
           const _d=[op,pi].map(pp=>`${S.players[pp].label}の場${zonesOf(pp).battle.length}枚`).join("・");
           toast(`対象のクリーチャーがいません（${_d}）`);
@@ -6396,16 +6489,24 @@ async function runFxList(pi,list,srcCard){
       }
     }else if(f.t==="tutorDMPS"){
       if(!Z.deck.length){toast("山札がありません");continue;}
-      const def=srcCard?String(srcCard.name).replace(/\s*[（(].*$/,""):"";
-      const word=window.prompt("🤖 デュエプレ式サーチ：探すカードの条件（名前の一部／種族／「／」区切りOK）",def);
-      if(word===null)continue;
-      const w=word.trim();
+      // 条件欄（f.cond）が指定されていればそれを使う。空欄のときだけ手動入力を求める（初期値は付与元のカード名ではなく空）
+      const preset=String(f.cond||"").trim();
+      let w;
+      if(preset){w=preset;}
+      else{
+        const word=window.prompt("🤖 デュエプレ式サーチ：探すカードの条件（名前の一部／種族／「／」区切りOK）","");
+        if(word===null)continue;
+        w=word.trim();
+      }
+      const matchW=(x)=>{
+        const r2=getReg(x);
+        // 「／」区切りはいずれか一致。種族・名前・（条件式としての）lockFilterOkの順で判定
+        return String(w).split(/[／\/、,]/).map(s2=>s2.trim()).filter(Boolean).some(tk=>
+          String(x.name).includes(tk)||raceMatch(r2,tk)||lockFilterOk(tk,r2,x));
+      };
       let picked=0;
       for(let i=0;i<n;i++){
-        const cands=Z.deck.filter(x=>{
-          const r2=getReg(x);
-          return String(x.name).includes(w)||raceMatch(r2,w);
-        });
+        const cands=Z.deck.filter(matchW);
         if(!cands.length)break;
         const uniq=[...new Set(cands.map(x=>x.name))];
         const j=uniq.length===1?0:await askChoice(`🤖 該当カードから選択（${i+1}/${n}・枚数と他のカードは見えません）`,uniq);
@@ -11391,6 +11492,10 @@ async function showNamedList(){
 })();
 $("fxTwin").addEventListener("change",()=>{FXEDIT.twin=$("fxTwin").checked;renderFxEditor();});
 {const s=document.getElementById("fxTwinTop");if(s)s.addEventListener("change",()=>{if(FXEDIT)FXEDIT.twinTop=s.value;});}
+// コナユキ型/シフォン型（→マナ/→シールド）を選んだら「召喚は対象外」を自動オン（正規召喚をマナ送りしないため）
+{const rs=document.getElementById("fxRepIn");if(rs)rs.addEventListener("change",()=>{
+  if((rs.value==="mana"||rs.value==="shield")&&$("fxRepInNC")&&!$("fxRepInNC").checked){$("fxRepInNC").checked=true;if(FXEDIT)FXEDIT.repInNC=true;toast("✔「召喚は対象外」を自動でオンにしました（コナユキ/シフォン型は召喚以外のみ置換）");}
+});}
 $("fxAdd0").addEventListener("click",()=>{FXEDIT.faces[0].push({t:"draw",n:1});renderFxEditor();});
 $("fxTrigAdd").addEventListener("click",()=>{if(!FXEDIT)return;FXEDIT.watchFx.push({ev:"turnEnd",t:"draw",n:1});renderFxEditor();});
 $("fxAdd1").addEventListener("click",()=>{FXEDIT.faces[1].push({t:"draw",n:1});renderFxEditor();});
@@ -12614,6 +12719,19 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
       MOVE_BLOCKED=true;return;
     }
   }
+  // ⤴ 進化クロスギア：直接バトルゾーンには置けない。自分のクロスギア（独立/クロス中）に重ねて進化させる。
+  //    手札・マナ・墓地からのドラッグ配置もここで進化処理へ回す（従来の進化クリーチャーと同じ操作感）。
+  if(toZone==="battle"&&fromZone!=="battle"&&pFrom===pTo){
+    const rEG=getReg(f.card);
+    if(rEG&&rEG.ctype==="evocrossgear"){
+      const hasBase=zonesOf(pTo).battle.some(x=>{const rx=getReg(x);return x.id!==f.card.id&&rx&&(rx.ctype==="crossgear"||rx.ctype==="evocrossgear");})
+        ||zonesOf(pTo).battle.some(host=>(host.gear||[]).some(g=>{const rg=getReg(g);return rg&&(rg.ctype==="crossgear"||rg.ctype==="evocrossgear");}));
+      if(hasBase){ MOVE_BLOCKED=true; playEvoCrossGear(pTo,fromZone,f.card.id); return; }
+      sfx("flip");
+      toast(`⤴ 進化クロスギア《${faceNameOf(f.card)}》：重ねられるクロスギアがバトルゾーンにありません（先に通常クロスギアをジェネレート／クロスしてください）`);
+      MOVE_BLOCKED=true;return;
+    }
+  }
   // 常在ロック／ターン限定ロック：クリーチャー（バトルゾーンに出す）
   if(S.expert&&!S.freePlay&&toZone==="battle"&&fromZone!=="battle"&&S.turn>0){
     const rQ=getReg(f.card);
@@ -12968,11 +13086,12 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
           }
         }else if(rL.repIn==="shield"||rL.repIn==="mana"){
           // シフォン型（召喚以外→シールド化・任意）／コナユキ型（召喚以外→マナ）
+          // ※コナユキ/シフォンは本来「召喚以外のみ」対象。設定でNCが未チェックでも、正規召喚をマナ送りしないよう必ず召喚確認を挟む。
           const destR=rL.repIn;
           const labelR=destR==="shield"?"シールド":"マナゾーン";
           c._repPending=true;
           (async()=>{
-            if(rL.repInNC){
+            {
               const j=await askChoice(`🔒 ${faceNameOf(locker)}：置換ロック（召喚以外のみ）\n《${c.name}》はどの方法で出しましたか？`,
                 ["召喚（コストを支払って手札から等）→そのまま","召喚以外（侵略/チェンジ/超次元/踏み倒し/侵略ZERO）→置換"]);
               if(j!==1){c._repPending=false;if(zonesOf(pTo).battle.find(x=>x.id===c.id))enqueueFx(pTo,c);renderAll();return;}
@@ -15812,6 +15931,25 @@ function attachPointer(el,ctx){
           sfx("move");
         }
         else if(tgt&&!(tgt.p===ctx.p&&tgt.zone===ctx.zone)){
+          // ⚡ バトルゾーン→墓地のドラッグは「破壊」の可能性が高い。破壊時/離れた時の効果を発動させるか確認
+          if(S.expert&&ctx.zone==="battle"&&tgt.zone==="grave"&&!(S.multi&&S.msel.some(x=>x.id===ctx.id))){
+            const fD=findCard(ctx.p,ctx.zone,ctx.id);
+            const rD=fD&&getReg(fD.card);
+            const hasDeathFx=rD&&((rD.watchFx&&rD.watchFx.some(wx=>wx.ev==="pig"||wx.ev==="toGrave"))||rD.etOmega||rD.escapePS||rD.repLeave);
+            const hasLeaveWatchers=S.expert&&[0,1].some(pp=>zonesOf(pp).battle.some(x=>{const rx=getReg(x);return rx&&rx.watchFx&&rx.watchFx.some(wx=>wx.ev==="myLeave"||wx.ev==="allyLeave"||wx.ev==="oppLeave"||wx.ev==="anyLeave");}));
+            if(fD&&isSealed(fD.card)){toast(`🔒 ${fD.card.name} は封印されている！（離れません）`);}
+            else if(hasDeathFx||hasLeaveWatchers){
+              (async()=>{
+                const y=await ask(`《${faceNameOf(fD.card)}》を墓地へ。\n「破壊」として扱いますか？\n（はい＝破壊された時/離れた時などの効果が発動・Ω等の置換も働く／いいえ＝ただ墓地へ移すだけ）`);
+                snap();
+                if(y){sfx("grave");await destroyCreature(ctx.p,fD.card);}
+                else{sfx("grave");fD.card._skipDestroy=true;try{moveCardX(ctx.p,ctx.zone,ctx.id,tgt.p,tgt.zone);}finally{delete fD.card._skipDestroy;}}
+                closeSel();if(ctx.afterDrop)ctx.afterDrop();else if(ctx.viewer)closeViewer();
+                renderAll();
+              })();
+              return;
+            }
+          }
           sfx(tgt.zone==="grave"?"grave":"move");
           snap();
           const inSel=S.multi&&S.msel.some(x=>x.id===ctx.id);
@@ -16233,6 +16371,15 @@ function openCardSheet(ctx){
         ["パワー ＋（数値入力）","パワー −（数値入力）","パワーアタッカー ＋（数値入力）","スレイヤー","ブロッカー","メモ（自由入力）","❄ フリーズ（次のターン アンタップしない）","🌀 ジャストダイバー（次の自分のターン開始まで）","🚫 攻撃もブロックもできない（プリンプリン型）","⚓ バトルゾーンを離れない","🪨 破壊されない","⚡ スピードアタッカー付与","💥 ブレイク数＋n","🚯 このカードの能力を無視（立ち上がれ型・エレメント能力無視）"]);
       if(pick===null)return;
       snap();
+      // ✨「次の自分のターン開始まで」の基準＝効果を使ったプレイヤー。
+      //    相手のクリーチャーへの付与（プリン等）でも、使った側の次のターン開始まで正しく持続させる
+      const _nextOwner=async()=>{
+        if(!S.vs)return 0;
+        const curW=S.who, othW=curW===0?1:0;
+        const jW=await askChoice(`「次の自分のターン開始まで」：この効果を使ったのはどちらですか？\n（そのプレイヤーの次のターン開始時に解除されます）`,
+          [`${S.players[curW].label}（現在のターンのプレイヤー）`,`${S.players[othW].label}`]);
+        return jW===1?othW:curW;
+      };
       if(pick===8){
         if(c.buff&&c.buff.noAtkBlock){
           delete c.buff.noAtkBlock;
@@ -16243,7 +16390,7 @@ function openCardSheet(ctx){
         const durP=await askChoice("持続はどこまで？（現代カードは「次の自分のターン開始まで」が多い）",["このターン（終了時に解除）","次の自分のターン開始まで"]);
         if(durP===null)return;
         c.buff=c.buff||{};c.buff.noAtkBlock=true;
-        if(durP===1)markBuffNext(c,["noAtkBlock"],ctx.p);
+        if(durP===1)markBuffNext(c,["noAtkBlock"],await _nextOwner());
         closeSel();renderAll();
         toast(`🚫 ${faceNameOf(c)} は攻撃もブロックもできない（${durP===1?"次の自分のターン開始まで":"このターン"}）`);
         return;
@@ -16279,7 +16426,7 @@ function openCardSheet(ctx){
       else if(pick===3){c.buff.slayer=true;setKeys.push("slayer");}
       else if(pick===4){c.buff.blocker=true;setKeys.push("blocker");}
       else if(pick===5){const t2=await askText("付与内容（メモ）","");if(t2){c.buff.note=t2;setKeys.push("note");}}
-      if(nextDur&&setKeys.length)markBuffNext(c,setKeys,ctx.p);
+      if(nextDur&&setKeys.length)markBuffNext(c,setKeys,await _nextOwner());
       closeSel();renderAll();
       toast(`付与しました（${nextDur?"次の自分のターン開始まで持続":"ターン終了で解除"}・カード左下に表示）`);
     },"",true));
@@ -16624,32 +16771,7 @@ function openCardSheet(ctx){
   const isCrossG=reg&&(reg.ctype==="crossgear"||reg.ctype==="evocrossgear");
   if(reg&&reg.ctype==="evocrossgear"&&["hand","battle","mana","grave"].includes(ctx.zone)){
     box.appendChild(actBtn("⤴ 進化：クロスギアの上に重ねて出す",async ()=>{
-      const Z2=zonesOf(ctx.p);
-      // 進化元＝バトルゾーンにある自分のクロスギア（クロス中でも独立ギアでも可）
-      const bases=[];
-      Z2.battle.forEach(x=>{const rx=getReg(x);if(x.id!==ctx.id&&rx&&(rx.ctype==="crossgear"||rx.ctype==="evocrossgear"))bases.push({card:x,where:"battle"});});
-      Z2.battle.forEach(host=>{(host.gear||[]).forEach(g=>{const rg=getReg(g);if(rg&&(rg.ctype==="crossgear"||rg.ctype==="evocrossgear"))bases.push({card:g,where:"gear",host});});});
-      if(!bases.length){toast("進化元にできるクロスギアがバトルゾーンにありません");return;}
-      const j=bases.length===1?0:await pickCard("進化元のクロスギアを選択",bases.map(b=>b.card),{sub:b=>b.tapped?"":""});
-      if(j===null)return;
-      snap();
-      const base=bases[j];
-      const f2=findCard(ctx.p,ctx.zone,ctx.id);if(!f2){toast("進化カードが見つかりません");return;}
-      f2.arr.splice(f2.idx,1);
-      const evc=f2.card;evc.faceup=true;evc.tapped=false;
-      if(base.where==="battle"){
-        const bi=Z2.battle.findIndex(x=>x.id===base.card.id);
-        evc.under=[base.card,...(base.card.under?base.card.under.splice(0):[]),...(evc.under||[])];
-        Z2.battle[bi]=evc;
-      }else{
-        // クロス中のギアの上に重ねる：ホストにクロスしたまま進化ギアへ差し替え
-        const gi=base.host.gear.findIndex(x=>x.id===base.card.id);
-        evc.under=[base.card,...(base.card.under?base.card.under.splice(0):[]),...(evc.under||[])];
-        base.host.gear[gi]=evc;
-      }
-      markArrive(evc);emitEvent(ctx.p,"summon");enqueueFx(ctx.p,evc);
-      closeSheet();closeSel();sfx("ok");renderAll();
-      toast(`⤴ 進化クロスギア！ ${faceNameOf(base.card)} の上に ${faceNameOf(evc)} を重ねた${base.where==="gear"?"（クロス状態を継続）":""}`);
+      await playEvoCrossGear(ctx.p,ctx.zone,ctx.id);
     },"primary",true));
   }
   if(isCrossG&&ctx.zone==="battle"){
@@ -16898,9 +17020,9 @@ function openCardSheet(ctx){
             }
           }else toast("墓地が空です");
         }else if(k==="fu"){
-          let n2=0;
-          for(let i2=0;i2<2&&Z2.deck.length;i2++){const t=Z2.deck.shift();t.faceup=true;Z2.grave.push(t);n2++;}
-          toast(`山上${n2}枚を墓地へ`);
+          let n2=0;const nmv2=[];
+          for(let i2=0;i2<2&&Z2.deck.length;i2++){const t=Z2.deck.shift();t.faceup=true;Z2.grave.push(t);nmv2.push(faceNameOf(t));n2++;}
+          toast(`山上${n2}枚を墓地へ：${nmv2.join("、")}`);
         }
         sfx("ok");
         fxAnim(c.id,"an-cip",600);
