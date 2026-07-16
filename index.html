@@ -1379,6 +1379,7 @@ body.shake{animation:bodyShake .4s ease-out}
             <option value="2">革命2（盾2枚以下）</option>
           </select>
         </label>
+        <label style="display:flex;align-items:center;gap:6px" title="クロス時に必要な文明（例：光・光闇）。支払い時、指定文明のマナを各1枚以上優先タップします。空欄＝不問">⚙ クロス文明<input type="text" id="fxGearCrossCiv" placeholder="例：光闇" style="width:80px"></label>
         <label style="display:flex;align-items:center;gap:6px">⚙ クロスコスト（クロスギア用・クロス①等）
           <input type="number" id="fxGearCrossN" style="width:70px" value="0" min="0">
         </label>
@@ -9650,6 +9651,7 @@ function renderFxEditor(){
   $("fxRevoN").value=String(FXEDIT.revoN==null?-1:FXEDIT.revoN);
   $("fxGearCrossN").value=FXEDIT.gearCrossN||0;
   $("fxAccel").checked=!!FXEDIT.accel;
+  {const e=$("fxGearCrossCiv");if(e)e.value=FXEDIT.gearCrossCiv||"";}
   {const e=$("fxGearPow");if(e)e.value=String(FXEDIT.gearPow||0);}
   {const e=$("fxGearPowOppT");if(e)e.value=String(FXEDIT.gearPowOppT||0);}
   {const e=$("fxGearBlocker");if(e)e.checked=!!FXEDIT.gearBlocker;}
@@ -10272,7 +10274,10 @@ function parseCardText(txt,mode){
     const tn2=t.replace(/[①-⑩]/g,ch=>String(circ.indexOf(ch)+1));
     const mCross=tn2.match(/クロス\s*[〔〈［\[（(]?\s*(\d+)/);
     if(mCross)out.set.gearCrossN=+mCross[1];
-    else{const mC2=tn2.match(/クロス\s*[〔〈［\[（(][^）)〕］\]]*?[\/／]\s*(\d+)\s*[）)〕］\]]/);if(mC2)out.set.gearCrossN=+mC2[1];}
+    else{const mC2=tn2.match(/クロス\s*[〔〈［\[（(]([^）)〕］\]]*?)[\/／]\s*(\d+)\s*[）)〕］\]]/);
+      if(mC2){out.set.gearCrossN=+mC2[2];
+        const civs=(mC2[1].match(/光|水|闇|火|自然|ゼロ|無色/g)||[]);
+        if(civs.length)out.set.gearCrossCiv=civs.join("");}}
   }
   // 🅰 アクセル（クロスギアがクロスされている時に能力を得る）
   if(/アクセル/.test(t))out.set.accel=true;
@@ -11147,6 +11152,7 @@ function openFxEditor(key){
     revoN:cur&&cur.revoN!=null?cur.revoN:-1,
     gearCrossN:cur&&cur.gearCrossN||0,
     accel:cur?!!cur.accel:false,
+    gearCrossCiv:cur&&cur.gearCrossCiv||"",
     gearPow:cur&&cur.gearPow||0,
     gearPowOppT:cur&&cur.gearPowOppT||0,
     gearBlocker:cur?!!cur.gearBlocker:false,
@@ -11460,6 +11466,7 @@ $("fxSave").addEventListener("click",async ()=>{
     revoN:parseInt($("fxRevoN").value,10),
     gearCrossN:+$("fxGearCrossN").value||0,
     accel:$("fxAccel").checked,
+    gearCrossCiv:$("fxGearCrossCiv")?$("fxGearCrossCiv").value.trim():"",
     gearPow:$("fxGearPow")?(parseInt($("fxGearPow").value,10)||0):0,
     gearPowOppT:$("fxGearPowOppT")?(parseInt($("fxGearPowOppT").value,10)||0):0,
     gearBlocker:$("fxGearBlocker")?$("fxGearBlocker").checked:false,
@@ -11834,6 +11841,7 @@ $("btnRegList").addEventListener("click",()=>{
     if(v.revoN!=null&&v.revoN>=0)attrs.push(`🚩革命${v.revoN}（盾${v.revoN}枚以下で有効）`);
     if(v.gearCrossN)attrs.push(`⚙クロス${v.gearCrossN}`);
     if(v.accel)attrs.push("🅰アクセル（クロス中に能力獲得）");
+    if(v.gearCrossCiv)attrs.push(`⚙クロス文明：${v.gearCrossCiv}`);
     if(v.gearPow)attrs.push(`⚙クロス先パワー+${v.gearPow}`);
     if(v.gearPowOppT)attrs.push(`⚙クロス先パワー+${v.gearPowOppT}（相手ターン中）`);
     if(v.gearBlocker)attrs.push("⚙クロス先に「ブロッカー」付与");
@@ -16662,7 +16670,18 @@ function openCardSheet(ctx){
         snap();
         if(jj===0){
           if(untapped.length<xc)toast(`⚠ マナが足りないため${untapped.length}枚のみタップしました`);
-          for(let k=0;k<xc&&k<untapped.length;k++)untapped[k].tapped=true;
+          // ⚙ クロス文明指定：指定された各文明のマナを1枚ずつ優先タップし、残りは任意のマナで支払う
+          const civMapX={"光":"light","水":"water","闇":"dark","火":"fire","自然":"nature","ゼロ":"zero","無色":"zero"};
+          const needCivs=((rG&&rG.gearCrossCiv)||"").match(/光|水|闇|火|自然|ゼロ|無色/g)||[];
+          const tappedSet=new Set();
+          for(const cv of needCivs){
+            const en=civMapX[cv];
+            const m=untapped.find(x=>!tappedSet.has(x.id)&&(()=>{const rm=getReg(x);return rm&&rm.civs&&rm.civs.includes(en);})());
+            if(m){m.tapped=true;tappedSet.add(m.id);}
+            else toast(`⚠ ${cv}文明のマナが見つかりません（登録文明で判定・任意のマナで代用します）`);
+          }
+          let left=xc-tappedSet.size;
+          for(const m of untapped){if(left<=0)break;if(tappedSet.has(m.id))continue;m.tapped=true;tappedSet.add(m.id);left--;}
         }
       }else snap();
       const i2=Z2.battle.findIndex(x=>x.id===c.id);
