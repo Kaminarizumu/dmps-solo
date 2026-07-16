@@ -1234,6 +1234,7 @@ body.shake{animation:bodyShake .4s ease-out}
         <span style="font-size:12px;font-weight:700">💪 条件付きパワー ＋</span>
         <input type="number" id="fxCstPow" style="width:100px" placeholder="0" min="0">
         <input type="text" id="fxCstPowCond" style="flex:1;min-width:160px" placeholder="条件（例：マナ:ボルシャック／ルピア>=3・空欄＝常時）">
+        <label style="font-size:11px" title="条件欄の代わりに『このクリーチャーがNEO進化なら』を条件にする（大河聖霊プリマ・ドラード型）"><input type="checkbox" id="fxCstPowNeo"> NEO進化なら</label>
       </div>
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;flex:1 1 100%">
         <span style="font-size:12px;font-weight:700">🔢 数だけパワー</span>
@@ -1645,6 +1646,13 @@ body.shake{animation:bodyShake .4s ease-out}
           <span style="font-size:12px;font-weight:700;color:#4ade80">💠 各ターン最初の召喚 −</span>
           <input type="number" id="fxFirstRed" min="0" placeholder="0" style="width:70px">
           <input type="text" id="fxFirstRedF" list="raceList" placeholder="対象（種族/名前・「／」区切り・空欄＝すべてのクリーチャー）・コッコ・ルピア型" style="flex:1;min-width:150px">
+          <span style="font-size:11px;color:#4ade80">NEOならさらに−</span>
+          <input type="number" id="fxFirstRedNeo" min="0" placeholder="0" style="width:56px" title="対象がNEOクリーチャーなら、上の軽減に加えてさらにこの数だけ軽減（猛菌封魔カリス型・0以下にならない）">
+        </div>
+        <div style="flex:1 1 100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:4px">
+          <span style="font-size:12px;font-weight:700;color:#38bdf8">🧬 常在：手札の対象にNEO進化コスト −</span>
+          <input type="number" id="fxStHandNeoRed" min="0" placeholder="0" style="width:56px" title="自分の手札の対象クリーチャーが「NEO進化として召喚」される時、コストをこの数だけ軽減（光器ワカヒルメ型・0以下にならない）">
+          <input type="text" id="fxStHandNeoRedF" list="raceList" placeholder="対象（例：オリジン・「／」OR・空欄＝全クリーチャー）" style="flex:1;min-width:150px">
         </div>
         <div style="flex:1 1 100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-top:4px">
           <span style="font-size:12px;font-weight:700;color:#f87171">相手のコスト ＋</span>
@@ -1749,6 +1757,12 @@ body.shake{animation:bodyShake .4s ease-out}
       </div>
       <div class="row" style="gap:12px;flex-wrap:wrap">
         <label><input type="checkbox" id="fxAuraTapIn"> 常在：相手クリーチャーはタップして出る</label>
+        <label style="font-size:11px" title="このクリーチャーがNEO進化として出ている時だけ有効（大河聖霊プリマ・ドラード型）"><input type="checkbox" id="fxAuraTapInNeo"> NEO進化時のみ</label>
+      </div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;padding:6px 8px">
+        <label style="font-size:12px;font-weight:700"><input type="checkbox" id="fxStWinBattle"> 🏆 常在：対象は「すべてのバトルに勝つ」</label>
+        <input type="text" id="fxStWinBattleF" list="raceList" placeholder="対象（例：オリジン・空欄＝全クリーチャー）" style="width:180px">
+        <input type="text" id="fxStWinBattleCond" placeholder="条件（例：バトル:ブロッカー>=4・空欄＝常時）" style="flex:1;min-width:180px" title="聖霊王ナルカミ型：条件を満たす間、対象クリーチャーはバトルで無条件に勝つ（相手を破壊し自身は生存）">
       </div>
       <div class="row">
         <span style="font-size:12px;font-weight:700">常在効果メモ</span>
@@ -4391,6 +4405,8 @@ const FX_TYPES=[
   ["tutorDMPS","山札から条件に合うカードをn枚 手札へ（デュエプレ式・候補のみ表示／無ければ不発）"],
   ["retrieveHand","マナ/墓地/シールド等からn枚 手札に戻す（回収・ゾーンは実行時選択・条件欄で対象指定可）"],
   ["retrieveManaGrave","↩ マナと墓地から合計n枚 手札に戻す（両ゾーンを組み合わせて自由に選択・条件欄で対象指定・ベートーベン型）"],
+  ["untapFilt","🔄 自分の対象クリーチャーをすべてアンタップ（条件欄で対象指定・聖霊王ナルカミ型）"],
+  ["handStFree","⚡ 自分の手札の「S・トリガー」持ちを1枚、コストを支払わずに実行（クリーチャー→召喚／呪文→詠唱・条件欄で追加対象指定可）"],
   ["diaBliz","🔷 マナから条件のカードをランダムに手札上限(10)まで戻す→戻した数だけ山札からマナ加速（自身と同名は除外・条件欄で種族等指定・ダイヤモンド・ブリザード型）"],
   ["battleAsk","相手のクリーチャーとバトルする（対象選択・確認つき）"],
   ["hold","⏸ 処理中にする（攻撃を保留して手動で解決。もう一度攻撃で続行）"],
@@ -4417,7 +4433,7 @@ const FX_TYPES=[
   ["millUntilCre","山札の上から、クリーチャーがn体墓地に置かれるまで置く（ヴォルグ・サンダー型・対象プレイヤー選択）"],
 ];
 const FX_LABEL=new Proxy(Object.fromEntries(FX_TYPES),{get:(t,k)=>(k in t)?t[k]:(typeof k==="string"&&k.startsWith("sp:")?"特殊："+k.slice(3):k)});
-const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo"]);
+const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo","untapFilt","handStFree"]);
 const fxNoN=t=>FX_NO_N.has(t)||(typeof t==="string"&&t.startsWith("sp:"));
 function fxSummary(list){
   if(!list||!list.length)return "（効果なし）";
@@ -4632,7 +4648,9 @@ async function autoTapCost(pi,c){
       if(rb.firstRedF&&rb.firstRedF!=="クリーチャー"&&!lockFilterOk(rb.firstRedF,r,c)){redSkip.push(`${faceNameOf(b)}：《${faceNameOf(c)}》が対象条件「${rb.firstRedF}」に不一致（種族の登録を確認）`);continue;}
       const key=`${pi}_${b.id}`;
       if(S.firstSumUsed[key]){redSkip.push(`${faceNameOf(b)}：このターンすでに軽減を使用済み`);continue;}
-      redTotal+=+rb.firstRed;usedKeys.push(key);
+      let add=+rb.firstRed;
+      if(+rb.firstRedNeo>0&&isNeoReg(r))add+=+rb.firstRedNeo; // NEOクリーチャーならさらに軽減（カリス型）
+      redTotal+=add;usedKeys.push(key);
     }
     if(redTotal>0){
       cost=Math.max(cost>0?1:0,cost-redTotal); // 「0以下にならない」＝下限1
@@ -4681,6 +4699,19 @@ async function autoTapCost(pi,c){
         const dec=Math.min(rb.stCostM,Math.max(0,cost-1)); // 最低1で止まる
         cost-=dec;
         toast(`⚙ 常在コスト軽減（${faceNameOf(m2)}${rb.stCostF?`・対象：${rb.stCostF}`:""}）：−${dec}（残り${cost}）`);
+      }
+    }
+  }
+  // 🧬 NEO進化として召喚する時のコスト軽減付与（光器ワカヒルメ型：手札のオリジン・NEOに付与）。
+  //    このクリーチャーがNEO進化として出ている（下に進化元 or neoEvo）場合のみ適用。0以下にならない。
+  if(paySide==="creature"&&isNeoReg(r)&&isNeoEvoInstance(c)){
+    for(const b of Z.battle){
+      const rb=getReg(b);
+      if(!rb||!(+rb.stHandNeoRed>0)||b.id===c.id||isSealed(b)||isIgnored(b,pi))continue;
+      if(rb.stHandNeoRedF&&!lockFilterOk(rb.stHandNeoRedF,r,c))continue;
+      if(cost>0){
+        const dec=Math.min(+rb.stHandNeoRed,Math.max(0,cost-1));
+        if(dec>0){cost-=dec;toast(`🧬 NEO進化コスト軽減（${faceNameOf(b)}）：−${dec}（残り${cost}）`);}
       }
     }
   }
@@ -5193,7 +5224,7 @@ async function runFxList(pi,list,srcCard){
   for(const f of list){
     const Z=zonesOf(pi), OZ=zonesOf(op);
     const n=Math.max(1,f.n|0);
-    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","retrieveManaGrave","diaBliz","deckRecruit","deckTopRecruitMana","deckSearch","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone","sumRecruit","foeAllShield","foeHandShieldRand","deckEvo","suspenseReveal","shieldMakeRand"]);
+    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","retrieveManaGrave","diaBliz","deckRecruit","deckTopRecruitMana","deckSearch","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone","sumRecruit","foeAllShield","foeHandShieldRand","deckEvo","suspenseReveal","shieldMakeRand","untapFilt","handStFree"]);
     // 🪧 「召喚時のみ」の効果：このカードの出た方法を1回だけ確認してゲート
     if(f.sumOnly&&srcCard){
       if(srcCard._wasSummon==null){
@@ -5858,6 +5889,46 @@ async function runFxList(pi,list,srcCard){
       }
       if(cnt>0){sfx("ok");toast(`🚫 相手クリーチャー${cnt}体は次の自分のターン開始時まで攻撃もブロックもできない`);}
       renderAll();
+    }else if(f.t==="untapFilt"){
+      // 🔄 自分の対象クリーチャーをすべてアンタップ（f.cond＝対象条件・空欄＝全クリーチャー）
+      const filt=String(f.cond||"").trim();
+      let cnt=0;
+      for(const x of Z.battle){
+        const rx=getReg(x);
+        if(!rx||!isCreatureReg(rx))continue;
+        if(filt&&!lockFilterOk(filt,rx,x))continue;
+        if(x.tapped){x.tapped=false;x.frozen=false;cnt++;}
+      }
+      if(cnt>0){sfx("ok");toast(`🔄 ${filt?filt+"を":"クリーチャーを"}${cnt}体アンタップした`);}
+      else toast(`🔄 アンタップ対象なし${filt?`（${filt}）`:""}`);
+      renderAll();
+    }else if(f.t==="handStFree"){
+      // ⚡ 手札のS・トリガー持ちを1枚、コストを支払わずに実行（クリーチャー＝召喚／呪文＝詠唱）。f.cond＝追加の対象条件（任意）
+      const filt=String(f.cond||"").trim();
+      const cands=Z.hand.filter(x=>{const rx=getReg(x);return rx&&rx.st&&(!filt||lockFilterOk(filt,rx,x));});
+      if(!cands.length){toast(`手札にS・トリガー持ちがありません${filt?`（${filt}）`:""}`);}
+      else{
+        const j=await askChoice("⚡ 手札のS・トリガー持ちを1枚、コストを支払わずに実行",[...cands.map(x=>faceNameOf(x)),"実行しない"]);
+        if(j!==null&&j<cands.length){
+          const sel=cands[j];
+          const hi=Z.hand.findIndex(x=>x.id===sel.id);
+          if(hi>=0){
+            snap();
+            const rSel=getReg(sel);
+            Z.hand.splice(hi,1);
+            sel.faceup=true;sel.tapped=false;
+            if(rSel&&rSel.ctype==="spell"){
+              if(Z.resolve.length){const olds=Z.resolve.splice(0);olds.forEach(o=>resolveOut(Z,o));}
+              Z.resolve.push(sel);emitEvent(pi,"spell");enqueueFx(pi,sel);
+              toast(`⚡ S・トリガー無償詠唱：${faceNameOf(sel)}（解決中へ）`);
+            }else{
+              Z.battle.push(sel);markArrive(sel);emitEvent(pi,"summon");enqueueFx(pi,sel);
+              toast(`⚡ S・トリガー無償召喚：${faceNameOf(sel)}`);
+            }
+            sfx("ok");renderAll();await waitFxIdle();
+          }
+        }
+      }
     }else if(f.t==="tempBlockerAll"){
       // 🛡 自分の〔対象〕すべてに「ブロッカー」を付与（次の自分のターン開始時まで）。f.cond＝対象条件（空欄＝全員）
       const filt=String(f.cond||"").trim();
@@ -7270,7 +7341,7 @@ function dispPower(c){
         p+=(+rb.stAuraPow||0);
       }
       // 条件付きパワー強化（「〔条件〕あれば、このクリーチャーのパワーを+N」）もラベルに反映
-      if(r.cstPow&&r.cstPowCond&&zoneCondOk(r.cstPowCond,own))p+=(+r.cstPow||0);
+      if(r.cstPow&&(r.cstPowNeo?isNeoEvoInstance(c):(r.cstPowCond&&zoneCondOk(r.cstPowCond,own))))p+=(+r.cstPow||0);
       p+=gearPowSum(c,own); // ⚙ クロスギアのパワー付与
     }
   }
@@ -7333,9 +7404,10 @@ async function effPower(c,attacking,inBattle){
     }
   }
   // 条件付きパワー強化（「〔条件〕あれば、このクリーチャーのパワーを+N」）
-  if(r&&r.cstPow&&r.cstPowCond){
+  if(r&&r.cstPow&&(r.cstPowCond||r.cstPowNeo)){
     const own=[0,1].find(pp=>zonesOf(pp)&&zonesOf(pp).battle.includes(c));
-    if(own!=null&&zoneCondOk(r.cstPowCond,own))p+=(+r.cstPow||0);
+    const condOk=r.cstPowNeo?isNeoEvoInstance(c):(own!=null&&zoneCondOk(r.cstPowCond,own));
+    if(condOk)p+=(+r.cstPow||0);
   }
   {const own2=[0,1].find(pp=>zonesOf(pp)&&zonesOf(pp).battle.includes(c));if(own2!=null)p+=gearPowSum(c,own2);} // ⚙ クロスギアのパワー付与
   return p;
@@ -7744,7 +7816,21 @@ async function doBattle(pa,a,pd,d){
   sfx("atk");
   toast(`⚔ バトル：${faceNameOf(a)}(${Pa}) vs ${faceNameOf(d)}(${Pd})`);
   await new Promise(r=>setTimeout(r,350));
-  if(Pa>Pd)await destroyWithReplace(pd,d);
+  // 🏆 条件付き「すべてのバトルに勝つ」：対象は無条件で勝利（相手を破壊し自身は生存）。聖霊王ナルカミ型。
+  const winsAll=(pp,x)=>{
+    const rx=getReg(x);
+    return zonesOf(pp).battle.some(sv=>{
+      const rs=getReg(sv);
+      return rs&&rs.stWinBattle&&!isSealed(sv)&&!isIgnored(sv,pp)
+        &&(!rs.stWinBattleCond||zoneCondOk(rs.stWinBattleCond,pp))
+        &&(!rs.stWinBattleF||lockFilterOk(rs.stWinBattleF,rx,x));
+    });
+  };
+  const aWin=winsAll(pa,a), dWin=winsAll(pd,d);
+  if(aWin&&dWin){toast("🏆 両者「バトルに勝つ」：どちらも破壊されない");}
+  else if(aWin){toast(`🏆 ${faceNameOf(a)} はバトルに勝つ`);await destroyWithReplace(pd,d);}
+  else if(dWin){toast(`🏆 ${faceNameOf(d)} はバトルに勝つ`);await destroyWithReplace(pa,a);}
+  else if(Pa>Pd)await destroyWithReplace(pd,d);
   else if(Pd>Pa)await destroyWithReplace(pa,a);
   else{await destroyWithReplace(pa,a);await destroyWithReplace(pd,d);}
   if(hasSlayer(d)&&zonesOf(pa).battle.some(x=>x.id===a.id)){
@@ -9839,6 +9925,9 @@ function renderFxEditor(){
   $("fxSympathy").value=FXEDIT.sympathy||"";
   {const e=$("fxFirstRed");if(e)e.value=FXEDIT.firstRed||"";}
   {const e=$("fxFirstRedF");if(e)e.value=FXEDIT.firstRedF||"";}
+  {const e=$("fxFirstRedNeo");if(e)e.value=FXEDIT.firstRedNeo||"";}
+  {const e=$("fxStHandNeoRed");if(e)e.value=FXEDIT.stHandNeoRed||"";}
+  {const e=$("fxStHandNeoRedF");if(e)e.value=FXEDIT.stHandNeoRedF||"";}
   $("fxGalaxy").value=String(FXEDIT.galaxy||0);
   $("fxAltCost").value=FXEDIT.altCost!=null?FXEDIT.altCost:"";
   $("fxAltCiv").value=FXEDIT.altCiv||"";
@@ -9980,6 +10069,7 @@ function renderFxEditor(){
   $("fxPA").value=FXEDIT.pa||"";
   {const e=$("fxCstPow");if(e)e.value=FXEDIT.cstPow||"";}
   {const e=$("fxCstPowCond");if(e)e.value=FXEDIT.cstPowCond||"";}
+  {const e=$("fxCstPowNeo");if(e)e.checked=!!FXEDIT.cstPowNeo;}
   $("fxPB").value=FXEDIT.pb||"";
   $("fxBreaks").value=FXEDIT.breaks||"1";
   $("fxGimmick").value=FXEDIT.gimmick||"";
@@ -10000,6 +10090,10 @@ function renderFxEditor(){
   $("fxShieldBurn").checked=!!FXEDIT.shieldBurn;
   $("fxQqqx").checked=!!FXEDIT.qqqx;
   $("fxAuraTapIn").checked=!!FXEDIT.auraTapIn;
+  {const e=$("fxAuraTapInNeo");if(e)e.checked=!!FXEDIT.auraTapInNeo;}
+  {const e=$("fxStWinBattle");if(e)e.checked=!!FXEDIT.stWinBattle;}
+  {const e=$("fxStWinBattleF");if(e)e.value=FXEDIT.stWinBattleF||"";}
+  {const e=$("fxStWinBattleCond");if(e)e.value=FXEDIT.stWinBattleCond||"";}
   $("fxAuraNote").value=FXEDIT.auraNote||"";
   $("fxModeN").value=String(FXEDIT.modeN||0);
   $("fxModeDup").checked=!!FXEDIT.modeDup;
@@ -11339,6 +11433,9 @@ function openFxEditor(key){
     sympathy:cur&&cur.sympathy||"",
     firstRed:cur&&(+cur.firstRed||0)||0,
     firstRedF:cur&&cur.firstRedF||"",
+    firstRedNeo:cur&&(+cur.firstRedNeo||0)||0,
+    stHandNeoRed:cur&&(+cur.stHandNeoRed||0)||0,
+    stHandNeoRedF:cur&&cur.stHandNeoRedF||"",
     galaxy:cur&&(+cur.galaxy||0)||0,
     altCost:cur&&cur.altCost!=null?+cur.altCost:null,
     altCiv:cur&&cur.altCiv||"",
@@ -11465,6 +11562,7 @@ function openFxEditor(key){
     pa:cur&&cur.pa||null,
     cstPow:cur&&(+cur.cstPow||0)||0,
     cstPowCond:cur&&cur.cstPowCond||"",
+    cstPowNeo:cur?!!cur.cstPowNeo:false,
     pb:cur&&cur.pb||null,
     breaks:cur&&cur.breaks||"1",
     gimmick:cur&&cur.gimmick||"",
@@ -11482,6 +11580,10 @@ function openFxEditor(key){
     shieldBurn:cur?!!cur.shieldBurn:false,
     qqqx:cur?!!cur.qqqx:false,
     auraTapIn:cur?!!cur.auraTapIn:false,
+    auraTapInNeo:cur?!!cur.auraTapInNeo:false,
+    stWinBattle:cur?!!cur.stWinBattle:false,
+    stWinBattleF:cur&&cur.stWinBattleF||"",
+    stWinBattleCond:cur&&cur.stWinBattleCond||"",
     auraNote:cur&&cur.auraNote||"",
     modeN:cur&&cur.modeN||0,
     modeDup:cur?!!cur.modeDup:false,
@@ -11657,6 +11759,9 @@ $("fxSave").addEventListener("click",async ()=>{
     sympathy:$("fxSympathy").value.trim(),
     firstRed:+($("fxFirstRed")?$("fxFirstRed").value:0)||0,
     firstRedF:($("fxFirstRedF")?$("fxFirstRedF").value:"").trim(),
+    firstRedNeo:+($("fxFirstRedNeo")?$("fxFirstRedNeo").value:0)||0,
+    stHandNeoRed:+($("fxStHandNeoRed")?$("fxStHandNeoRed").value:0)||0,
+    stHandNeoRedF:($("fxStHandNeoRedF")?$("fxStHandNeoRedF").value:"").trim(),
     galaxy:+$("fxGalaxy").value||0,
     altCost:$("fxAltCost").value===""?null:Math.max(0,+$("fxAltCost").value||0),
     altCiv:$("fxAltCiv").value.trim(),
@@ -11783,6 +11888,7 @@ $("fxSave").addEventListener("click",async ()=>{
     pa:$("fxPA").value.trim()===""?null:Math.max(0,+$("fxPA").value||0),
     cstPow:+($("fxCstPow")?$("fxCstPow").value:0)||0,
     cstPowCond:($("fxCstPowCond")?$("fxCstPowCond").value:"").trim(),
+    cstPowNeo:$("fxCstPowNeo")?$("fxCstPowNeo").checked:false,
     pb:$("fxPB").value.trim()===""?null:Math.max(0,+$("fxPB").value||0),
     breaks:$("fxBreaks").value,
     gimmick:$("fxGimmick").value,
@@ -11800,6 +11906,10 @@ $("fxSave").addEventListener("click",async ()=>{
     shieldBurn:$("fxShieldBurn").checked,
     qqqx:$("fxQqqx").checked,
     auraTapIn:$("fxAuraTapIn").checked,
+    auraTapInNeo:$("fxAuraTapInNeo")?$("fxAuraTapInNeo").checked:false,
+    stWinBattle:$("fxStWinBattle")?$("fxStWinBattle").checked:false,
+    stWinBattleF:($("fxStWinBattleF")?$("fxStWinBattleF").value:"").trim(),
+    stWinBattleCond:($("fxStWinBattleCond")?$("fxStWinBattleCond").value:"").trim(),
     auraNote:$("fxAuraNote").value.trim(),
     modeN:+$("fxModeN").value||0,
     modeDup:$("fxModeDup").checked,
@@ -13310,7 +13420,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
     }
     if(S.expert&&S.vs){
       const foe=pTo===0?1:0;
-      if(zonesOf(foe).battle.some(x=>{const r2=getReg(x);return r2&&r2.auraTapIn;})){
+      if(zonesOf(foe).battle.some(x=>{const r2=getReg(x);return r2&&r2.auraTapIn&&(!r2.auraTapInNeo||isNeoEvoInstance(x));})){
         c.tapped=true;
         toast(`常在効果：${faceNameOf(c)} はタップ状態で出た`);
       }
@@ -20159,6 +20269,9 @@ function zoneCondOk(expr,pi){
             if(tk==="呪文")return r&&r.ctype==="spell";
             if(tk==="クリーチャー")return r&&r.ctype!=="spell";
             if(tk==="ツインパクト")return r&&(r.twin||r.ctype==="twinpact");
+            if(tk==="ブロッカー")return !!((r&&r.blocker)||(x.buff&&x.buff.blocker)||gearBlockerOn(x));
+            if(tk==="進化")return isEvoReg(r);
+            if(tk==="クロスギア")return !!(r&&(r.ctype==="crossgear"||r.ctype==="evocrossgear"));
             if(civMap[tk])return r&&r.civs&&r.civs.includes(civMap[tk]);
             return (r&&raceMatch(r,tk))||String(x.name||"").includes(tk);
           });
