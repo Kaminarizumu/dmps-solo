@@ -2900,8 +2900,19 @@ function nextTurn(){
     }
   }
   const cur=S.vs?S.who:0;
-  if(S.expert){
-    const cur2=S.vs?S.who:0;
+  // ⏳ ターン終了時の誘発（watch fx／光臨／B・A・D／侵略ZERO／ガイアッシュ等）をすべて処理し終えるまで
+  //    ターン切替（who切替・全アンタップ・ドロー）を保留する。従来は投げっぱなしだったため、
+  //    切替時のアンタップで「タップしているなら」等の誘発条件が消え、効果が動いたり動かなかったりしていた。
+  NEXT_TURN_HOLD++;
+  (async()=>{
+    try{ if(S.expert)await runTurnEndTriggers(cur); }
+    catch(e){ console.warn("turnEndTriggers",e); }
+    finally{ NEXT_TURN_HOLD--; }
+    finishNextTurn(cur);
+  })();
+}
+/* ⏳ ターン終了時誘発を直列処理。完了するまでターンは切り替わらない */
+async function runTurnEndTriggers(cur2){
     const ten=[];
     for(const pi2 of (S.vs?[0,1]:[0])){
       zonesOf(pi2).battle.forEach(c=>{
@@ -2916,12 +2927,15 @@ function nextTurn(){
       const isMine=pi2===cur2;
       runWatchFxCond(pi2,(ev)=>ev==="turnEndBoth"||(isMine&&ev==="turnEndMine")||(!isMine&&ev==="turnEndOpp"));
     }
+    // 誘発ジョブ（WATCH_CHAIN）と効果パネルの完了を待ってから次の終了時処理へ
+    await WATCH_CHAIN;
+    await waitFxIdle();
     // 🕊 光臨／P'S光臨：自分のターン終了時、タップされていれば山上を見て指定クリーチャーをバトルゾーンに出す
     {
       const ZK=zonesOf(cur2);
       const korins=ZK.battle.filter(x=>{const r=getReg(x);return r&&r.korin&&x.tapped&&(!r.accel||(x.gear&&x.gear.length))&&!isSealed(x)&&!isIgnored(x,cur2);});
       if(korins.length){
-        (async()=>{
+        await (async()=>{
           for(const kc of korins){
             const r=getReg(kc);
             if(!ZK.battle.find(x=>x.id===kc.id)||!kc.tapped)continue;
@@ -2963,11 +2977,11 @@ function nextTurn(){
       for(const bc of bads){
         bc.badMark=false;
         toast(`💢 B・A・D：${faceNameOf(bc)} はターンの終わりに破壊`);
-        destroyCreature(cur2,bc);
+        await destroyCreature(cur2,bc);
       }
       const mbads=ZB.battle.filter(x=>x.masterBadMark);
       if(mbads.length){
-        (async()=>{
+        await (async()=>{
           for(const mb of mbads){
             mb.masterBadMark=false;
             if(!ZB.battle.length)break;
@@ -2998,12 +3012,12 @@ function nextTurn(){
     // 侵略ZERO：ターン終了時、相手（非ターンプレイヤー）の手札から
     if(S.vs){
       const def=cur2===0?1:0;
-      offerInvadeZeroPrompt(def);
+      await offerInvadeZeroPrompt(def);
       // ガイアッシュ型：相手のターンの終わりに手札から出す
       const DZ=zonesOf(def);
       const gCands=S.expert?DZ.hand.filter(h=>{const r=getReg(h);return r&&r.gaiash;}):[];
       if(gCands.length){
-        (async()=>{
+        await (async()=>{
           const j=await askChoice(`🐲 ${S.players[def].label}：相手のターンの終わりに手札から出しますか？\n（例：そのターン相手が踏み倒した／攻撃してきた等。条件はプレイヤー判断）`,
             [...gCands.map(h=>faceNameOf(h)),"出さない"]);
           if(j===null||j>=gCands.length)return;
@@ -3022,7 +3036,12 @@ function nextTurn(){
         })();
       }
     }
-  }
+  await waitFxIdle();
+  renderAll();
+}
+/* nextTurn 後半：実際のターン切替（who切替・アンタップ・ドロー・ターン開始時処理）。
+   runTurnEndTriggers の完了後にのみ呼ばれる。 */
+function finishNextTurn(cur){
   // 🌑 絶・無月の門はnextTurn冒頭のゲートで処理済み（ここでは何もしない）
   for(const P of S.players)P.zones.battle.forEach(c=>{
     if(c.buff&&c.buff._n&&c.buff._n.length){
@@ -3426,7 +3445,10 @@ function emitEvent(actor,type){
         const hits=AZ0.battle.filter(x=>arrived.has(x.id)&&!x._oriChk&&(()=>{const rx=getReg(x);return rx&&isCreatureReg(rx)&&rx.cost!=null&&rx.cost>manaN;})());
         for(const hc of hits){
           hc._oriChk=true;
-          (async()=>{
+          // 誘発ジョブキューで直列化：B・A・D確認や出た時効果パネルと同時に開いて片方が消えるのを防ぐ
+          enqueueWatchJob(async()=>{
+            try{await MOVE_TAP_CHAIN;}catch(e){}
+            if(!AZ0.battle.some(x=>x.id===hc.id))return; // 既にバトルゾーンを離れていたら中止
             const yes=await ask(`🌀 オリオティス！\n《${faceNameOf(hc)}》（コスト${getReg(hc).cost}）は${S.players[actor].label}のマナ（${manaN}枚）より大きい。\n山札の一番下に置きますか？`);
             if(!yes)return;
             snap();
@@ -3455,7 +3477,7 @@ function emitEvent(actor,type){
             us.forEach(sendBottom);
             sfx("grave");renderAll();
             toast(`🌀 オリオティス：${faceNameOf(hc)}${us.length?`と進化元${us.length}枚`:""} は山札の一番下へ`);
-          })();
+          });
         }
       }
     }
@@ -4368,6 +4390,7 @@ const FX_TYPES=[
   ["tutor","山札から好きなカードをn枚 手札に加える（TCG式・全部見える）"],
   ["tutorDMPS","山札から条件に合うカードをn枚 手札へ（デュエプレ式・候補のみ表示／無ければ不発）"],
   ["retrieveHand","マナ/墓地/シールド等からn枚 手札に戻す（回収・ゾーンは実行時選択・条件欄で対象指定可）"],
+  ["retrieveManaGrave","↩ マナと墓地から合計n枚 手札に戻す（両ゾーンを組み合わせて自由に選択・条件欄で対象指定・ベートーベン型）"],
   ["diaBliz","🔷 マナから条件のカードをランダムに手札上限(10)まで戻す→戻した数だけ山札からマナ加速（自身と同名は除外・条件欄で種族等指定・ダイヤモンド・ブリザード型）"],
   ["battleAsk","相手のクリーチャーとバトルする（対象選択・確認つき）"],
   ["hold","⏸ 処理中にする（攻撃を保留して手動で解決。もう一度攻撃で続行）"],
@@ -4548,7 +4571,7 @@ async function autoTapCost(pi,c){
     if(paySide==="creature"&&r.costRedOppCiv){
       const civSet=new Set();
       for(const b of zonesOf(pi===0?1:0).battle){const rb=getReg(b);if(rb&&rb.civs)rb.civs.forEach(cv=>{if(cv!=="zero")civSet.add(cv);});}
-      const dec=Math.min(civSet.size*(+r.costRedOppCiv||2),cost);
+      const dec=Math.min(civSet.size*(+r.costRedOppCiv||2),Math.max(0,cost-1)); // 0以下にならない（下限1）
       if(dec>0){cost=Math.max(0,cost-dec);toast(`💒 相手エレメントの文明${civSet.size}種 → 召喚コスト−${dec}（残り${cost}）`);}
     }
     // ⚙ 常在：自分の〔対象〕の実行コスト−n（一番隊/ギア型・場のカード＋クロス中ギアが対象・最低1で止まる）
@@ -4592,7 +4615,7 @@ async function autoTapCost(pi,c){
     }).length;
     if(cnt>0){
       const mult=r.symX||1;
-      const dec=Math.min(cnt*mult,cost);
+      const dec=Math.min(cnt*mult,Math.max(0,cost-1)); // 0以下にならない（下限1）
       cost-=dec;
       toast(`💞 ${mult>1?"ダブル":""}シンパシー（${w}）：${cnt}体×${mult} → コスト${dec}軽減（残り${cost}）`);
     }
@@ -4612,7 +4635,7 @@ async function autoTapCost(pi,c){
       redTotal+=+rb.firstRed;usedKeys.push(key);
     }
     if(redTotal>0){
-      cost=Math.max(0,cost-redTotal);
+      cost=Math.max(cost>0?1:0,cost-redTotal); // 「0以下にならない」＝下限1
       for(const key of usedKeys)S.firstSumUsed[key]=true;
       toast(`💠 各ターン最初の召喚：コスト−${redTotal}（残り${cost}）`);
     }else if(redSkip.length){
@@ -4632,7 +4655,7 @@ async function autoTapCost(pi,c){
       }).length;
       if(gcnt>0&&cost>0){
         const mult=rg.symX||1;
-        const dec=Math.min(gcnt*mult,cost);
+        const dec=Math.min(gcnt*mult,Math.max(0,cost-1)); // 0以下にならない（下限1）
         cost-=dec;
         toast(`💞 付与シンパシー（${faceNameOf(g)}）：${gcnt}体×${mult} → コスト${dec}軽減（残り${cost}）`);
       }
@@ -4655,7 +4678,7 @@ async function autoTapCost(pi,c){
       const rb=getReg(m2);
       const tOK=!rb.stCostT||(rb.stCostT===paySide);
       if(cost>0&&tOK&&matchF(rb.stCostF)){
-        const dec=Math.min(rb.stCostM,cost);
+        const dec=Math.min(rb.stCostM,Math.max(0,cost-1)); // 最低1で止まる
         cost-=dec;
         toast(`⚙ 常在コスト軽減（${faceNameOf(m2)}${rb.stCostF?`・対象：${rb.stCostF}`:""}）：−${dec}（残り${cost}）`);
       }
@@ -4671,7 +4694,7 @@ async function autoTapCost(pi,c){
         return (r&&raceMatch(r,tk))||faceNameOf(c).includes(tk);
       });
       if(cost>0&&(!g.civ||(r.civs&&r.civs.includes(g.civ)))&&wOK){
-        const dec=Math.min(g.n,cost);
+        const dec=Math.min(g.n,Math.max(0,cost-1)); // 0以下にならない（下限1）
         cost-=dec;
         toast(`✨ 付与軽減：−${dec}（残り${cost}）`);
       }else rest.push(g);
@@ -4680,7 +4703,7 @@ async function autoTapCost(pi,c){
   }
   // 手札個別バフ：コスト−n（1回で消費）
   if(c.buff&&c.buff.costM>0&&cost>0){
-    const dec=Math.min(c.buff.costM,cost);
+    const dec=Math.min(c.buff.costM,Math.max(0,cost-1)); // 0以下にならない（下限1）
     cost-=dec;
     c.buff.costM=0;
     toast(`✨ 個別バフ：コスト−${dec}（残り${cost}）`);
@@ -5170,7 +5193,7 @@ async function runFxList(pi,list,srcCard){
   for(const f of list){
     const Z=zonesOf(pi), OZ=zonesOf(op);
     const n=Math.max(1,f.n|0);
-    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","diaBliz","deckRecruit","deckTopRecruitMana","deckSearch","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone","sumRecruit","foeAllShield","foeHandShieldRand","deckEvo","suspenseReveal","shieldMakeRand"]);
+    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","retrieveManaGrave","diaBliz","deckRecruit","deckTopRecruitMana","deckSearch","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone","sumRecruit","foeAllShield","foeHandShieldRand","deckEvo","suspenseReveal","shieldMakeRand"]);
     // 🪧 「召喚時のみ」の効果：このカードの出た方法を1回だけ確認してゲート
     if(f.sumOnly&&srcCard){
       if(srcCard._wasSummon==null){
@@ -5737,6 +5760,29 @@ async function runFxList(pi,list,srcCard){
       }
       if(zn==="deck"&&did)shuffle(OZ.deck);
       sfx("move");
+    }else if(f.t==="retrieveManaGrave"){
+      // ↩ マナゾーンと墓地の両方から合計n枚、条件に合う自分のカードを手札に戻す（組み合わせ自由・ベートーベン型）
+      const filt=String(f.cond||"").trim();
+      let did=0;
+      for(let i=0;i<n;i++){
+        const pool=[];
+        Z.mana.forEach(x=>{const rx=getReg(x);if(!filt||lockFilterOk(filt,rx,x))pool.push({c:x,zn:"mana"});});
+        Z.grave.forEach(x=>{const rx=getReg(x);if(!filt||lockFilterOk(filt,rx,x))pool.push({c:x,zn:"grave"});});
+        if(!pool.length){if(i===0)toast(filt?`マナ・墓地に該当カードなし（${filt}）`:"マナ・墓地にカードがありません");break;}
+        const j=await pickCard(`↩ 手札に戻すカードを選択（${i+1}/${n}枚目・マナ/墓地どちらからでも・キャンセルで終了${filt?`／条件：${filt}`:""}）`,
+          pool.map(o=>o.c),{sub:x=>{const o=pool.find(p=>p.c.id===x.id);return o&&o.zn==="mana"?"マナ":"墓地";}});
+        if(j===null)break;
+        const sel=pool[j];
+        const idx=Z[sel.zn].findIndex(x=>x.id===sel.c.id);
+        if(idx<0)continue;
+        const removed=Z[sel.zn].splice(idx,1)[0];
+        removed.faceup=true;removed.tapped=false;removed.sideways=false;removed.rot=0;removed.buff=null;removed.seals=[];removed.mark=false;removed.seen=false;
+        Z.hand.push(removed);
+        did++;
+        toast(`↩ ${faceNameOf(removed)} を手札に戻した（${sel.zn==="mana"?"マナ":"墓地"}から）`);
+        renderAll();
+      }
+      if(did)sfx("move");
     }else if(f.t==="diaBliz"){
       // 🔷 ダイヤモンド・ブリザード型：マナから対象(f.cond=種族等・自身と同名は除外)をランダム順で、
       //    手札が上限(10)に達するまで手札へ戻す（溢れた分はマナに残す）→戻した数だけ山札の上からマナへ
@@ -6875,6 +6921,13 @@ async function pumpFx(){
         toast(`🎨 シビルカウント${cc.need}達成（${cc.cnt}体）：${faceNameOf(c)}`);
       }
     }
+    // 🔥 革命0トリガー持ち：革命0以外（通常召喚・進化）で出た場合、「革命0で出た時」限定の出た時効果はスキップできる
+    //    （ボルシャック・ドギラゴンは通常進化なら山札をめくらない）
+    if(reg&&reg.rev0&&!c._rev0Entry){
+      const go=await ask(`🔥 《${faceNameOf(c)}》は革命0トリガー以外（通常召喚・進化など）で出ました。\n出た時効果が「革命0トリガーで出た時」限定なら山札はめくりません。\n出た時効果を実行しますか？`);
+      if(!go){toast(`（通常召喚のため出た時効果をスキップ：${faceNameOf(c)}）`);continue;}
+    }
+    if(c._rev0Entry)c._rev0Entry=false;
     // 💥 バズレンダ：追加支払い回数ぶん効果を反復（autoTapCostで c._buzzK を設定済み）
     const bzT=1+((c._buzzK|0)||0);
     if(c._buzzK)c._buzzK=0;
@@ -8774,6 +8827,7 @@ async function execAttack(pi,id,tg){
         OZ.battle.push(h);
         emitEvent(op,"summon");
       }
+      h._rev0Entry=true; // 革命0トリガーで出た印（出た時効果ゲートの判定に使用）
       markArrive(h);
       enqueueFx(op,h);
       sfx("ok");renderAll();
@@ -13970,8 +14024,90 @@ function gearSideEl(pi,host,g){
   el.appendChild(tg);
   el.title=`${faceNameOf(g)}（${faceNameOf(host)} に装備）`;
   el.addEventListener("dragstart",ev=>ev.preventDefault());
-  el.addEventListener("click",()=>onCardTap({p:pi,zone:"battle",id:host.id}));
+  el.addEventListener("click",ev=>{ev.stopPropagation();gearMenu(pi,host,g);});
   return el;
+}
+/* ⚙ 装備中ギア（クロスギア／進化クロスギア／オーラ）タップ時の専用メニュー。
+   従来はホストのパネルが開くだけで、装備中ギアの付け替え・取り外し・進化ギアの操作ができなかった。 */
+async function gearMenu(pi,host,g){
+  const rg=getReg(g);
+  const isGearG=rg&&(rg.ctype==="crossgear"||rg.ctype==="evocrossgear");
+  const opts=[];
+  if(isGearG){
+    opts.push(["move","⚙ クロス先を変更（別の自分のクリーチャーに付け替え）"]);
+    opts.push(["off","⚙ クロスを外す（独立ギアとしてバトルゾーンへ）"]);
+  }
+  opts.push(["grave","🪦 墓地に置く"+((g.under&&g.under.length)?`（下のカード${g.under.length}枚ごと）`:"")]);
+  opts.push(["host",`👤 ${faceNameOf(host)} のメニューを開く`]);
+  const j=await askChoice(`⚙ 《${faceNameOf(g)}》（${faceNameOf(host)} に装備中）`,opts.map(o=>o[1]));
+  if(j===null)return;
+  const kind=opts[j][0];
+  if(kind==="host"){onCardTap({p:pi,zone:"battle",id:host.id});return;}
+  const Z=zonesOf(pi);
+  const hostLive=Z.battle.find(x=>x.id===host.id&&x.gear&&x.gear.some(y=>y.id===g.id));
+  if(!hostLive){toast("装備状態が変わったため中断しました");renderAll();return;}
+  if(kind==="off"){
+    snap();
+    const gi=hostLive.gear.findIndex(x=>x.id===g.id);
+    hostLive.gear.splice(gi,1);
+    g.isCross=false;g.tapped=false;
+    Z.battle.push(g);
+    sfx("ok");renderAll();
+    toast(`⚙ 《${faceNameOf(g)}》のクロスを外した（独立ギアとしてバトルゾーンへ）`);
+    return;
+  }
+  if(kind==="grave"){
+    const yes=await ask(`《${faceNameOf(g)}》を墓地に置きますか？${(g.under&&g.under.length)?`\n（下のカード${g.under.length}枚も墓地へ）`:""}`);
+    if(!yes)return;
+    snap();
+    const gi=hostLive.gear.findIndex(x=>x.id===g.id);
+    hostLive.gear.splice(gi,1);
+    if(g.under&&g.under.length)g.under.splice(0).forEach(u=>{u.faceup=true;u.tapped=false;Z.grave.push(u);});
+    g.isCross=false;g.faceup=true;g.tapped=false;
+    Z.grave.push(g);
+    sfx("grave");renderAll();
+    toast(`🪦 《${faceNameOf(g)}》を墓地に置いた`);
+    return;
+  }
+  if(kind==="move"){
+    const pool=Z.battle.filter(x=>x.id!==hostLive.id&&(()=>{const r2=getReg(x);return !r2||(r2.ctype!=="crossgear"&&r2.ctype!=="evocrossgear");})());
+    if(!pool.length){toast("付け替えできるクリーチャーがいません");return;}
+    const k=pool.length===1?0:await pickCard("付け替え先のクリーチャーを選択",pool);
+    if(k===null)return;
+    // クロスコスト：TCG＝カードのコスト／デュエプレ＝ギア個別のクロスコスト（手動クロスと同じ扱い）
+    const xc=(S.gameMode==="tcg")?((rg&&rg.cost!=null?+rg.cost:0)||0):((rg&&+rg.gearCrossN)||0);
+    let paid=false;
+    if(S.expert&&xc>0&&!S.freePlay){
+      const untapped=Z.mana.filter(m=>!m.tapped);
+      const jj=await askChoice(`⚙ クロスコスト${xc}（未タップマナ${untapped.length}）で付け替え`,
+        [`支払って付け替え（マナ${xc}枚タップ）`,"コストを支払わずに付け替え（効果による無料クロス）","やめる"]);
+      if(jj===null||jj===2)return;
+      snap();
+      if(jj===0){
+        paid=true;
+        if(untapped.length<xc)toast(`⚠ マナが足りないため${untapped.length}枚のみタップしました`);
+        const civMapX={"光":"light","水":"water","闇":"dark","火":"fire","自然":"nature","ゼロ":"zero","無色":"zero"};
+        const needCivs=((rg&&rg.gearCrossCiv)||"").match(/光|水|闇|火|自然|ゼロ|無色/g)||[];
+        const tappedSet=new Set();
+        for(const cv of needCivs){
+          const en=civMapX[cv];
+          const m=untapped.find(x=>!tappedSet.has(x.id)&&(()=>{const rm=getReg(x);return rm&&rm.civs&&rm.civs.includes(en);})());
+          if(m){m.tapped=true;tappedSet.add(m.id);}
+        }
+        let left=xc-tappedSet.size;
+        for(const m of untapped){if(left<=0)break;if(tappedSet.has(m.id))continue;m.tapped=true;tappedSet.add(m.id);left--;}
+      }
+    }else snap();
+    const gi=hostLive.gear.findIndex(x=>x.id===g.id);
+    hostLive.gear.splice(gi,1);
+    const nh=pool[k];
+    nh.gear=nh.gear||[];
+    g.isCross=true;
+    nh.gear.push(g);
+    sfx("ok");renderAll();
+    toast(`⚙ 付け替え！ ${faceNameOf(g)} → ${faceNameOf(nh)}${paid?`（クロスコスト${xc}）`:""}`);
+    return;
+  }
 }
 function cardEl(pi,zone,c){
   const el=document.createElement("div");
