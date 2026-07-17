@@ -4433,6 +4433,7 @@ const FX_TYPES=[
   ["retrieveManaGrave","↩ マナと墓地から合計n枚 手札に戻す（両ゾーンを組み合わせて自由に選択・条件欄で対象指定・ベートーベン型）"],
   ["meteoburn","☄ メテオバーン：このクリーチャーの下のカードをn枚墓地に置く（置けない/キャンセル時は、この行より下に登録した効果を中止・マーキュリー/ヴィーナス型の1枚ずつ形式）"],
   ["untapFilt","🔄 自分の対象クリーチャーをすべてアンタップ（条件欄で対象指定・聖霊王ナルカミ型）"],
+  ["grantStayBlk","🛡⚓ 自分の「ブロッカー」を持つクリーチャーすべてに『離れる時、パワーが0より大きいならかわりにとどまる』を次の自分のターン開始時まで付与（Shin-Ka Musical型）"],
   ["handStFree","⚡ 自分の手札の「S・トリガー」持ちを1枚、コストを支払わずに実行（クリーチャー→召喚／呪文→詠唱・条件欄で追加対象指定可）"],
   ["diaBliz","🔷 マナから条件のカードをランダムに手札上限(10)まで戻す→戻した数だけ山札からマナ加速（自身と同名は除外・条件欄で種族等指定・ダイヤモンド・ブリザード型）"],
   ["battleAsk","相手のクリーチャーとバトルする（対象選択・確認つき）"],
@@ -4461,7 +4462,7 @@ const FX_TYPES=[
   ["millUntilCre","山札の上から、クリーチャーがn体墓地に置かれるまで置く（ヴォルグ・サンダー型・対象プレイヤー選択）"],
 ];
 const FX_LABEL=new Proxy(Object.fromEntries(FX_TYPES),{get:(t,k)=>(k in t)?t[k]:(typeof k==="string"&&k.startsWith("sp:")?"特殊："+k.slice(3):k)});
-const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo","untapFilt","handStFree","selfBounceAll"]);
+const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo","untapFilt","handStFree","selfBounceAll","grantStayBlk"]);
 const fxNoN=t=>FX_NO_N.has(t)||(typeof t==="string"&&t.startsWith("sp:"));
 function fxSummary(list){
   if(!list||!list.length)return "（効果なし）";
@@ -4926,6 +4927,11 @@ async function destroyCreature(pi,c){
     }
     if(c.buff&&c.buff.noLeave){
       toast(`⚓ ${faceNameOf(c)} はこのターン離れない！`);
+      return;
+    }
+    // 🛡⚓ Shin-Ka Musical型：離れる時、パワーが0より大きいならかわりにとどまる（破壊も置換）
+    if(c.buff&&c.buff.stayIfPow&&(+((getReg(c)||{}).power||0)+((c.buff&&c.buff.pow)||0))>0){
+      toast(`⚓ ${faceNameOf(c)} はパワー0超のためバトルゾーンにとどまる！`);
       return;
     }
     if(!IGN&&rCX&&rCX.cstCond&&(rCX.cstFx==="noDestroy"||rCX.cstFx==="noLeave")&&zoneCondOk(rCX.cstCond,pi)){
@@ -6026,6 +6032,18 @@ async function runFxList(pi,list,srcCard){
         if(had<n){toast(`☄ メテオバーン：離れた時、下のカードが${n}枚なかったため効果は発動しない（${had}枚）`);break;}
         toast(`☄ メテオバーン成立（離場時・下${had}枚 → 墓地）：効果を発動`);
       }
+    }else if(f.t==="grantStayBlk"){
+      // 🛡⚓ 自分のブロッカー持ちすべてに「離れる時パワー0超ならとどまる」を次の自分のターンまで付与（Shin-Ka Musical型・付与時点のブロッカーが対象）
+      let cnt=0;
+      for(const x of Z.battle){
+        const rx=getReg(x);
+        const isBlk=!!((rx&&rx.blocker)||(x.buff&&x.buff.blocker)||gearBlockerOn(x));
+        if(!isBlk)continue;
+        x.buff=x.buff||{};x.buff.stayIfPow=true;markBuffNext(x,["stayIfPow"],pi);cnt++;
+      }
+      if(cnt){sfx("ok");toast(`🛡⚓ ブロッカー${cnt}体に「離れる時パワー0超ならとどまる」を次の自分のターンまで付与`);}
+      else toast("対象のブロッカーがいません");
+      renderAll();
     }else if(f.t==="untapFilt"){
       // 🔄 自分の対象クリーチャーをすべてアンタップ（f.cond＝対象条件・空欄＝全クリーチャー）
       const filt=String(f.cond||"").trim();
@@ -10886,6 +10904,8 @@ function extractEffects(text,mode){
     if(/自分のシールドを好きな数ブレイク/.test(cl))fx.push({t:"breakMineAny",n:1});
     // 🛡 自分の手札をn枚までシールド化
     {const mHS=cl.match(/(?:自分の)?手札を(\d+)枚まで(?:選んで)?シールド化/);if(mHS)fx.push({t:"handShield",n:+mHS[1]});}
+    // 🛡⚓ ブロッカーに「離れる時パワー0超ならとどまる」を付与（Shin-Ka Musical型）
+    if(/「ブロッカー」を持つクリーチャー(?:すべて)?に[「『][^」』]*?離れる[^」』]*?とどまる/.test(cl))fx.push({t:"grantStayBlk",n:1});
     // 🔀 自分の墓地のカードをすべて山札に加えてシャッフル
     if(/自分の墓地のカードをすべて山札に(?:加えて|戻して)シャッフル/.test(cl))fx.push({t:"graveToDeckAll",n:1});
     // 🃏 サスペンス型：相手のシールドnつと手札n枚をランダム公開→呪文踏み倒し→全部墓地
