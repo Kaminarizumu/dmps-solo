@@ -689,6 +689,7 @@ body.shake{animation:bodyShake .4s ease-out}
         <button class="btn small ghost" id="btnDeckFxCheck">🔍 効果登録チェック</button>
         <button class="btn small" id="btnSaveUseDeck">保存して対戦へ</button>
         <button class="btn small ghost" id="btnDeckList">📋 デッキ一覧</button>
+        <button class="btn small" id="btnCardCivSearch">🔍 カード検索（文明で絞る）</button>
       </div>
       <div class="status" id="deckStatus"></div>
       <div class="row">
@@ -2655,6 +2656,15 @@ function dealPlayer(pi,pick){
 }
 function startGame(picks){
   GAMELOG.length=0;
+  // 🔄 処理系の状態を完全リセット（再試合で「処理中」やターン終了保留が引き継がれるのを防止）
+  NEXT_TURN_HOLD=0;TURN_END_PHASE="";NT_BLOCK_CNT=0;NT_RUN_ID++;
+  fxQueue.length=0;fxRunning=false;
+  WATCH_CHAIN=Promise.resolve();
+  MOVE_TAP_CHAIN=Promise.resolve();
+  FX_HOLD=false;GAME_PAUSE=false;LABY_RUN=false;
+  MUGETSU_BUSY=false;MUGETSU_TE_DONE=false;MUGETSU_ASKED={};MUGETSU_PENDING=new Set();
+  S._watchOnce={};S.pendingAtk=null;MOVE_BLOCKED=false;
+  try{$("fxBanner").classList.remove("show");}catch(e){}
   if(!S.players[0].mainList.length){openDeckPanel();toast("先にデッキを登録してください");return;}
   snap();
   dealPlayer(0,picks&&picks[0]||null);
@@ -2760,6 +2770,9 @@ function draw(pi,n=1){
   renderAll();
 }
 let NEXT_TURN_HOLD=0;
+let TURN_END_PHASE="";   // ⏳ いまターン終了処理のどの段階で待っているか（診断表示用）
+let NT_BLOCK_CNT=0;      // 「次のターン」が保留でブロックされた連続回数（3回で強制解除の提案）
+let NT_RUN_ID=0;         // 強制解除後に、止まっていた古い処理が後から完了してターンを二重に進めるのを防ぐ世代トークン
 let NT_GUARD_T=0; // 直近のターン進行時刻（二重進行ガード用）
 let LABY_RUN=false;
 let GAME_PAUSE=false;
@@ -2933,10 +2946,12 @@ function nextTurn(){
   //    ターン切替（who切替・全アンタップ・ドロー）を保留する。従来は投げっぱなしだったため、
   //    切替時のアンタップで「タップしているなら」等の誘発条件が消え、効果が動いたり動かなかったりしていた。
   NEXT_TURN_HOLD++;
+  const _ntid=++NT_RUN_ID;
   (async()=>{
     try{ if(S.expert)await runTurnEndTriggers(cur); }
     catch(e){ console.warn("turnEndTriggers",e); }
-    finally{ NEXT_TURN_HOLD--; }
+    finally{ NEXT_TURN_HOLD=Math.max(0,NEXT_TURN_HOLD-1); TURN_END_PHASE=""; NT_BLOCK_CNT=0; }
+    if(_ntid!==NT_RUN_ID){ toast("（強制解除後のため、古いターン終了処理は破棄しました）"); return; }
     finishNextTurn(cur);
   })();
 }
@@ -2957,13 +2972,16 @@ async function runTurnEndTriggers(cur2){
       runWatchFxCond(pi2,(ev)=>ev==="turnEndBoth"||(isMine&&ev==="turnEndMine")||(!isMine&&ev==="turnEndOpp"));
     }
     // 誘発ジョブ（WATCH_CHAIN）と効果パネルの完了を待ってから次の終了時処理へ
+    TURN_END_PHASE="⚡ターン終了時誘発の完了待ち（開いている効果パネルを完了してください）";
     await WATCH_CHAIN;
     await waitFxIdle();
+    TURN_END_PHASE="";
     // 🕊 光臨／P'S光臨：自分のターン終了時、タップされていれば山上を見て指定クリーチャーをバトルゾーンに出す
     {
       const ZK=zonesOf(cur2);
       const korins=ZK.battle.filter(x=>{const r=getReg(x);return r&&r.korin&&x.tapped&&(!r.accel||(x.gear&&x.gear.length))&&!isSealed(x)&&!isIgnored(x,cur2);});
       if(korins.length){
+        TURN_END_PHASE="🕊 光臨の処理中（山札をめくって出すか選択してください）";
         await (async()=>{
           for(const kc of korins){
             const r=getReg(kc);
@@ -3042,6 +3060,7 @@ async function runTurnEndTriggers(cur2){
     // 侵略ZERO：ターン終了時、相手（非ターンプレイヤー）の手札から
     if(S.vs){
       const def=cur2===0?1:0;
+      TURN_END_PHASE="🐲 侵略ZERO／ガイアッシュ型の確認待ち";
       await offerInvadeZeroPrompt(def);
       // ガイアッシュ型：相手のターンの終わりに手札から出す
       const DZ=zonesOf(def);
@@ -3343,6 +3362,7 @@ function runWatchFx(pi,type,trigCard){
       if(isIgnored(c,pi))continue;
       if(type==="oppSummonTapped"&&!c.tapped)continue;
       const fx=[];
+      const _onceKeys=[];
       r.watchFx.forEach((w,wi)=>{
         if(w.ev!==type)return;
         // 1️⃣ 各ターン1回のみ（同一ターン内はスキップ）
@@ -3378,13 +3398,16 @@ function runWatchFx(pi,type,trigCard){
           }
           w2={...w,cond:""};
         }
-        if(w.once){S._watchOnce[onceKey]=`${S.turn}:${S.who}`;}
+        if(w.once)_onceKeys.push(onceKey); // 実行後にまとめて記録（1手戻すと未使用に戻せるよう、消費はfx完了後）
         fx.push(w2);
       });
       if(fx.length){
+        const _oks=_onceKeys.slice();
         enqueueWatchJob(async()=>{
           toast(`⚡誘発処理：${faceNameOf(c)}`);
           await runFxList(pi,fx,c);
+          S._watchOnce=S._watchOnce||{};
+          for(const k of _oks)S._watchOnce[k]=`${S.turn}:${S.who}`;
         });
       }
     }
@@ -5190,6 +5213,7 @@ async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone){
   const src=Z[zone]||Z.deck;
   const zoneJa={deck:"山札",grave:"墓地",hand:"手札",mana:"マナ"}[zone]||"山札";
   let put=0;
+  const played=[]; // 🔁 出したクリーチャーを溜めて、全部出し終わってから「出た時」をまとめて処理（割り込み防止）
   for(let i=0;i<n;i++){
     let pool=src.filter(x=>{const rx=getReg(x);return rx&&(!filt||lockFilterOk(filt,rx,x));});
     if(!pool.length){if(i===0)toast(`${zoneJa}に該当カードなし${filt?`（${filt}）`:""}`);break;}
@@ -5245,8 +5269,8 @@ async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone){
         transferAtkState([host.id],cc);markArrive(cc);
         toast(`⤴ 進化！ 《${faceNameOf(host)}》の上に《${faceNameOf(cc)}》を重ねた`);
       }
-      emitEvent(pi,"summon");enqueueFx(pi,cc);
-      put++;renderAll();await waitFxIdle();
+      played.push(cc);
+      put++;renderAll();
       continue;
     }
     // 「出す」ゲート：出せないロック/体数上限/ドリーム重複を判定（召喚ロック＝ミラダンテ型は踏み倒しなので素通り）
@@ -5257,9 +5281,19 @@ async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone){
       renderAll();continue;
     }
     Z.battle.push(cc);markArrive(cc);
-    emitEvent(pi,"summon");enqueueFx(pi,cc);
+    played.push(cc);
     put++;toast(`🔎 ${labelJa}：${faceNameOf(cc)} をバトルゾーンへ`);
-    renderAll();await waitFxIdle();
+    renderAll();
+  }
+  // 🔁 全部出し終えてから「出た時」を順に処理（複数枚を出す途中でCIPが割り込むのを防ぐ）
+  if(played.length){
+    if(played.length>1)toast(`✨ ${played.length}体を出しました → それぞれの「出た時」を順に処理します`);
+    for(const cc of played){
+      if(!Z.battle.find(x=>x.id===cc.id))continue; // 既に離れていたらスキップ
+      LAST_ARRIVED=cc;
+      emitEvent(pi,"summon");enqueueFx(pi,cc);
+    }
+    await waitFxIdle();
   }
   if(put>0&&zone==="deck"){shuffle(Z.deck);toast("🔀 山札をシャッフル");}
   renderAll();
@@ -5968,6 +6002,7 @@ async function runFxList(pi,list,srcCard){
       else{
         const spells=look.filter(x=>{const rx=getReg(x);return rx&&rx.ctype==="spell"&&(!filt||lockFilterOk(filt,rx,x));});
         toast(`🔮 山上${look.length}枚を見た（該当呪文${spells.length}枚${filt?`・${filt}`:""}）`);
+        logOnly(`🔮 ${S.players[pi].label}：山札の上${look.length}枚を公開 → ${look.map(faceNameOf).join("、")}`);
         if(spells.length){
           const j=await askChoice("🔮 コストを支払わず唱える呪文を選択",[...spells.map(x=>faceNameOf(x)),"唱えない"]);
           if(j!==null&&j<spells.length){
@@ -6044,6 +6079,7 @@ async function runFxList(pi,list,srcCard){
       if(!revealed.length){toast("山札にカードがありません");}
       else{
         toast(`🎴 山上${revealed.length}枚をめくった：${revealed.map(faceNameOf).join("、")}`);
+        logOnly(`🎴 ${S.players[pi].label}：山札の上${revealed.length}枚をめくった → ${revealed.map(faceNameOf).join("、")}`);
         renderAll();await new Promise(r=>setTimeout(r,500));
         let put=0;
         while(put<cap){
@@ -6195,6 +6231,7 @@ async function runFxList(pi,list,srcCard){
       if(!revealed.length){toast("山札にカードがありません");}
       else{
         toast(`🃏 山札の上${revealed.length}枚を公開：${revealed.map(faceNameOf).join("、")}`);
+        logOnly(`🃏 ${S.players[pi].label}：山札の上${revealed.length}枚を公開 → ${revealed.map(faceNameOf).join("、")}`);
         renderAll();
         const played=[];
         while(true){
@@ -6298,6 +6335,7 @@ async function runFxList(pi,list,srcCard){
       if(!rev.length){toast("山札がありません");}
       else{
         toast(`👀 公開：${rev.map(faceNameOf).join("、")}`);
+        logOnly(`👀 ${S.players[pi].label}：山札の上${rev.length}枚を公開 → ${rev.map(faceNameOf).join("、")}`);
         renderAll();await new Promise(r=>setTimeout(r,500));
         const take=rev.filter(x=>{const rx=getReg(x);return !filt||lockFilterOk(filt,rx,x);});
         const rest=rev.filter(x=>!take.includes(x));
@@ -6315,6 +6353,7 @@ async function runFxList(pi,list,srcCard){
       if(!rev.length){toast("山札がありません");}
       else{
         toast(`👀 公開：${rev.map(faceNameOf).join("、")}`);
+        logOnly(`👀 ${S.players[pi].label}：山札の上${rev.length}枚を公開 → ${rev.map(faceNameOf).join("、")}`);
         renderAll();await new Promise(r=>setTimeout(r,500));
         const take=rev.filter(x=>{const rx=getReg(x);return !filt||lockFilterOk(filt,rx,x);});
         const rest=rev.filter(x=>!take.includes(x));
@@ -6946,7 +6985,7 @@ function lockFilterOk(filt,r,c,lockPi){
     if(tk==="単色")return !!(r&&r.civs&&r.civs.length===1&&r.civs[0]!=="zero");
     if(tk==="無色")return !!(r&&r.civs&&r.civs.includes("zero"));
     if(tk==="ブロッカー")return !!((r&&r.blocker)||(c&&c.buff&&c.buff.blocker)||gearBlockerOn(c));
-    if(tk==="進化")return isEvoReg(r);
+    if(tk==="進化")return isEvoReg(r)&&(!["neoevo","gneo","neodream","gneodream"].includes(r&&r.ctype)||isNeoEvoInstance(c)); // NEO系：NEO進化状態（下に進化元あり）の時だけ「進化」・通常召喚状態や手札では「進化以外」（ヘブンズ・ゲート／爆進ダブル両対応）
     if(tk==="クロスギア")return !!(r&&(r.ctype==="crossgear"||r.ctype==="evocrossgear"));
     if(tk==="クリーチャー")return !!(r&&r.ctype!=="spell");
     if(tk==="呪文")return !!(r&&r.ctype==="spell");
@@ -8189,6 +8228,9 @@ function processBroken(op,stack,label){
         logOnly(`${S.players[op].label}：⚡S・トリガー！《${faceNameOf(c)}》を出した`);
         bumpEv("stTrig",op);
         emitEvent(op,"summon");enqueueFx(op,c);
+      }else if(zone==="hand"){
+        c.faceup=true;const kept=toHand(Z,c);sfx(kept?"move":"grave");
+        logOnly(`${S.players[op].label}：ブレイクされた《${faceNameOf(c)}》を${kept?"手札へ":"手札上限(10枚)のため墓地へ"}`);
       }else{c.faceup=true;Z[zone].push(c);markArrive(c);sfx("move");logOnly(`${S.players[op].label}：ブレイクされた《${faceNameOf(c)}》を${ZLOG[zone]||zone}へ`);}
       sel=null;renderAll();render();
     };
@@ -8292,7 +8334,9 @@ function processBroken(op,stack,label){
     };
     $("bkDone").onclick=()=>{
       if(remaining.length)logOnly(`${S.players[op].label}：ブレイクされた${remaining.length}枚（${remaining.map(x=>faceNameOf(x)).join("、")}）を手札に加えた`);
-      remaining.forEach(c=>{c.faceup=true;Z.hand.push(c);markArrive(c);});
+      let _over=0;
+      remaining.forEach(c=>{c.faceup=true;if(!toHand(Z,c))_over++;});
+      if(_over>0)toast(`✋ 手札上限(10枚)超過：${_over}枚は墓地に置かれました`);
       remaining=[];sfx("move");finish();
     };
     render();
@@ -8775,10 +8819,24 @@ async function execAttack(pi,id,tg){
     const aw=getReg(c);
     if(aw&&aw.watchFx&&aw.watchFx.length){
       const evs=["selfAtk",tg.kind==="creature"?"selfAtkC":"selfAtkP"];
-      const fx=aw.watchFx.filter(w=>evs.includes(w.ev));
+      // 各ターン1回（w.once）は、このターン既に使っていれば除外（S._watchOnceで管理＝1手戻すと戻る）
+      S._watchOnce=S._watchOnce||{};
+      const _atkOnceKeys=[];
+      const fx=aw.watchFx.filter((w)=>{
+        if(!evs.includes(w.ev))return false;
+        if(w.once){
+          const wi=aw.watchFx.indexOf(w);
+          const k=`${c.id}:atk:${wi}`;
+          if(S._watchOnce[k]===`${S.turn}:${S.who}`){toast(`1️⃣ ${faceNameOf(c)} の攻撃時効果はこのターン使用済み`);return false;}
+          _atkOnceKeys.push(k);
+        }
+        return true;
+      });
       if(fx.length){
         toast(`⚡攻撃時効果：${faceNameOf(c)}`);
         await runFxList(pi,fx,c);
+        // 消費はfx完了後（1手戻すと未使用に戻せる）
+        for(const k of _atkOnceKeys)S._watchOnce[k]=`${S.turn}:${S.who}`;
         if(FX_HOLD){
           FX_HOLD=false;
           c._atkFxDone=true;
@@ -10950,6 +11008,9 @@ function extractEffects(text,mode){
     if(/自分のシールドを好きな数ブレイク/.test(cl))fx.push({t:"breakMineAny",n:1});
     // 🛡 自分の手札をn枚までシールド化
     {const mHS=cl.match(/(?:自分の)?手札を(\d+)枚まで(?:選んで)?シールド化/);if(mHS)fx.push({t:"handShield",n:+mHS[1]});}
+    // 🛡 相手のクリーチャーをシールド化（爆進オリジナル・チューニング／チェンクン型）
+    {const mFS=cl.match(/相手の([^。■▶]{0,16}?)クリーチャー(?:を)?(\d+)体(?:まで)?[^。■]{0,8}?シールド化/);
+     if(mFS){let sfilt="";const mC=(mFS[1]||"").match(/コスト(\d+)(以下|以上)/);if(mC)sfilt=`コスト${mC[1]}${mC[2]}`;fx.push({t:"foeToShield",n:+mFS[2]||1,cond:sfilt});}}
     // 🛡⚓ ブロッカーに「離れる時パワー0超ならとどまる」を付与（Shin-Ka Musical型）
     if(/「ブロッカー」を持つクリーチャー(?:すべて)?に[「『][^」』]*?離れる[^」』]*?とどまる/.test(cl))fx.push({t:"grantStayBlk",n:1});
     // 🔀 自分の墓地のカードをすべて山札に加えてシャッフル
@@ -12624,6 +12685,71 @@ $("btnLinkReg").addEventListener("click",async ()=>{
   else if(nx===1){openDeckPanel();}
   else{/* 対戦画面：何も開かない */}
 });
+function openCardCivSearch(){
+  if(!FXDB.size){toast("登録済みカードがありません（先に⚡カード効果を登録してください）");return;}
+  const CV={light:["光","#ffe082"],water:["水","#7fd7ff"],dark:["闇","#c58cff"],fire:["火","#ff8a80"],nature:["自然","#a5e88a"],zero:["ゼロ","#cfd8dc"]};
+  const CT={creature:"クリーチャー",spell:"呪文",crossgear:"クロスギア",evocrossgear:"進化クロスギア",psychic:"サイキック",psyevo:"進化サイキック",tamaseed:"タマシード",dragheart:"ドラグハート",castle:"城",gcastle:"G城",dream:"ドリーム",aura:"オレガオーラ",evo:"進化",neoevo:"NEOクリーチャー",ultimate:"究極進化",lunatic:"ルナティック進化"};
+  const sel=new Set();  // 選択中の文明フィルタ（空＝すべて）
+  let multi=false;      // 多色のみ表示
+  const wrap=document.createElement("div");
+  wrap.style.cssText="position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:12px";
+  const box=document.createElement("div");
+  box.style.cssText="background:var(--panel,#131a2a);border:1px solid var(--line,#334);border-radius:12px;max-width:620px;width:100%;max-height:86dvh;display:flex;flex-direction:column;padding:10px;gap:8px";
+  const ttl=document.createElement("div");ttl.style.cssText="font-weight:700;font-size:14px";ttl.textContent="🔍 カード検索 → タップでデッキに1枚追加";
+  const civBar=document.createElement("div");civBar.style.cssText="display:flex;gap:5px;flex-wrap:wrap";
+  const inp=document.createElement("input");inp.type="text";inp.placeholder="名前・種族で絞り込み（任意）";inp.style.cssText="width:100%;box-sizing:border-box;font-size:13px;padding:7px";
+  const list=document.createElement("div");list.style.cssText="overflow:auto;flex:1;display:flex;flex-direction:column;gap:2px;min-height:160px";
+  const foot=document.createElement("div");foot.style.cssText="font-size:11px;color:var(--muted,#8a93a8)";
+  const civMatch=v=>{
+    if(multi&&!(v.civs&&v.civs.length>=2))return false;
+    if(!sel.size)return true;
+    if(!v.civs)return false;
+    return [...sel].every(c=>v.civs.includes(c)); // 選んだ文明を「すべて含む」（例：光+水 で光水カード）
+  };
+  const render=()=>{
+    const q=inp.value.trim().toLowerCase();
+    list.innerHTML="";
+    const rows=[...FXDB.entries()]
+      .map(([k,v])=>[dispName.get(k)||k,v])
+      .filter(([nm,v])=>civMatch(v)&&(!q||String(nm).toLowerCase().includes(q)||(v.races&&String(v.races).toLowerCase().includes(q))))
+      .sort((a,b)=>((a[1].cost??99)-(b[1].cost??99))||String(a[0]).localeCompare(String(b[0]),"ja"));
+    foot.textContent=`${rows.length}件${sel.size?`（文明：${[...sel].map(c=>CV[c][0]).join("+")}）`:""}${multi?"・多色のみ":""}`;
+    if(!rows.length){const d=document.createElement("div");d.style.cssText="font-size:12px;color:var(--muted,#8a93a8);padding:8px";d.textContent="該当なし";list.appendChild(d);return;}
+    for(const [nm,v] of rows.slice(0,400)){
+      const b=document.createElement("button");
+      b.type="button";
+      b.style.cssText="text-align:left;font-size:12px;line-height:1.4;padding:6px 9px;border:1px solid var(--line,#334);border-radius:8px;background:transparent;color:var(--ink,#dde3f0);cursor:pointer;display:flex;justify-content:space-between;gap:8px";
+      const civTxt=(v.civs||[]).map(c=>`<span style="color:${(CV[c]||['',''])[1]}">${(CV[c]||[c])[0]}</span>`).join("");
+      b.innerHTML=`<span>${nm}</span><span style="flex:0 0 auto;color:var(--muted,#8a93a8)">${civTxt} ${v.cost!=null?`コスト${v.cost}`:""} ${CT[v.ctype]||""}</span>`;
+      b.onclick=()=>{
+        const ta=$("deckText");
+        const line=`1 ${nm}`;
+        ta.value=(ta.value&&!ta.value.endsWith("\n")?ta.value+"\n":ta.value)+line+"\n";
+        ta.dispatchEvent(new Event("input",{bubbles:true}));
+        b.style.background="#26314d";
+        toast(`＋ ${nm} をデッキ欄に追加`);
+      };
+      list.appendChild(b);
+    }
+  };
+  for(const [id,[lb,col]] of Object.entries(CV)){
+    const cb=document.createElement("button");
+    cb.type="button";cb.textContent=lb;
+    cb.style.cssText=`font-size:12px;padding:4px 11px;border:1px solid ${col};border-radius:14px;background:transparent;color:${col};cursor:pointer;font-weight:700`;
+    cb.onclick=()=>{if(sel.has(id))sel.delete(id);else sel.add(id);cb.style.background=sel.has(id)?col:"transparent";cb.style.color=sel.has(id)?"#0b0f1a":col;render();};
+    civBar.appendChild(cb);
+  }
+  {const mb=document.createElement("button");mb.type="button";mb.textContent="多色";mb.style.cssText="font-size:12px;padding:4px 11px;border:1px solid #f0a;border-radius:14px;background:transparent;color:#f6a;cursor:pointer;font-weight:700";
+   mb.onclick=()=>{multi=!multi;mb.style.background=multi?"#f0a":"transparent";mb.style.color=multi?"#0b0f1a":"#f6a";render();};civBar.appendChild(mb);}
+  {const cl=document.createElement("button");cl.type="button";cl.className="btn small ghost";cl.textContent="クリア";cl.style.cssText="font-size:11px;padding:3px 9px";cl.onclick=()=>{sel.clear();multi=false;[...civBar.querySelectorAll("button")].forEach(x=>{if(x!==cl){x.style.background="transparent";x.style.color=x.style.borderColor;}});render();};civBar.appendChild(cl);}
+  const closeB=document.createElement("button");closeB.type="button";closeB.className="btn small";closeB.textContent="✕ 閉じる";closeB.onclick=()=>wrap.remove();
+  inp.addEventListener("input",render);
+  wrap.addEventListener("click",e=>{if(e.target===wrap)wrap.remove();});
+  box.appendChild(ttl);box.appendChild(civBar);box.appendChild(inp);box.appendChild(list);box.appendChild(foot);box.appendChild(closeB);
+  wrap.appendChild(box);document.body.appendChild(wrap);
+  render();setTimeout(()=>{try{inp.focus();}catch(e){}},50);
+}
+{const _b=document.getElementById("btnCardCivSearch");if(_b)_b.addEventListener("click",openCardCivSearch);}
 $("btnRegList").addEventListener("click",()=>{
   const fxBody=$("regFxBody");fxBody.innerHTML="";
   const sortBar=document.createElement("div");
@@ -14374,7 +14500,23 @@ function runHotkey(act){
     return;
   }
   if(NEXT_TURN_HOLD>0){
-    toast("⏳ ターン終了時の処理中です。確認パネルを先に完了してください");
+    NT_BLOCK_CNT++;
+    if(NT_BLOCK_CNT>=3){
+      (async()=>{
+        const yes=await ask(`⚠ ターン終了処理が止まっているようです。\n【原因】${TURN_END_PHASE||"不明（誘発パネルの待機中の可能性）"}\n\n強制的に処理を打ち切って操作を再開しますか？\n（打ち切った誘発は失われます。⌘Zで直前まで戻すこともできます）`);
+        NT_BLOCK_CNT=0;
+        if(yes){
+          NT_RUN_ID++; // 止まっていた処理が後から完了してもターンを進めないよう無効化
+          NEXT_TURN_HOLD=0;TURN_END_PHASE="";
+          fxQueue.length=0;fxRunning=false;
+          WATCH_CHAIN=Promise.resolve();
+          toast("⏱ 強制解除しました。もう一度「次のターン」を押してください");
+          renderAll();
+        }
+      })();
+      return;
+    }
+    toast(`⏳ ターン終了時の処理中です${TURN_END_PHASE?`\n【待機中】${TURN_END_PHASE}`:"。確認パネルを先に完了してください"}${NT_BLOCK_CNT>=2?"\n（もう一度押すと強制解除できます）":""}`);
     return;
   }
   const pi=S.vs?S.who:0;
@@ -20897,7 +21039,7 @@ function zoneCondOk(expr,pi){
             if(tk==="クリーチャー")return r&&r.ctype!=="spell";
             if(tk==="ツインパクト")return r&&(r.twin||r.ctype==="twinpact");
             if(tk==="ブロッカー")return !!((r&&r.blocker)||(x.buff&&x.buff.blocker)||gearBlockerOn(x));
-            if(tk==="進化")return isEvoReg(r);
+            if(tk==="進化")return isEvoReg(r)&&(!["neoevo","gneo","neodream","gneodream"].includes(r&&r.ctype)||isNeoEvoInstance(x)); // NEO系：NEO進化状態（下に進化元あり）の時だけ「進化」・通常召喚状態や手札では「進化以外」（ヘブンズ・ゲート／爆進ダブル両対応）
             if(tk==="クロスギア")return !!(r&&(r.ctype==="crossgear"||r.ctype==="evocrossgear"));
             if(civMap[tk])return r&&r.civs&&r.civs.includes(civMap[tk]);
             return (r&&raceMatch(r,tk))||String(x.name||"").includes(tk);
