@@ -4480,13 +4480,14 @@ const FX_TYPES=[
   ["handRecruit","✋ 手札から条件に合うクリーチャーをn体バトルゾーンへ（踏み倒し・条件欄で対象を指定）"],
   ["handRecruitBlkNext","✋🛡 手札から条件に合うクリーチャーをn体踏み倒し→出したクリーチャーに「ブロッカー」を次の自分のターン開始時まで付与（トユケテラス下面型・条件欄で対象）"],
   ["destroyFilt","💥 条件に合う相手クリーチャーをすべて破壊（条件欄でパワー/コスト等を指定・空欄＝全部）"],
+  ["foeBounceAll","↩ 条件に合う相手クリーチャーをすべて手札に戻す（条件欄でコスト/種族等を指定・空欄＝全部・VANベートーベン型）"],
   ["freeCast","コストを支払わずに呪文を唱える（実行時に元ゾーンとカードを選択・解決中へ）"],
   ["underDeck","山札の上からn枚を裏向きでこのカードの下に置く（G城/クリーチャーの下・ザ・ラムーン型）"],
   ["atkNoLeaveSelf","攻撃中のクリーチャーは離れない（このターン・味方攻撃時付与allyAtkと併用）"],
   ["millUntilCre","山札の上から、クリーチャーがn体墓地に置かれるまで置く（ヴォルグ・サンダー型・対象プレイヤー選択）"],
 ];
 const FX_LABEL=new Proxy(Object.fromEntries(FX_TYPES),{get:(t,k)=>(k in t)?t[k]:(typeof k==="string"&&k.startsWith("sp:")?"特殊："+k.slice(3):k)});
-const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo","untapFilt","handStFree","selfBounceAll","grantStayBlk"]);
+const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo","untapFilt","handStFree","selfBounceAll","grantStayBlk","foeBounceAll"]);
 const fxNoN=t=>FX_NO_N.has(t)||(typeof t==="string"&&t.startsWith("sp:"));
 function fxSummary(list){
   if(!list||!list.length)return "（効果なし）";
@@ -4696,6 +4697,7 @@ async function autoTapCost(pi,c){
     for(const b of Z.battle){
       const rb=getReg(b);
       if(!rb||!rb.firstRed||+rb.firstRed<=0)continue;
+      if(b.id===c.id)continue; // 🚫 軽減元が自分自身（いま召喚しようとしているカード）の召喚には効かない（ブロッカー条件で自己軽減する不具合の防止・コッコルピアは他のクリーチャーを軽減する能力）
       if(isSealed(b)||isIgnored(b,pi)){redSkip.push(`${faceNameOf(b)}：封印/無効中`);continue;}
       // 対象条件（種族/文明/コスト条件・「クリーチャー」or空＝すべてのクリーチャー）
       if(rb.firstRedF&&rb.firstRedF!=="クリーチャー"&&!lockFilterOk(rb.firstRedF,r,c)){redSkip.push(`${faceNameOf(b)}：《${faceNameOf(c)}》が対象条件「${rb.firstRedF}」に不一致（種族の登録を確認）`);continue;}
@@ -5160,7 +5162,7 @@ function modeCountFor(reg,pi){
 /* ▶ モード選択の実行（共通）。
    ・全モード条件(modeAllCond)を満たしている時：テキストの上から順に全モードを自動実行（選ばせない）。
    ・満たしていない時：選ぶ回数(modeN)ぶんだけ選択（重複不可なら選んだものは除外）。 */
-async function runModeChoice(pi,reg,c){
+async function runModeChoice(pi,reg,c,inPump){
   const baseN=reg?reg.modeN|0:0;
   if(baseN<=0)return;
   const parsed=String(reg.modeOpts||"").split("\n").map(x=>x.trim()).filter(Boolean).map(parseModeChoice);
@@ -5175,7 +5177,7 @@ async function runModeChoice(pi,reg,c){
       mi++;
       toast(`✅ 効果 ${mi}/${parsed.length}：${chosen.label}`);
       renderAll();
-      if(chosen.fx&&chosen.fx.length)await runFxList(pi,chosen.fx,c);
+      if(chosen.fx&&chosen.fx.length)await runFxList(pi,chosen.fx,c,inPump);
       else{
         // ⏸ 自動化が未登録のモード：宣言だけで流さず、手動処理タイムを挟む（▶で次のモードへ）
         toast(`⏸ このモードは自動化未登録：盤面で手動処理 →「▶ 効果処理を続行」で次へ\n（モード行に「@効果名」を書けば自動化できます）`);
@@ -5196,7 +5198,7 @@ async function runModeChoice(pi,reg,c){
     if(!reg.modeDup)rest.splice(j,1);
     toast(`✅ 効果宣言：${chosen.label}`);
     renderAll();
-    if(chosen.fx&&chosen.fx.length)await runFxList(pi,chosen.fx,c);
+    if(chosen.fx&&chosen.fx.length)await runFxList(pi,chosen.fx,c,inPump);
     else if(i<baseN-1){
       // ⏸ 自動化未登録のモード：次の選択パネルを出す前に手動処理タイムを挟む
       toast(`⏸ このモードは自動化未登録：盤面で手動処理 →「▶ 効果処理を続行」で次の選択へ`);
@@ -5207,7 +5209,7 @@ async function runModeChoice(pi,reg,c){
 }
 /* 🔎 探索/超探索の踏み倒し共通処理：山札から条件に合うカードをn体バトルゾーンへ。
    searchN=3（探索）/5（超探索）＝候補をカード名でユニーク化し、種類が多ければランダムにsearchN種だけ提示（デュエプレ仕様）。searchN=0＝全部提示（確定）。 */
-async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone){
+async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone,inPump){
   zone=zone||"deck";
   const Z=zonesOf(pi);
   const src=Z[zone]||Z.deck;
@@ -5293,17 +5295,18 @@ async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone){
       LAST_ARRIVED=cc;
       emitEvent(pi,"summon");enqueueFx(pi,cc);
     }
-    await waitFxIdle();
+    await waitFxIdle(inPump);
   }
   if(put>0&&zone==="deck"){shuffle(Z.deck);toast("🔀 山札をシャッフル");}
   renderAll();
 }
-async function runFxList(pi,list,srcCard){
+async function runFxList(pi,list,srcCard,inPump){
+  // inPump=true のとき、内部の踏み倒し系ハンドラは waitFxIdle で待たない（pumpFx から呼ばれた時のハング防止）。
   const op=pi===0?1:0;
   for(const f of list){
     const Z=zonesOf(pi), OZ=zonesOf(op);
     const n=Math.max(1,f.n|0);
-    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","retrieveManaGrave","diaBliz","deckRecruit","deckTopRecruitMana","deckSearch","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone","sumRecruit","foeAllShield","foeHandShieldRand","deckEvo","suspenseReveal","shieldMakeRand","untapFilt","handStFree","foeToShield","selfBounceAll","deckCastSpell","revealTakeGrave","handRecruitBlkNext","deckTopPlay","revealTakeAll","flipTopMana"]);
+    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","retrieveManaGrave","diaBliz","deckRecruit","deckTopRecruitMana","deckSearch","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone","sumRecruit","foeAllShield","foeHandShieldRand","deckEvo","suspenseReveal","shieldMakeRand","untapFilt","handStFree","foeToShield","selfBounceAll","deckCastSpell","revealTakeGrave","handRecruitBlkNext","deckTopPlay","revealTakeAll","flipTopMana","foeBounceAll"]);
     // 🪧 「召喚時のみ」の効果：このカードの出た方法を1回だけ確認してゲート
     if(f.sumOnly&&srcCard){
       if(srcCard._wasSummon==null){
@@ -6017,7 +6020,7 @@ async function runFxList(pi,list,srcCard){
         }
         for(let i=look.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[look[i],look[k]]=[look[k],look[i]];}
         look.forEach(x=>{x.faceup=false;Z.deck.push(x);});
-        renderAll();await waitFxIdle();
+        renderAll();await waitFxIdle(inPump);
       }
     }else if(f.t==="foeToShield"){
       // 🛡 相手のクリーチャーをn体、裏向きの新しいシールドにする（f.cond＝対象・コスト条件等／空欄＝全クリーチャー）
@@ -6107,7 +6110,7 @@ async function runFxList(pi,list,srcCard){
           }
           emitEvent(pi,"summon");enqueueFx(pi,cc);
           put++;toast(`🎴 ${faceNameOf(cc)} をバトルゾーンへ（${put}体目）`);
-          renderAll();await waitFxIdle();
+          renderAll();await waitFxIdle(inPump);
         }
         for(let i=revealed.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[revealed[i],revealed[k]]=[revealed[k],revealed[i]];}
         revealed.forEach(x=>{x.faceup=false;Z.deck.push(x);});
@@ -6169,7 +6172,7 @@ async function runFxList(pi,list,srcCard){
               Z.battle.push(sel);markArrive(sel);emitEvent(pi,"summon");enqueueFx(pi,sel);
               toast(`⚡ S・トリガー無償召喚：${faceNameOf(sel)}`);
             }
-            sfx("ok");renderAll();await waitFxIdle();
+            sfx("ok");renderAll();await waitFxIdle(inPump);
           }
         }
       }
@@ -6221,7 +6224,7 @@ async function runFxList(pi,list,srcCard){
       sfx("move");renderAll();
       toast(`↪ ${faceNameOf(mv)} を${znJa}に置いた`);
     }else if(f.t==="deckRecruit"){
-      await deckRecruitCore(pi,String(f.cond||"").trim(),n,5,"超探索");
+      await deckRecruitCore(pi,String(f.cond||"").trim(),n,5,"超探索",undefined,inPump);
     }else if(f.t==="deckTopRecruitMana"){
       // 🃏 山札の上からn枚を表向きにし、その中の条件に合うクリーチャーを好きな数バトルゾーンへ。残りはマナゾーンへ（ボルシャック究極進化型）
       // 厳密な順序：公開→出す→残りマナ（＝この効果の解決）を先に終え、出したクリーチャーの「出た時」はその後にまとめて発動
@@ -6643,15 +6646,15 @@ async function runFxList(pi,list,srcCard){
         renderAll();
       }
     }else if(f.t==="deckSearch"){
-      await deckRecruitCore(pi,String(f.cond||"").trim(),n,3,"探索");
+      await deckRecruitCore(pi,String(f.cond||"").trim(),n,3,"探索",undefined,inPump);
     }else if(f.t==="graveRecruit"){
-      await deckRecruitCore(pi,String(f.cond||"").trim(),n,0,"蘇生","grave");
+      await deckRecruitCore(pi,String(f.cond||"").trim(),n,0,"蘇生","grave",inPump);
     }else if(f.t==="handRecruit"){
-      await deckRecruitCore(pi,String(f.cond||"").trim(),n,0,"踏み倒し","hand");
+      await deckRecruitCore(pi,String(f.cond||"").trim(),n,0,"踏み倒し","hand",inPump);
     }else if(f.t==="handRecruitBlkNext"){
       // ✋🛡 手札から踏み倒し→出したクリーチャーに次の自分のターンまでブロッカーを付与（トユケテラス下面型）
       const before=new Set(Z.battle.map(x=>x.id));
-      await deckRecruitCore(pi,String(f.cond||"").trim(),n,0,"踏み倒し","hand");
+      await deckRecruitCore(pi,String(f.cond||"").trim(),n,0,"踏み倒し","hand",inPump);
       const added=Z.battle.filter(x=>!before.has(x.id));
       added.forEach(c2=>{c2.buff=c2.buff||{};c2.buff.blocker=true;markBuffNext(c2,["blocker"],pi);});
       if(added.length){renderAll();toast(`🛡 ${added.map(faceNameOf).join("、")} に次の自分のターンまで「ブロッカー」を付与`);}
@@ -6665,6 +6668,30 @@ async function runFxList(pi,list,srcCard){
         for(const x of targets.slice()){await destroyCreature(op,x);}
         toast(`💥 相手の${filt?filt+"の":""}クリーチャー${targets.length}体を破壊`);
         renderAll();
+      }
+    }else if(f.t==="foeBounceAll"){
+      // ↩ 条件(f.cond)に合う相手クリーチャーをすべて手札に戻す（VANベートーベン型・空欄＝全部）。
+      //    真・エスケープで離場をキャンセルできる。下に重ねたカード・装備ギアは持ち主の墓地／手札へ。
+      const filt=String(f.cond||"").trim();
+      const OZt=zonesOf(op);
+      const targets=OZt.battle.filter(x=>{const rx=getReg(x);return rx&&isCreatureReg(rx)&&(!filt||lockFilterOk(filt,rx,x));});
+      if(!targets.length){toast(`手札に戻す相手クリーチャーなし${filt?`（${filt}）`:""}`);}
+      else{
+        let moved=0;
+        for(const tgt of targets.slice()){
+          if(await offerTrueEscape(op,tgt)){renderAll();continue;} // 🛡 真・エスケープで離場キャンセル可
+          const idx=OZt.battle.findIndex(x=>x.id===tgt.id);
+          if(idx<0)continue;
+          const removed=OZt.battle.splice(idx,1)[0];
+          const _um=(removed.under&&removed.under.length)?removed.under.splice(0):[];
+          if(removed.gear&&removed.gear.length){removed.gear.splice(0).forEach(gg=>{gg.faceup=true;OZt.grave.push(gg);});}
+          removed.tapped=false;removed.sideways=false;removed.rot=0;removed.buff=null;removed.seals=[];removed.faceup=true;removed.mark=false;removed.neoEvo=false;removed.isCross=false;
+          if(typeof toHand==="function")toHand(OZt,removed);else OZt.hand.push(removed);
+          _um.forEach(u=>{u.faceup=true;u.tapped=false;u.sideways=false;u.rot=0;u.buff=null;u.seals=[];u.mark=false;u.neoEvo=false;u.under=u.under||[];u.gear=u.gear||[];if(typeof toHand==="function")toHand(OZt,u);else OZt.hand.push(u);});
+          moved++;
+          renderAll();
+        }
+        if(moved){sfx("move");toast(`↩ 相手の${filt?filt+"の":""}クリーチャー${moved}体を手札に戻した`);}
       }
     }else if(f.t==="shieldPickNew"||f.t==="shieldPickTuck"){
       if(!S.vs){toast("（ソロのためスキップ）");continue;}
@@ -6994,10 +7021,18 @@ function lockFilterOk(filt,r,c,lockPi){
     return !!((r&&raceMatch(r,tk))||String(faceNameOf(c)||c.name||"").includes(tk));
   };
   filt=String(filt).replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0)).replace(/＞/g,">").replace(/＜/g,"<").replace(/＝/g,"=");
-  const toks=String(filt).split(/[／\/、,]/).map(x=>x.trim()).filter(Boolean);
   // 種族・名前のトークンは「いずれか（OR）」、コスト/パワー/タイプ/文明/多色単色/「以外」は「すべて（AND）」。
   // 例：「ボルシャック／ルピア／コスト7以下」＝（名前にボルシャック または ルピア）かつ コスト7以下
   const isCons=tk=>/^コスト/.test(tk)||/^パワー\d+(?:以下|以上)$/.test(tk)||tk==="多色"||tk==="単色"||tk==="クリーチャー"||tk==="呪文"||tk==="ツインパクト"||tk==="ブロッカー"||tk==="進化"||tk==="クロスギア"||!!civMap[tk]||/以外$/.test(tk);
+  // 「・」区切りの許容：ユーザーが「光/水・コスト5以下」のように中黒で区切っても動くようにする。
+  //   ただし「ボルシャック・ドギラゴン」等のカード名を壊さないため、分割後の全ピースが制約語（コスト/パワー/文明/多色単色/タイプ/以外）の時だけ分割する。
+  const splitDot=piece=>{
+    if(piece.indexOf("・")<0)return [piece];
+    const parts=piece.split("・").map(x=>x.trim()).filter(Boolean);
+    if(parts.length>1&&parts.every(p=>isCons(p)))return parts; // 全ピースが制約語＝安全に分割
+    return [piece]; // 名前を含む可能性があるので分割しない
+  };
+  const toks=String(filt).split(/[／\/、,]/).map(x=>x.trim()).filter(Boolean).flatMap(splitDot);
   // 「無色」は「ドラゴンまたは無色」のようにOR側で使われる語（ゼロ＝AND側は従来どおり）
   const cons=toks.filter(tk=>isCons(tk)&&tk!=="無色"), names=toks.filter(tk=>!isCons(tk)||tk==="無色");
   // タイプ語（クリーチャー/呪文/ツインパクト）が2つ以上あるときは互いにOR（1枚のカードが両方は満たせないため）
@@ -7302,7 +7337,7 @@ async function pumpFx(){
     const runTimes=async(list)=>{
       for(let b2=0;b2<bzT;b2++){
         if(bzT>1)toast(`💥 バズレンダ効果（${b2+1}/${bzT}回目）：${faceNameOf(c)}`);
-        await runFxList(pi,list,c);
+        await runFxList(pi,list,c,true); // 🔁 ポンプ内実行（踏み倒し系はwaitFxIdleで待たない）
       }
     };
     if(reg&&reg.twin){
@@ -7316,7 +7351,7 @@ async function pumpFx(){
     }
     const md=modeCountFor(reg,pi);
     if((reg.modeN|0)>0){
-      await runModeChoice(pi,reg,c);
+      await runModeChoice(pi,reg,c,true);
     }
     // 🔗 超魂X：下に超魂Xカードがあれば、その出た時(CIP)効果を上のクリーチャーの能力として自動処理
     if(zonesOf(pi).battle.some(x=>x.id===c.id)){
@@ -7324,7 +7359,7 @@ async function pumpFx(){
         const rsx=getReg(sx);
         if(rsx&&rsx.faces&&rsx.faces[0]&&rsx.faces[0].length){
           toast(`🔗 超魂X：${faceNameOf(c)} が下の《${faceNameOf(sx)}》の能力を発動`);
-          await runFxList(pi,rsx.faces[0],c);
+          await runFxList(pi,rsx.faces[0],c,true);
         }
         const hasManual=rsx&&(((rsx.watchFx||[]).length)||(rsx.modeN|0)>0);
         if(hasManual)toast(`🔗 超魂X：《${faceNameOf(sx)}》に攻撃時/誘発の手動能力があります（攻撃時のパネル・またはメニューから処理）`);
@@ -7352,7 +7387,7 @@ async function pumpFx(){
           if(pickList){
             S.exRevPSUsed[pi]=true;
             toast("⚡ 極限ファイナル革命P'S！");
-            await runFxList(pi,pickList,c);
+            await runFxList(pi,pickList,c,true);
             renderAll();
           }
         }
@@ -7523,7 +7558,11 @@ async function offerInvadeZeroPrompt(def){
   toast(`⚡0 侵略ZERO！ ${faceNameOf(h)}（手札から）`);
   await waitFxIdle();renderAll();
 }
-async function waitFxIdle(){
+async function waitFxIdle(inPump){
+  // 🔁 inPump=true（pumpFxのハンドラ内から呼ばれた）場合は待たない。
+  //    fxRunningはこのポンプ自身なので、待つと最大36秒スピンしてから諦める＝「処理が遅れる」「ターン終了処理中になる」の主因。
+  //    enqueueFxした子CIPは、このハンドラを抜けた後に同じポンプループが順番に処理するので、ここで待つ必要はない。
+  if(inPump)return;
   let guard=0;
   while((fxRunning||fxQueue.length)&&guard++<600)await new Promise(r=>setTimeout(r,60));
 }
@@ -8800,6 +8839,12 @@ function hideResumeBtn(){
   const b=document.getElementById("resumeAtkBtn");
   if(b)b.style.display="none";
 }
+/* ✅ 攻撃が完了・中止した時に呼ぶ：保留中攻撃の状態を消し、フローティング「▶ 攻撃を再開」ボタンも隠す。
+   これを呼び忘れると、攻撃していないのに再開ボタンが残ったり、別の場面で古い攻撃が再開されてしまう。 */
+function clearPendingAtk(){
+  S.pendingAtk=null;
+  hideResumeBtn();
+}
 async function execAttack(pi,id,tg){
   const Z=zonesOf(pi);
   let c=Z.battle.find(x=>x.id===id);
@@ -9336,7 +9381,7 @@ async function execAttack(pi,id,tg){
       renderAll();
     }
   }
-  if(defender){await doBattle(pi,c,op,defender);return;}
+  if(defender){await doBattle(pi,c,op,defender);clearPendingAtk();return;}
   if(S.expert){
     const rAtk2=getReg(c);
     const acs=Z.hand.filter(h=>{
@@ -9606,6 +9651,7 @@ async function execAttack(pi,id,tg){
     }
     if(S.vs&&S.turn>0)declareWin(pi,`💥 ダイレクトアタック成立`);
   }
+  clearPendingAtk(); // ✅ ここまで来たら攻撃は完了（保留は無し）。古い再開ボタン・保留状態を確実に消す
   renderAll();
 }
 /* ---- 効果登録エディタ ---- */
@@ -10325,11 +10371,38 @@ function fxUiPolish(){
           return KEEP_IDS.some(k=>el.querySelector&&el.querySelector("#"+k));
         };
         const catOf=el=>{
+          if(el.dataset&&el.dataset.fxcat)return el.dataset.fxcat; // 明示指定（data-fxcat）を最優先
           let t=(el.textContent||"");
           if(el.querySelectorAll)el.querySelectorAll("[placeholder]").forEach(x=>{t+=" "+(x.placeholder||"");});
           for(const [k,,kws] of GRPS){if(kws&&kws.some(w=>t.includes(w)))return k;}
           return "misc";
         };
+        // 💰 コスト軽減系の枠を、混載ブロブ（ラストバースト等）から取り出して独立行にし、必ず「コスト・召喚系」へ入れる。
+        //    枠のspan見出しで対象を特定し、外側にdata-fxcat="cost"のrapperを作ってセクション直下へ移す（元の並び位置に挿入）。
+        try{
+          const COST_ROW_IDS=["fxStCostM","fxFirstRed","fxStHandNeoRed","fxStCostUp"];
+          for(const cid of COST_ROW_IDS){
+            const inp=document.getElementById(cid);
+            if(!inp)continue;
+            // その入力を含む「枠div」（border付きの直近div）を特定
+            let box=inp;
+            while(box&&box.parentElement&&box.parentElement!==sec){
+              if(box.tagName==="DIV"&&/border/.test(box.getAttribute("style")||""))break;
+              box=box.parentElement;
+            }
+            if(!box||box.tagName!=="DIV")continue;
+            if(box.parentElement===sec)continue; // 既に直下（処理済み）
+            // 枠を独立rapperに包んでセクション直下（元blobの直後）へ
+            const blob=(()=>{let a=box;while(a.parentElement&&a.parentElement!==sec)a=a.parentElement;return a;})();
+            const wrap=document.createElement("div");
+            wrap.className="row";wrap.dataset.fxcat="cost";
+            wrap.style.cssText="gap:6px;flex-wrap:wrap;align-items:center;flex:1 1 100%";
+            box.parentElement.removeChild(box);
+            wrap.appendChild(box);
+            if(blob&&blob.nextSibling)sec.insertBefore(wrap,blob.nextSibling);
+            else sec.appendChild(wrap);
+          }
+        }catch(eHoist){console.warn("costHoist",eHoist);}
         const kids=[...sec.children].filter(el=>el!==h3&&!isKeep(el));
         if(kids.length>=10){
           let opened;try{opened=new Set(JSON.parse(localStorage.getItem("fxGrpOpen")||"[]"));}catch(e2){opened=new Set();}
@@ -10954,8 +11027,16 @@ function extractEffects(text,mode){
     }
     // バウンス（デュエプレは基本「選んで戻す」。「ランダム」の語がある時だけランダム。「戻してもよい」も対応）
     if(/手札に戻(?:す|して)/.test(cl)&&/相手/.test(cl)&&!/捨て/.test(cl)){
-      const n=numOf(cl,/(\d+)体/);
-      fx.push({t:/ランダム/.test(cl)?"bounce":"bouncePick",n});
+      // 「相手のクリーチャーをすべて手札に戻す」＝全体バウンス（VANベートーベン型）。条件があれば条件付き全体。
+      if(/(?:すべて|全て|全部)/.test(cl)){
+        const mPw=cl.match(/パワー(\d+)(以下|以上)/);
+        const mCo=cl.match(/コスト(\d+)(以下|以上)/);
+        const bcond=mPw?`パワー${mPw[1]}${mPw[2]}`:mCo?`コスト${mCo[1]}${mCo[2]}`:"";
+        fx.push({t:"foeBounceAll",n:1,cond:bcond});
+      }else{
+        const n=numOf(cl,/(\d+)体/);
+        fx.push({t:/ランダム/.test(cl)?"bounce":"bouncePick",n});
+      }
     }
     // 相手クリーチャーをマナ送り（コスト/パワー条件対応・「コストN以上」も可）
     if(/相手の[^。■]*クリーチャー[^。■]*?を(?:相手の)?マナゾーンに置く/.test(cl)){
@@ -11562,6 +11643,20 @@ function parseCardText(txt,mode){
   else if(/[2２]体目以降(?:の)?クリーチャーを(?:バトルゾーンに)?出せない|各ターン(?:、)?(?:最初の)?[1１]回しか(?:.{0,4})?クリーチャーを(?:バトルゾーンに)?出せない/.test(t))out.set.stCrePT=1;
   // 合計制限（ペルフェクト型）：相手は各ターン合計N回までしかクリーチャーと呪文を実行できない
   {const mP=t.match(/相手は各ターン(?:合計)?(\d+)回(?:まで)?しか(?:クリーチャーと呪文|呪文とクリーチャー)を(?:実行|プレイ)できない/);if(mP)out.set.stPlayPT=+mP[1];}
+  // 🔒 キング・アルカディアス型：相手の〔種族/文明〕のクリーチャーがバトルゾーンに出る時、かわりに墓地（または山札の下）へ。
+  //    ※「召喚以外」の限定が無い＝あらゆる出方（召喚も含む）が対象。種族/文明の条件を条件欄へ。
+  if(!out.set.repIn&&/召喚以外/.test(t)===false){
+    const mKA=t.match(/相手の(?:、)?([^。■]*?)クリーチャーが(?:バトルゾーンに)?出る時[、,]?(?:その)?かわりに(墓地|山札の(?:一番)?下)(?:に(?:置く)?)?/);
+    if(mKA){
+      out.set.repIn=/山札/.test(mKA[2])?"deckBottom":"grave";
+      out.set.repInNC=false; // 召喚も含めてすべて置換（キング・アルカディアス型）
+      // 対象種族/文明を抽出（「コマンドまたはドラゴンの」→コマンド／ドラゴン）
+      let cond=(mKA[1]||"").replace(/[のな、,]/g,"").replace(/または|又は|や/g,"／").trim();
+      // 文明語（光水闇火自然/多色/単色）や種族名だけを残す。空なら全相手クリーチャー。
+      if(cond)out.set.repInF=cond;
+      out.notes.push({msg:`🔒 常在「相手の${cond||"全"}クリーチャーは出るかわりに${/山札/.test(mKA[2])?"山札の下":"墓地"}へ（キング・アルカディアス型）」を設定しました`,q:"置換"});
+    }
+  }
   // 踏み倒しメタ：相手が召喚以外で出したクリーチャー→シールド化（シフォン型・任意）／マナ送り（コナユキ型）
   if(!out.set.repIn&&/召喚以外/.test(t)&&/クリーチャー/.test(t)){
     if(/(?:シールド化|シールドに(?:する|置|加え)|盾に(?:する|置|加え))/.test(t)){out.set.repIn="shield";out.set.repInNC=true;}
@@ -15623,6 +15718,9 @@ function checkLibWin(){
 function renderAll(){
   checkLibWin();
   checkMugetsu(false);
+  // 🩹 保険：保留中の攻撃が無いのに「▶ 攻撃を再開」ボタンが残っていたら隠す（取りこぼしの自己修復）。
+  //    攻撃していないのに再開ボタンが出る／変な場面で攻撃が再開される不具合の最後の砦。
+  if(!S.pendingAtk){const _rb=document.getElementById("resumeAtkBtn");if(_rb&&_rb.style.display!=="none")_rb.style.display="none";}
   const order=S.vs?[1,0]:[0];
   for(const pi of order)renderPlayer(pi);
   document.querySelectorAll(".pboard").forEach(pb=>{
