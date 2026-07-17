@@ -10377,32 +10377,69 @@ function fxUiPolish(){
           for(const [k,,kws] of GRPS){if(kws&&kws.some(w=>t.includes(w)))return k;}
           return "misc";
         };
-        // 💰 コスト軽減系の枠を、混載ブロブ（ラストバースト等）から取り出して独立行にし、必ず「コスト・召喚系」へ入れる。
-        //    枠のspan見出しで対象を特定し、外側にdata-fxcat="cost"のrapperを作ってセクション直下へ移す（元の並び位置に挿入）。
+        // 🧩 混載ブロブ（ラストバースト行）をカテゴリ別に分割する。
+        //    この1つのdivに ラストバースト/常在ロック/置換ロック/能力無視/コスト軽減/攻撃誘導… が全部詰まっており、
+        //    そのままだと「攻撃・ブレイク系」に丸ごと落ちて何でも入る箱になっていた。
+        //    各コントロールを「まとまり単位」に分けて、正しいカテゴリのバケット行へ振り分ける（DOM要素は移動なのでID/値/イベントは保持）。
         try{
-          const COST_ROW_IDS=["fxStCostM","fxFirstRed","fxStHandNeoRed","fxStCostUp"];
-          for(const cid of COST_ROW_IDS){
-            const inp=document.getElementById(cid);
-            if(!inp)continue;
-            // その入力を含む「枠div」（border付きの直近div）を特定
-            let box=inp;
-            while(box&&box.parentElement&&box.parentElement!==sec){
-              if(box.tagName==="DIV"&&/border/.test(box.getAttribute("style")||""))break;
-              box=box.parentElement;
+          const anchorEl=document.getElementById("fxLastBurst");
+          let blob=anchorEl;
+          while(blob&&blob.parentElement&&blob.parentElement!==sec)blob=blob.parentElement;
+          if(blob&&blob.parentElement===sec&&!sec.querySelector('[data-fxcat]')){
+            // まとまり単位を作る：LABEL/DIV は単独で1まとまり。SPANは見出しなので後続のSELECT/INPUTを取り込む。
+            //    先頭の見出しがないSELECT/INPUTは直前のまとまりに付ける。
+            const units=[];let cur=null;
+            const flush=()=>{if(cur&&cur.els.length)units.push(cur);cur=null;};
+            for(const el of [...blob.children]){
+              const tag=el.tagName;
+              if(tag==="LABEL"||tag==="DIV"){flush();units.push({els:[el]});}
+              else if(tag==="SPAN"){flush();cur={els:[el]};}
+              else{ // SELECT / INPUT など
+                if(cur)cur.els.push(el);
+                else if(units.length)units[units.length-1].els.push(el);
+                else cur={els:[el]};
+              }
             }
-            if(!box||box.tagName!=="DIV")continue;
-            if(box.parentElement===sec)continue; // 既に直下（処理済み）
-            // 枠を独立rapperに包んでセクション直下（元blobの直後）へ
-            const blob=(()=>{let a=box;while(a.parentElement&&a.parentElement!==sec)a=a.parentElement;return a;})();
-            const wrap=document.createElement("div");
-            wrap.className="row";wrap.dataset.fxcat="cost";
-            wrap.style.cssText="gap:6px;flex-wrap:wrap;align-items:center;flex:1 1 100%";
-            box.parentElement.removeChild(box);
-            wrap.appendChild(box);
-            if(blob&&blob.nextSibling)sec.insertBefore(wrap,blob.nextSibling);
-            else sec.appendChild(wrap);
+            flush();
+            // まとまりのカテゴリ＝見出し（最初に出てくる語）で判定する。
+            //    コントロールの正体は先頭の見出し（例「置換ロック」「オリオティス」）であって、
+            //    セレクトの選択肢テキスト（例「シールドへ」「コスト…」）は付随ノイズ。
+            //    → 全カテゴリのキーワードのうち「文中で最も早く出現したもの」の属性を採用する。
+            const unitCat=u=>{
+              let t="";
+              for(const e of u.els){t+=" "+(e.textContent||"");if(e.querySelectorAll)e.querySelectorAll("[placeholder]").forEach(x=>{t+=" "+(x.placeholder||"");});}
+              // data-fxcat明示（コスト枠など）は最優先
+              for(const e of u.els){if(e.dataset&&e.dataset.fxcat)return e.dataset.fxcat;}
+              let best=null,bestPos=Infinity;
+              // aura/gimmick（＝見出しになりやすい識別語）を先に評価して、同位置なら識別カテゴリを優先
+              const orderPri=["aura","gimmick","cost","def","atk","gear"];
+              for(const cat of orderPri){
+                const kws=(GRPS.find(g=>g[0]===cat)||[])[2];
+                if(!kws)continue;
+                for(const w of kws){
+                  const p=t.indexOf(w);
+                  if(p>=0&&p<bestPos){bestPos=p;best=cat;}
+                }
+              }
+              return best||"misc";
+            };
+            const order=["atk","def","cost","gear","aura","gimmick","misc"];
+            const buckets=new Map();
+            for(const u of units){
+              const c=unitCat(u);
+              if(!buckets.has(c)){
+                const b=document.createElement("div");
+                b.className="row";b.dataset.fxcat=c;
+                b.style.cssText="gap:6px 12px;flex-wrap:wrap;align-items:center;flex:1 1 100%";
+                buckets.set(c,b);
+              }
+              for(const e of u.els)buckets.get(c).appendChild(e);
+            }
+            const anchor=blob.nextSibling;
+            blob.remove();
+            for(const c of order){if(buckets.has(c)){if(anchor)sec.insertBefore(buckets.get(c),anchor);else sec.appendChild(buckets.get(c));}}
           }
-        }catch(eHoist){console.warn("costHoist",eHoist);}
+        }catch(eSplit){console.warn("blobSplit",eSplit);}
         const kids=[...sec.children].filter(el=>el!==h3&&!isKeep(el));
         if(kids.length>=10){
           let opened;try{opened=new Set(JSON.parse(localStorage.getItem("fxGrpOpen")||"[]"));}catch(e2){opened=new Set();}
@@ -10482,6 +10519,12 @@ function fxUiPolish(){
               }
             }
           };
+          // 🔎 重要：oninput は先に base 版で束縛済みなので、グループ連動版へ張り替えて即再適用する。
+          //    これをしないと「検索してもヒットが折りたたみの中に隠れたまま」になる（グループ自動オープンが走らない）。
+          {
+            const fInp2=document.getElementById("fxFinder");
+            if(fInp2){fInp2.oninput=window.__applyFxFinder;window.__applyFxFinder();}
+          }
         }
       }
     }catch(e){console.warn("fxGroups",e);}
