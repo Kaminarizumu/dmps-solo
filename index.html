@@ -4461,7 +4461,7 @@ const FX_TYPES=[
   ["millUntilCre","山札の上から、クリーチャーがn体墓地に置かれるまで置く（ヴォルグ・サンダー型・対象プレイヤー選択）"],
 ];
 const FX_LABEL=new Proxy(Object.fromEntries(FX_TYPES),{get:(t,k)=>(k in t)?t[k]:(typeof k==="string"&&k.startsWith("sp:")?"特殊："+k.slice(3):k)});
-const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo","untapFilt","handStFree","foeToShield","selfBounceAll","deckCastSpell","revealTakeGrave","handRecruitBlkNext"]);
+const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo","untapFilt","handStFree","selfBounceAll"]);
 const fxNoN=t=>FX_NO_N.has(t)||(typeof t==="string"&&t.startsWith("sp:"));
 function fxSummary(list){
   if(!list||!list.length)return "（効果なし）";
@@ -9479,6 +9479,7 @@ function fxAddSpecialOptions(sel,cur){
 }
 /* 効果タイプをラベルの内容でカテゴリ分けし、optgroupで見やすくする */
 function fxTypeCat(lb){
+  if(/(公開|表向き).*手札/.test(lb))return "🎴 ドロー"; // コアクアン等：山札を見て手札に加える系は実質ドローとして分類
   if(/引く|ドロー/.test(lb))return "🎴 ドロー";
   if(/捨て|手札を|ハンデス/.test(lb))return "✋ 手札破壊・操作";
   if(/マナ/.test(lb))return "💎 マナ";
@@ -9600,9 +9601,9 @@ function pickFromList(title,pairs,current){
 /* 🔎 効果タイプselectに検索ボタンを付ける共通処理（選択後はselectへ反映しonchange相当を実行） */
 function fxTypeSearchBtn(sel,getCur,onPick){
   const fb=document.createElement("button");
-  fb.type="button";fb.className="btn small ghost";fb.textContent="🔎";
-  fb.title="効果を検索して選択";
-  fb.style.cssText="flex:0 0 auto;padding:2px 9px";
+  fb.type="button";fb.className="btn small";fb.textContent="🔎検索";
+  fb.title="効果を検索して選択（左のドロップダウンから探すより速い・略称OK）";
+  fb.style.cssText="flex:0 0 auto;padding:2px 10px;border-color:#38bdf8;color:#38bdf8;font-weight:700";
   fb.onclick=async()=>{
     let uc;try{uc=fxUsageCounts().type;}catch(e){uc=new Map();}
     const v=await pickFromList("🔎 効果を検索して選択（⭐＝登録済みカードでの使用数）",FX_TYPES.map(([v2,lb])=>[v2,lb,uc.get(v2)||0]),getCur());
@@ -9716,9 +9717,9 @@ function fxTrigRowEl(i){
   for(const [v,lb] of TRIG_EVS){const o=document.createElement("option");o.value=v;o.textContent=lb;if(v===f.ev)o.selected=true;ev.appendChild(o);}
   ev.onchange=()=>{f.ev=ev.value;};
   const evb=document.createElement("button");
-  evb.type="button";evb.className="btn small ghost";evb.textContent="🔎";
+  evb.type="button";evb.className="btn small";evb.textContent="🔎検索";
   evb.title="誘発タイミングを検索して選択";
-  evb.style.cssText="flex:0 0 auto;padding:2px 9px";
+  evb.style.cssText="flex:0 0 auto;padding:2px 10px;border-color:#38bdf8;color:#38bdf8;font-weight:700";
   evb.onclick=async()=>{
     let uc;try{uc=fxUsageCounts().ev;}catch(e){uc=new Map();}
     const v=await pickFromList("🔎 誘発タイミングを検索して選択（⭐＝使用数）",TRIG_EVS.map(([v2,lb])=>[v2,lb,uc.get(v2)||0]),f.ev);
