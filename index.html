@@ -1609,6 +1609,7 @@ body.shake{animation:bodyShake .4s ease-out}
           <input type="text" id="fxStLockSpellF" placeholder="対象条件（例：光以外／コスト5以下・「／」＝すべて満たす呪文のみ禁止・空欄＝全て）" style="flex:1;min-width:170px">
           <label><input type="checkbox" id="fxStLockCre"> 相手はクリーチャーを出せない</label>
           <label title="このロックを自分にも適用する＝すべてのプレイヤーが対象（暴走龍5000GT型）"><input type="checkbox" id="fxStLockBoth"> 両者に適用（自分も）</label>
+          <label title="超次元ゾーンからサイキック・クリーチャーを出せない（5000GT型・「両者に適用」と併用で全プレイヤー）"><input type="checkbox" id="fxStLockPsy"> 🌌 サイキックを出せない</label>
           <input type="text" id="fxStLockCreF" placeholder="対象条件（例：コスト5以下／パワー5000以下／光以外・空欄＝全て）" style="flex:1;min-width:170px">
           <label style="display:flex;align-items:center;gap:6px">相手は各ターン<input type="number" id="fxStSpellPT" min="0" placeholder="0" style="width:56px"> 回しか呪文を唱えられない（0=制限なし・一音の妖精型）</label>
           <label style="display:flex;align-items:center;gap:6px">相手は各ターン<input type="number" id="fxStCrePT" min="0" placeholder="0" style="width:56px"> 体しかクリーチャーを出せない（0=制限なし）</label>
@@ -11122,6 +11123,7 @@ function renderFxEditor(){
   $("fxStLockSpellF").value=FXEDIT.stLockSpellF||"";
   $("fxStLockCre").checked=!!FXEDIT.stLockCre;
   {const e=$("fxStLockBoth");if(e)e.checked=!!FXEDIT.stLockBoth;}
+  {const e=$("fxStLockPsy");if(e)e.checked=!!FXEDIT.stLockPsy;}
   $("fxStLockCreF").value=FXEDIT.stLockCreF||"";
   $("fxStSpellPT").value=FXEDIT.stSpellPT||"";
   $("fxStCrePT").value=FXEDIT.stCrePT||"";
@@ -12247,6 +12249,13 @@ function parseCardText(txt,mode){
     }
   }
   if(/相手は(?:クリーチャーを)?(?:バトルゾーンに)?クリーチャーを出せない/.test(t))out.set.stLockCre=true;
+  // 🚫 「パワーN以下／コストN以下のクリーチャーを召喚できず（できない）」（5000GT型）→ stLockCre＋対象条件
+  {const mPL=t.match(/(パワー\d+以下|コスト\d+以下)の(?:クリーチャーを)?(?:召喚|出す)(?:こと)?(?:でき(?:ず|ない)|できません)/);
+   if(mPL){out.set.stLockCre=true;if(!out.set.stLockCreF)out.set.stLockCreF=mPL[1];}}
+  // 🌌 サイキック・クリーチャーを出せない（5000GT型）
+  if(/サイキック(?:・クリーチャー)?を(?:バトルゾーンに)?出(?:す|せない)ことができない|サイキック(?:・クリーチャー)?を出せない/.test(t))out.set.stLockPsy=true;
+  // 🔒 「すべてのプレイヤーは」＝両者ロック（自分にも適用）
+  if(/すべてのプレイヤーは|全てのプレイヤーは|両方のプレイヤーは/.test(t)&&(out.set.stLockCre||out.set.stLockPsy||out.set.stLockSpell))out.set.stLockBoth=true;
   // 条件付きS・トリガー付与（「〜あれば/なら、…S・トリガーを与える」）→ 条件ST欄のみ設定（無条件STはONにしない）
   if(/S・?トリガー」?を与える/.test(t)){
     const cm=t.match(/([^■。、]{3,40}?)(?:あれば|いれば|なら)[、,]?[^。]*?S・?トリガー」?を与える/);
@@ -12778,6 +12787,7 @@ function openFxEditor(key){
     stLockSpellF:cur&&cur.stLockSpellF||"",
     stLockCre:cur?!!cur.stLockCre:false,
     stLockBoth:cur?!!cur.stLockBoth:false,
+    stLockPsy:cur?!!cur.stLockPsy:false,
     stLockCreF:cur&&cur.stLockCreF||"",
     invCiv:cur&&cur.invCiv||"",
     symX:cur&&(+cur.symX||1)||1,
@@ -13111,6 +13121,7 @@ $("fxSave").addEventListener("click",async ()=>{
     stLockSpellF:$("fxStLockSpellF").value.trim(),
     stLockCre:$("fxStLockCre").checked,
     stLockBoth:$("fxStLockBoth")?$("fxStLockBoth").checked:false,
+    stLockPsy:$("fxStLockPsy")?$("fxStLockPsy").checked:false,
     stLockCreF:$("fxStLockCreF").value.trim(),
     invCiv:$("fxInvCiv").value||"",
     symX:+$("fxSymX").value||1,
@@ -13288,6 +13299,7 @@ function pickImage(title,hint){
     $("vOk").style.display="none";$("vStatus").textContent="";
     const search=$("vSearch");search.style.display="";search.value="";
     let tf="";
+    const pickCivSel=new Set();
     let pickSort="name"; // 並び順："name"=名前順（既定） / "added"=登録した順
     const g=$("vGrid");
     const fb=$("vTypeFilter");
@@ -13301,6 +13313,19 @@ function pickImage(title,hint){
       sb.textContent=pickSort==="added"?"並び順：追加した順（タップで名前順へ）":"並び順：名前順（タップで追加した順へ）";
       sb.onclick=()=>{pickSort=(pickSort==="added"?"name":"added");render();};
       bar.appendChild(sb);
+      // 🎨 文明フィルタ（光/水/闇/火/自然/ゼロ＋クリア）
+      const CV=[["light","光","#ffe082"],["water","水","#7fd7ff"],["dark","闇","#c58cff"],["fire","火","#ff8a80"],["nature","自然","#a5e88a"],["zero","ゼロ","#cfd8dc"]];
+      for(const [id,lb,col] of CV){
+        const cb=document.createElement("button");cb.type="button";cb.textContent=lb;
+        const on=pickCivSel.has(id);
+        cb.style.cssText=`font-size:12px;padding:3px 10px;border:1px solid ${col};border-radius:13px;background:${on?col:"transparent"};color:${on?"#0b0f1a":col};cursor:pointer;font-weight:700`;
+        cb.onclick=()=>{if(pickCivSel.has(id))pickCivSel.delete(id);else pickCivSel.add(id);render();};
+        bar.appendChild(cb);
+      }
+      if(pickCivSel.size){
+        const clr=document.createElement("button");clr.type="button";clr.textContent="文明クリア";clr.className="btn small ghost";clr.style.cssText="font-size:11px;padding:3px 8px";
+        clr.onclick=()=>{pickCivSel.clear();render();};bar.appendChild(clr);
+      }
       g.appendChild(bar);
       const q=normName(search.value);
       const keys=Array.from(dispName.keys()).sort((a,b)=>{
@@ -13313,6 +13338,7 @@ function pickImage(title,hint){
       for(const k of keys){
         if(q&&!k.includes(q))continue;
         if(tf&&!typeMatch(k,tf))continue;
+        if(pickCivSel.size){const rC=FXDB.get(k);const cs=(rC&&rC.civs)||[];if(![...pickCivSel].every(cv=>cs.includes(cv)))continue;}
         const el=vCardEl(dispName.get(k));
         el.addEventListener("click",()=>{
           closeViewer();
@@ -14229,6 +14255,15 @@ function moveCardXRaw(pFrom,fromZone,id,pTo,toZone){
 }
 function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   MOVE_BLOCKED=false;
+  // 🌌 サイキック・ロック（5000GT型）：超次元からサイキックを出せない（stLockPsy持ちが相手or両者にいる時）
+  if(S.expert&&S.vs&&fromZone==="hyper"&&toZone==="battle"){
+    const _f=findCard(pFrom,fromZone,id);
+    const _rp=_f?getReg(_f.card):null;
+    if(_rp&&(_rp.ctype==="psychic"||_rp.ctype==="psyevo")){
+      const lk=stLockerOf(pTo,"stLockPsy","stLockPsyF",_rp,_f.card);
+      if(lk){MOVE_BLOCKED=true;toast(`⛔ ${faceNameOf(_f.card)} は出せない（サイキック・ロック：${faceNameOf(lk)}）`);sfx("flip");return;}
+    }
+  }
   // 🛡 デュエプレモード：シールドは10枚まで。11枚目は追加されない（カードは元の場所に残る）
   if(S.gameMode!=="tcg"&&toZone==="shield"&&fromZone!=="shield"&&fromZone!=="shieldUp"){
     const ZT=zonesOf(pTo);
