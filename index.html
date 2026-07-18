@@ -5609,10 +5609,11 @@ async function runFxList(pi,list,srcCard,inPump){
       sfx("move");
       if(cn>0){const nm=Z.mana.slice(-cn).map(faceNameOf).join("、");toast(`💠 マナ加速（タップイン）：${nm} をタップしてマナゾーンへ`);}
     }else if(f.t==="mill"){
-      const dropped=[];
-      for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;dropped.push(faceNameOf(c));if(!graveShuffleRepApply(c,pi))Z.grave.push(c);}
+      const dropped=[];const _milled=[];
+      for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;dropped.push(faceNameOf(c));if(!graveShuffleRepApply(c,pi)){Z.grave.push(c);_milled.push(c);}}
       if(dropped.length)toast(`🪦 墓地肥やし：${dropped.join("、")} を墓地へ`);
       sfx("grave");
+      for(const mc of _milled)fireToGrave(pi,mc); // ⚡ 山札→墓地でも「墓地に置かれた時」を発火（ゾルザーク型）
     }else if(f.t==="millUntilCre"){
       // 🗲 ヴォルグ・サンダー：対象プレイヤーの山札の上から、クリーチャーがn体墓地に置かれるまで置く
       // デュエプレは対象＝自分のみ。TCGは自分/相手を選択。フォーエバー・プリンセスが墓地に置かれる時は置換でシャッフル（クリーチャーとしてカウントしない）
@@ -6262,10 +6263,18 @@ async function runFxList(pi,list,srcCard,inPump){
         const cc=OZ.battle.splice(bi,1)[0];
         if(cc.gear&&cc.gear.length)cc.gear.splice(0).forEach(g=>gearOut(OZ,g));
         if(cc.seals&&cc.seals.length)cc.seals.splice(0).forEach(x=>{x.faceup=true;OZ.grave.push(x);});
-        if(cc.under&&cc.under.length)cc.under.splice(0).forEach(u=>{u.faceup=true;u.tapped=false;OZ.grave.push(u);});
-        cc.faceup=false;cc.tapped=false;cc.sideways=false;cc.rot=0;cc.buff=null;cc.mark=false;cc.seals=[];cc.isCross=false;
+        // 🔗 進化元（under）は最上段と一緒にシールドゾーンへ（moveCardX/selfToZoneと統一・墓地送りは誤りだった）
+        const _fum=(cc.under&&cc.under.length)?cc.under.splice(0):[];
+        cc.faceup=false;cc.tapped=false;cc.sideways=false;cc.rot=0;cc.buff=null;cc.mark=false;cc.seals=[];cc.isCross=false;cc.neoEvo=false;
         if(overCap){cc.faceup=true;OZ.grave.push(cc);toast(`🛡 シールド上限（10枚）：${faceNameOf(sel)} はシールドにできず墓地へ`);}
         else{OZ.shield.push(cc);toast(`🛡 ${faceNameOf(sel)} を裏向きのシールドにした`);}
+        // 進化元をシールドへ（上限を超えた分は墓地）
+        for(const u of _fum){
+          u.faceup=false;u.tapped=false;u.sideways=false;u.rot=0;u.buff=null;u.seals=[];u.mark=false;u.neoEvo=false;u.under=u.under||[];u.gear=u.gear||[];
+          if(!shieldCapOk(OZ)){u.faceup=true;OZ.grave.push(u);}
+          else OZ.shield.push(u);
+        }
+        if(_fum.length)toast(`🔗 進化元${_fum.length}枚も一緒にシールドゾーンへ`);
         made++;
         renderAll();
       }
@@ -9173,20 +9182,30 @@ async function startAttack(pi,id){
   }
   await execAttack(pi,id,tg);
 }
+/* ⚡ カードが「どこからでも墓地に置かれた時（toGrave）」の誘発を発火する共通ヘルパ。
+   moveCardXを通らない直接の墓地送り（mill＝山札→墓地など）でも呼ぶ。srcCardを渡すのでrunMode等も動く。 */
+function fireToGrave(pi,c){
+  if(!S.expert||!c)return;
+  const rG=getReg(c);
+  if(rG&&rG.watchFx){
+    const fxG=rG.watchFx.filter(w=>w.ev==="toGrave");
+    if(fxG.length){toast(`⚡墓地に置かれた時の効果：${faceNameOf(c)}`);runFxList(pi,fxG,c);}
+  }
+}
 function showResumeBtn(){
   let wrap=document.getElementById("resumeAtkWrap");
   if(!wrap){
     wrap=document.createElement("div");
     wrap.id="resumeAtkWrap";
-    wrap.style.cssText="position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:100000;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none";
+    wrap.style.cssText="position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:100000;display:flex;flex-direction:column;align-items:center;gap:8px;background:rgba(10,14,22,.96);border:2px solid #d97706;border-radius:14px;padding:12px 16px;box-shadow:0 8px 28px rgba(0,0,0,.6);max-width:92vw";
     const msg=document.createElement("div");
     msg.id="resumeAtkMsg";
-    msg.style.cssText="background:rgba(10,14,22,.92);color:#ffcf6a;border:1px solid #d97706;border-radius:10px;padding:6px 14px;font-size:12.5px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.5);text-align:center;max-width:88vw";
+    msg.style.cssText="color:#ffcf6a;font-size:12.5px;font-weight:700;text-align:center";
     msg.textContent="⏸ 攻撃を保留中 — 効果を解決したら下のボタンで続行";
     const b=document.createElement("button");
     b.id="resumeAtkBtn";
     b.className="btn primary";
-    b.style.cssText="pointer-events:auto;font-size:15px;padding:11px 22px;box-shadow:0 6px 20px rgba(217,119,6,.6);animation:pulseBtn 1.2s ease-in-out infinite";
+    b.style.cssText="font-size:16px;padding:12px 28px;width:100%;box-shadow:0 6px 20px rgba(217,119,6,.6);animation:pulseBtn 1.2s ease-in-out infinite";
     b.textContent="▶ 攻撃を再開";
     b.addEventListener("click",async ()=>{
       const pa=S.pendingAtk;
@@ -9220,14 +9239,14 @@ function waitManualResume(label){
     if(!wrap){
       wrap=document.createElement("div");
       wrap.id="resumeFxWrap";
-      wrap.style.cssText="position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:100000;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none";
+      wrap.style.cssText="position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:100000;display:flex;flex-direction:column;align-items:center;gap:8px;background:rgba(10,14,22,.96);border:2px solid #7b4bd6;border-radius:14px;padding:12px 16px;box-shadow:0 8px 28px rgba(0,0,0,.6);max-width:92vw";
       const msg=document.createElement("div");
       msg.id="resumeFxMsg";
-      msg.style.cssText="background:rgba(10,14,22,.92);color:#ffe08a;border:1px solid #7b4bd6;border-radius:10px;padding:6px 14px;font-size:12.5px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.5);text-align:center;max-width:88vw";
+      msg.style.cssText="color:#ffe08a;font-size:12.5px;font-weight:700;text-align:center";
       const b=document.createElement("button");
       b.id="resumeFxBtn";
       b.className="btn primary";
-      b.style.cssText="pointer-events:auto;font-size:15px;padding:11px 22px;box-shadow:0 6px 20px rgba(123,75,214,.6);animation:pulseBtn 1.2s ease-in-out infinite";
+      b.style.cssText="font-size:16px;padding:12px 28px;width:100%;box-shadow:0 6px 20px rgba(123,75,214,.6);animation:pulseBtn 1.2s ease-in-out infinite";
       wrap.appendChild(msg);wrap.appendChild(b);
       document.body.appendChild(wrap);
       // ⏸ パルス用のキーフレーム（未定義なら追加）
@@ -15183,11 +15202,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   }
   // ⚡ どこからでも墓地に置かれた時（toGrave）：バトル破壊はdestroyWithReplaceで発火するため、それ以外の墓地着地で発火
   if(S.expert&&toZone==="grave"&&fromZone!=="grave"&&fromZone!=="battle"){
-    const rG=getReg(c);
-    if(rG&&rG.watchFx){
-      const fxG=rG.watchFx.filter(w=>w.ev==="toGrave");
-      if(fxG.length){toast(`⚡墓地に置かれた時の効果：${faceNameOf(c)}`);runFxList(pTo,fxG);}
-    }
+    fireToGrave(pTo,c);
   }
 }
 let MOVE_TAP_CHAIN=Promise.resolve();
@@ -15263,6 +15278,7 @@ function runHotkey(act){
     if(!Z.deck.length){toast("山札がありません");return;}
     snap();const c=Z.deck.shift();c.faceup=true;Z.grave.push(c);
     sfx("grave");renderAll();toast(`山上→墓地：${faceNameOf(c)}`);
+    fireToGrave(pi,c);
   }else if(act==="handes"){
     const OZ=zonesOf(op);
     if(!OZ.hand.length){toast("相手の手札がありません");return;}
@@ -16107,6 +16123,7 @@ function renderPlayer(pi){
     const c=Z.deck.shift();c.faceup=true;Z.grave.push(c);
     sfx("grave");
     renderAll();toast(`山上→墓地：${c.name}`);
+    fireToGrave(pi,c);
   });
   gwrap.appendChild(gb);
   row.appendChild(gwrap);
@@ -19006,13 +19023,12 @@ function openCardSheet(ctx){
         const Z2=zonesOf(ctx.p);
         let pool=Z2[zn].filter(x=>x.id!==ctx.id);
         if(!pool.length){toast("進化元にできるカードがありません");return;}
-        // 複数素材対応（超無限墓地進化など）：1体ずつ選び「完了」で確定
+        // 複数素材対応（超無限墓地進化など）：カード画像で1体ずつ選び、キャンセルで確定
         const chosen=[];
         while(pool.length){
-          const lastOpt=chosen.length?`✅ 完了（${chosen.length}体で進化）`:"やめる";
-          const j=await askChoice(`進化元を選択（${zLbl}）${chosen.length?`：選択済 ${chosen.map(x=>faceNameOf(x)).join("、")}`:""}`,[...pool.map(x=>faceNameOf(x)),lastOpt]);
-          if(j===null)return;
-          if(j===pool.length){ if(!chosen.length)return; break; }
+          const hint=chosen.length?`✅ ${chosen.length}体選択済み：${chosen.map(x=>faceNameOf(x)).join("、")} ／ さらに選ぶ・キャンセルで確定`:"タップで進化元を選択（キャンセルで中止）";
+          const j=await pickCard(`進化元を選択（${zLbl}）`,pool,{hint});
+          if(j===null){ if(chosen.length)break; else return; }
           const pick=pool[j];
           chosen.push(pick);
           pool=pool.filter(x=>x.id!==pick.id);
