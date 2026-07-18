@@ -678,6 +678,10 @@ body.shake{animation:bodyShake .4s ease-out}
       </div>
       <div class="row"><input type="text" id="deckName" placeholder="デッキ名（例：黒単デスザーク／フォルダ分けは ND/黒単）"></div>
       <textarea id="deckText" placeholder="メインデッキ40枚&#10;4 卍 デ・スザーク 卍&#10;（1行1種、枚数省略時は1枚、#行は無視）"></textarea>
+      <div class="row" style="margin:-2px 0 2px">
+        <button class="btn small primary" id="btnCardCivSearch">🔍 カードを探して追加（文明で絞る）</button>
+        <span style="font-size:11px;color:var(--muted)">登録済みカードから選んで上のメインデッキ欄に追加</span>
+      </div>
       <textarea id="grText" style="min-height:52px" placeholder="超GRゾーン12枚（不要なら空欄）"></textarea>
       <textarea id="hyText" style="min-height:52px" placeholder="超次元ゾーン8枚（不要なら空欄）"></textarea>
       <textarea id="spText" style="min-height:52px" placeholder="特殊カード（禁断/零龍など。ゲーム開始時に場に出ます。1行1枚）"></textarea>
@@ -689,7 +693,6 @@ body.shake{animation:bodyShake .4s ease-out}
         <button class="btn small ghost" id="btnDeckFxCheck">🔍 効果登録チェック</button>
         <button class="btn small" id="btnSaveUseDeck">保存して対戦へ</button>
         <button class="btn small ghost" id="btnDeckList">📋 デッキ一覧</button>
-        <button class="btn small" id="btnCardCivSearch">🔍 カード検索（文明で絞る）</button>
       </div>
       <div class="status" id="deckStatus"></div>
       <div class="row">
@@ -2010,27 +2013,48 @@ function openGameLog(){
   $("viewerOlay").classList.add("open");
 }
 function dlgReset(){$("askNum").style.display="none";$("askTxt").style.display="none";$("askChoices").style.display="none";$("askYN").style.display="";}
-function ask(msg){return new Promise(res=>{
+/* 🚦 モーダルの直列化：ask系（askOlay）とpickCard系（viewerOlay）は1つのDOMを共有しているため、
+   開いている最中に別の要求が来ると内容とボタンが上書きされ、先のPromiseが永遠に解決されず
+   「処理が詰まる／後から別の操作をすると溜まっていた確認が出てくる」原因になっていた。
+   → 同じオーバーレイを使う要求は、前のモーダルが閉じるまで待ってから順番に開く。 */
+function makeDlgGate(){
+  let tail=Promise.resolve();
+  return function acquire(){
+    let release;
+    const gate=new Promise(r=>{release=r;});
+    const ticket=tail.then(()=>release);
+    tail=tail.then(()=>gate);
+    return ticket;
+  };
+}
+const ASK_GATE=makeDlgGate();   // ask / askNumber / askText / askChoice 用
+const PICK_GATE=makeDlgGate();  // pickCard / pickCards 用
+async function _serialDlg(acquire,open){
+  const release=await acquire();
+  try{ return await open(); }
+  finally{ release(); }
+}
+function ask(msg){return _serialDlg(ASK_GATE,()=>new Promise(res=>{
   dlgReset();$("askMsg").textContent=msg;
   $("askOlay").classList.add("open");
   $("askYes").onclick=()=>{sfx("tap");$("askOlay").classList.remove("open");res(true);};
   $("askNo").onclick=()=>{sfx("tap");$("askOlay").classList.remove("open");res(false);};
-});}
-function askNumber(msg,def,max){return new Promise(res=>{
+}));}
+function askNumber(msg,def,max){return _serialDlg(ASK_GATE,()=>new Promise(res=>{
   dlgReset();$("askMsg").textContent=msg;
   const inp=$("askNum");inp.style.display="";inp.value=def;inp.max=max||999999;
   $("askOlay").classList.add("open");
   $("askYes").onclick=()=>{sfx("tap");$("askOlay").classList.remove("open");res(parseInt(inp.value,10));};
   $("askNo").onclick=()=>{sfx("tap");$("askOlay").classList.remove("open");res(null);};
-});}
-function askText(msg,def){return new Promise(res=>{
+}));}
+function askText(msg,def){return _serialDlg(ASK_GATE,()=>new Promise(res=>{
   dlgReset();$("askMsg").textContent=msg;
   const inp=$("askTxt");inp.style.display="";inp.value=def||"";
   $("askOlay").classList.add("open");
   $("askYes").onclick=()=>{sfx("tap");$("askOlay").classList.remove("open");res(inp.value.trim());};
   $("askNo").onclick=()=>{sfx("tap");$("askOlay").classList.remove("open");res(null);};
-});}
-function askChoice(msg,options){return new Promise(res=>{
+}));}
+function askChoice(msg,options){return _serialDlg(ASK_GATE,()=>new Promise(res=>{
   dlgReset();$("askMsg").textContent=msg;$("askYN").style.display="none";
   const box=$("askChoices");box.style.display="";box.innerHTML="";
   options.forEach((op,i)=>{
@@ -2046,7 +2070,7 @@ function askChoice(msg,options){return new Promise(res=>{
   c.onclick=()=>{$("askOlay").classList.remove("open");res(null);};
   box.appendChild(c);
   $("askOlay").classList.add("open");
-});}
+}));}
 function normName(s){
   return (s||"").normalize("NFC")
     .replace(/[《》\u300E\u300F"']/g,"")
@@ -2177,6 +2201,16 @@ function markArrive(c){
       c.sick=!evo&&!(r&&r.sa);
       // 🌑 魔導具クリーチャーが場に出た → 無月の門の誘発候補（一連の処理後に判定・虚無月は対象外）
       if(r&&raceMatch(r,"魔導具")&&pOwn!=null)MUGETSU_PENDING.add(pOwn+":cre");
+      // ⤵ 相手の常在「相手クリーチャーはタップして出る」（ボルシャック・ライジング・NEX型）を、
+      //    召喚・進化・ルナティック進化・踏み倒しなど「すべての出方」に適用する（moveCardX以外の経路もここで拾う）。
+      if(S.expert&&S.vs&&pOwn!=null&&!c.tapped){
+        const foeA=pOwn===0?1:0;
+        const rIsCre=r?isCreatureReg(r):true;
+        if(rIsCre&&zonesOf(foeA).battle.some(x=>{const r2=getReg(x);return r2&&r2.auraTapIn&&!isSealed(x)&&!isIgnored(x,foeA)&&(!r2.auraTapInNeo||isNeoEvoInstance(x));})){
+          c.tapped=true;
+          toast(`⤵ 常在効果：${faceNameOf(c)} はタップ状態で出た`);
+        }
+      }
     }
   }catch(e){}
 }
@@ -2872,7 +2906,24 @@ function nextTurn(){
     return;
   }
   if(NEXT_TURN_HOLD>0){
-    toast("⏳ ターン終了時の処理中です");
+    // どの段階で待っているかを表示し、繰り返し押されたら強制解除を提案する（ボタンからでも復帰できるように）
+    NT_BLOCK_CNT++;
+    if(NT_BLOCK_CNT>=3){
+      (async()=>{
+        const yes=await ask(`⚠ ターン終了処理が止まっているようです。\n【待機中】${TURN_END_PHASE||"不明（誘発パネルの待機中の可能性）"}\n\n強制的に処理を打ち切って操作を再開しますか？\n（打ち切った誘発は失われます。⌘Zで直前まで戻せます）`);
+        NT_BLOCK_CNT=0;
+        if(yes){
+          NT_RUN_ID++;
+          NEXT_TURN_HOLD=0;TURN_END_PHASE="";
+          fxQueue.length=0;fxRunning=false;fxInsertAt=null;
+          WATCH_CHAIN=Promise.resolve();
+          toast("⏱ 強制解除しました。もう一度「次のターン ▶」を押してください");
+          renderAll();
+        }
+      })();
+      return;
+    }
+    toast(`⏳ ターン終了時の処理中です${TURN_END_PHASE?`\n【待機中】${TURN_END_PHASE}`:"。開いている確認パネルを先に完了してください"}${NT_BLOCK_CNT>=2?"\n（もう一度押すと強制解除できます）":""}`);
     return;
   }
   // 二重進行ガード：連打・オート進行と手動クリックの競合などで nextTurn が短時間に2回走ると
@@ -4458,6 +4509,7 @@ const FX_TYPES=[
   ["untapFilt","🔄 自分の対象クリーチャーをすべてアンタップ（条件欄で対象指定・聖霊王ナルカミ型）"],
   ["grantStayBlk","🛡⚓ 自分の「ブロッカー」を持つクリーチャーすべてに『離れる時、パワーが0より大きいならかわりにとどまる』を次の自分のターン開始時まで付与（Shin-Ka Musical型）"],
   ["handStFree","⚡ 自分の手札の「S・トリガー」持ちを1枚、コストを支払わずに実行（クリーチャー→召喚／呪文→詠唱・条件欄で追加対象指定可）"],
+  ["handCastSpell","🔮 自分の手札から条件に合う呪文を1枚、コストを支払わずに唱えてもよい（条件欄で文明/コスト指定・シャッフ型）"],
   ["diaBliz","🔷 マナから条件のカードをランダムに手札上限(10)まで戻す→戻した数だけ山札からマナ加速（自身と同名は除外・条件欄で種族等指定・ダイヤモンド・ブリザード型）"],
   ["battleAsk","相手のクリーチャーとバトルする（対象選択・確認つき）"],
   ["hold","⏸ 処理中にする（攻撃を保留して手動で解決。もう一度攻撃で続行）"],
@@ -4487,7 +4539,7 @@ const FX_TYPES=[
   ["millUntilCre","山札の上から、クリーチャーがn体墓地に置かれるまで置く（ヴォルグ・サンダー型・対象プレイヤー選択）"],
 ];
 const FX_LABEL=new Proxy(Object.fromEntries(FX_TYPES),{get:(t,k)=>(k in t)?t[k]:(typeof k==="string"&&k.startsWith("sp:")?"特殊："+k.slice(3):k)});
-const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo","untapFilt","handStFree","selfBounceAll","grantStayBlk","foeBounceAll"]);
+const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo","untapFilt","handStFree","selfBounceAll","grantStayBlk","foeBounceAll","handCastSpell"]);
 const fxNoN=t=>FX_NO_N.has(t)||(typeof t==="string"&&t.startsWith("sp:"));
 function fxSummary(list){
   if(!list||!list.length)return "（効果なし）";
@@ -5233,6 +5285,29 @@ async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone,inPump){
     if(di<0)continue;
     const cc=src.splice(di,1)[0];cc.faceup=true;cc.tapped=false;
     const rCC=getReg(cc);
+    // 🧬 NEO系（neoevo/gneo/neodream/gneodream・ツインパクト上面neoevo）は、踏み倒しでも
+    //    「NEO進化として重ねる」か「通常クリーチャーとして出す」を選べる（強制進化にしない）。
+    //    純粋な進化（evo/ultimate等）は下のブロックで従来どおり強制で重ねる。
+    {
+      const isNeoLike=rCC&&(["neoevo","gneo","neodream","gneodream"].includes(rCC.ctype)||((rCC.twin||rCC.ctype==="twinpact")&&rCC.twinTop==="neoevo"));
+      if(isNeoLike){
+        const basePool=Z.battle.filter(x=>x.id!==cc.id&&isCreatureReg(getReg(x)));
+        let asEvo=false;
+        if(basePool.length){
+          const ev=await askChoice(`《${faceNameOf(cc)}》はNEOクリーチャーです。どう出しますか？`,["進化元に重ねて出す（NEO進化）","そのまま出す（非進化）"]);
+          if(ev===0)asEvo=true;
+        }
+        if(!asEvo){
+          // 通常クリーチャーとして出す（非進化・召喚酔いあり）
+          cc.neoEvo=false;
+          Z.battle.push(cc);markArrive(cc);played.push(cc);
+          put++;renderAll();
+          toast(`🃏 ${faceNameOf(cc)} をそのまま出した（非進化）`);
+          continue;
+        }
+        // asEvo=true → 下の進化ブロックで進化元に重ねる（NEO進化）
+      }
+    }
     // 🂠 進化クロスギア／進化クリーチャーは直接出せない。下敷き（進化元）に重ねる
     if(rCC&&(rCC.ctype==="evocrossgear"||isEvoReg(rCC))){
       const isEvoGear=rCC.ctype==="evocrossgear";
@@ -5306,7 +5381,7 @@ async function runFxList(pi,list,srcCard,inPump){
   for(const f of list){
     const Z=zonesOf(pi), OZ=zonesOf(op);
     const n=Math.max(1,f.n|0);
-    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","retrieveManaGrave","diaBliz","deckRecruit","deckTopRecruitMana","deckSearch","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone","sumRecruit","foeAllShield","foeHandShieldRand","deckEvo","suspenseReveal","shieldMakeRand","untapFilt","handStFree","foeToShield","selfBounceAll","deckCastSpell","revealTakeGrave","handRecruitBlkNext","deckTopPlay","revealTakeAll","flipTopMana","foeBounceAll"]);
+    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","retrieveManaGrave","diaBliz","deckRecruit","deckTopRecruitMana","deckSearch","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone","sumRecruit","foeAllShield","foeHandShieldRand","deckEvo","suspenseReveal","shieldMakeRand","untapFilt","handStFree","foeToShield","selfBounceAll","deckCastSpell","revealTakeGrave","handRecruitBlkNext","deckTopPlay","revealTakeAll","flipTopMana","foeBounceAll","handCastSpell"]);
     // 🪧 「召喚時のみ」の効果：このカードの出た方法を1回だけ確認してゲート
     if(f.sumOnly&&srcCard){
       if(srcCard._wasSummon==null){
@@ -6175,6 +6250,28 @@ async function runFxList(pi,list,srcCard,inPump){
               Z.battle.push(sel);markArrive(sel);emitEvent(pi,"summon");enqueueFx(pi,sel);
               toast(`⚡ S・トリガー無償召喚：${faceNameOf(sel)}`);
             }
+            sfx("ok");renderAll();await waitFxIdle(inPump);
+          }
+        }
+      }
+    }else if(f.t==="handCastSpell"){
+      // 🔮 自分の手札から条件(f.cond)に合う呪文を1枚、コストを支払わず唱えてもよい（シャッフ型・S・トリガー不問）。ツインパクトは呪文面で判定。
+      const filt=String(f.cond||"").trim();
+      const cands=Z.hand.filter(x=>{const rx=getReg(x);return rx&&(rx.ctype==="spell"||rx.twin||rx.ctype==="twinpact")&&(!filt||lockFilterOk(filt,rx,x,null,"spell"));});
+      if(!cands.length){toast(`手札に条件に合う呪文がありません${filt?`（${filt}）`:""}`);}
+      else{
+        const j=await askChoice(`🔮 手札から呪文を1枚、コストを支払わず唱える${filt?`（${filt}）`:""}`,[...cands.map(x=>{const rx=getReg(x);return faceNameOf(x)+(rx&&rx.twin?"（ツインパクト・呪文面）":"");}),"唱えない"]);
+        if(j!==null&&j<cands.length){
+          const sel=cands[j];
+          const hi=Z.hand.findIndex(x=>x.id===sel.id);
+          if(hi>=0){
+            snap();
+            Z.hand.splice(hi,1);
+            sel.faceup=true;sel.tapped=false;
+            {const rSel=getReg(sel);if(rSel&&rSel.twin)sel.face=1;} // ツインパクトは呪文面で唱える
+            if(Z.resolve.length){const olds=Z.resolve.splice(0);olds.forEach(o=>resolveOut(Z,o));}
+            Z.resolve.push(sel);emitEvent(pi,"spell");enqueueFx(pi,sel);
+            toast(`🔮 ${faceNameOf(sel)} をコストを支払わず唱えた（解決中へ）`);
             sfx("ok");renderAll();await waitFxIdle(inPump);
           }
         }
@@ -11078,6 +11175,15 @@ function extractEffects(text,mode){
     if(/引く/.test(cl)&&!/相手/.test(cl.split("引く")[0].slice(-8))){
       const n=numOf(cl,/(\d+)枚(?:を)?引く/); fx.push({t:"draw",n});
     }
+    // 🔮 手札から条件に合う呪文を1枚、コストを支払わず唱えてもよい（シャッフ型・S・トリガー不問）
+    if(/手札/.test(cl)&&/呪文/.test(cl)&&/コストを支払わ(?:ず|ないで)/.test(cl)&&/唱え/.test(cl)&&!/山札|マナゾーン|墓地|シールド/.test(cl)){
+      // 文明（光/水等）＋コスト条件を条件欄へ。「光または水」→光/水
+      let civ="";const civM=cl.match(/((?:光|水|闇|火|自然|ゼロ)(?:(?:または|又は|や|・|／|\/)(?:光|水|闇|火|自然|ゼロ))*)の?コスト/);
+      if(civM)civ=civM[1].replace(/または|又は|や/g,"/");
+      const mCo=cl.match(/コスト(\d+)(以下|以上)/);
+      const parts=[];if(civ)parts.push(civ);if(mCo)parts.push(`コスト${mCo[1]}${mCo[2]}`);
+      fx.push({t:"handCastSpell",n:1,cond:parts.join("・")});
+    }
     // マナ加速（山札上→マナ）
     if(/山札の上から.*?マナ(?:ゾーン)?に置く/.test(cl)||/マナ加速/.test(cl)){
       const n=numOf(cl,/上から(\d+)枚/); fx.push({t:(/タップして/.test(cl)||_noUsableMana)?"chargeTap":"charge",n});
@@ -14388,13 +14494,6 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
           renderAll();
         }
       })();
-    }
-    if(S.expert&&S.vs){
-      const foe=pTo===0?1:0;
-      if(zonesOf(foe).battle.some(x=>{const r2=getReg(x);return r2&&r2.auraTapIn&&(!r2.auraTapInNeo||isNeoEvoInstance(x));})){
-        c.tapped=true;
-        toast(`常在効果：${faceNameOf(c)} はタップ状態で出た`);
-      }
     }
     if(S.expert&&reg&&reg.ryuArm){
       const cnt=Z.mana.filter(m=>{const rm=getReg(m);return rm&&raceMatch(rm,"ドラゴン");}).length;
@@ -19337,8 +19436,8 @@ $("vCancel").onclick=defaultVCancel;
 /* 🃏 カードを画像グリッドで1枚選ぶ（askChoiceの画像版）。selectでindexをresolve・キャンセルでnull。
    選択中も「👁 盤面を見る」で盤面確認できる（ビューア共通のピーク） */
 function pickCard(title,cards,opts={}){
-  return new Promise(res=>{
-    if(!cards||!cards.length){res(null);return;}
+  if(!cards||!cards.length)return Promise.resolve(null); // 空は即返し（ゲート不要）
+  return _serialDlg(PICK_GATE,()=>new Promise(res=>{
     const g=$("vGrid");g.innerHTML="";
     $("vTitle").textContent=title;
     $("vHint").textContent=opts.hint||"タップで選択　／　👁 盤面を見る で盤面を確認できます";
@@ -19376,7 +19475,7 @@ function pickCard(title,cards,opts={}){
     }
     $("vCancel").onclick=()=>finish(null);
     $("viewerOlay").classList.add("open");
-  });
+  }));
 }
 function openExileViewer(pi){
   const Z=zonesOf(pi);
@@ -20060,7 +20159,7 @@ $("btnSleeveReset").addEventListener("click",async ()=>{
 
 /* ================= 初手・盾ピッカー ================= */
 function pickCards(pi,n,title,exclude){
-  return new Promise(res=>{
+  return _serialDlg(PICK_GATE,()=>new Promise(res=>{
     const P=S.players[pi];
     const agg=new Map();
     for(const e of P.mainList)agg.set(e.name,(agg.get(e.name)||0)+e.count);
@@ -20101,7 +20200,7 @@ function pickCards(pi,n,title,exclude){
       res(null);
     };
     $("viewerOlay").classList.add("open");
-  });
+  }));
 }
 async function startCustom(withShields){
   const plan=(S.vs&&S.players[1].mainList.length)?[0,1]:[0];
