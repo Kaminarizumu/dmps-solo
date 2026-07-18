@@ -409,6 +409,7 @@ body.vs .pboard.cmw{flex:1 1 0;min-height:0}
 @keyframes anAtkBack{0%{transform:translateY(0) scale(1)}35%{transform:translateY(16px) scale(1.08)}70%{transform:translateY(-3px) scale(1)}100%{transform:translateY(0) scale(1)}}
 .an-atkF{animation:anAtkFwd .4s ease-out}
 .an-atkB{animation:anAtkBack .4s ease-out}
+@keyframes pulseBtn{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
 @keyframes anBreak{0%{transform:scale(1) rotate(0)}25%{transform:scale(1.1) rotate(-5deg)}50%{transform:scale(1.12) rotate(5deg)}100%{transform:scale(1.35) rotate(0);opacity:0;filter:brightness(2.4)}}
 @keyframes anLose{0%{filter:none;transform:scale(1)}30%{filter:brightness(1.6) drop-shadow(0 0 14px #ef4444)}100%{filter:brightness(.35) grayscale(.7);transform:scale(.9);opacity:.25}}
 @keyframes anVanish{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(.72) rotate(4deg)}}
@@ -1067,7 +1068,8 @@ body.shake{animation:bodyShake .4s ease-out}
         <option value="other">その他</option>
       </select>
     </div>
-    <div id="bGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;overflow-y:auto;max-height:70dvh;padding:4px"></div>
+    <div class="row" id="bCivBar" style="gap:5px;flex-wrap:wrap;margin-top:-4px"></div>
+    <div id="bGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;overflow-y:auto;max-height:66dvh;padding:4px"></div>
   </div>
 </div>
 
@@ -1876,7 +1878,7 @@ body.shake{animation:bodyShake .4s ease-out}
 </div>
 
 <div class="olay" id="askOlay" style="z-index:600;align-items:center">
-  <div class="panelbox" style="max-width:400px">
+  <div class="panelbox" style="max-width:440px;max-height:90vh;overflow-y:auto">
     <div class="row" style="margin:0;justify-content:flex-end;gap:6px">
       <button class="btn small ghost" id="askCopy" style="padding:4px 10px">📋 コピー</button>
       <button class="btn small ghost" id="askPeek" style="padding:4px 10px">👁 盤面を見る</button>
@@ -2057,16 +2059,19 @@ function askText(msg,def){return _serialDlg(ASK_GATE,()=>new Promise(res=>{
 function askChoice(msg,options){return _serialDlg(ASK_GATE,()=>new Promise(res=>{
   dlgReset();$("askMsg").textContent=msg;$("askYN").style.display="none";
   const box=$("askChoices");box.style.display="";box.innerHTML="";
+  // 選択肢が多い/長い時に画面からはみ出さないよう、縦スクロールできるようにする
+  box.style.flexDirection="column";box.style.maxHeight="52vh";box.style.overflowY="auto";box.style.gap="6px";
   options.forEach((op,i)=>{
     const b=document.createElement("button");
     b.className="btn small"+(i===0?" primary":"");
-    b.style.flex="1 1 100%";b.style.textAlign="left";
+    // 長いラベルは折り返す（.btnのwhite-space:nowrapを上書き）
+    b.style.cssText="flex:0 0 auto;width:100%;text-align:left;white-space:normal;word-break:break-word;line-height:1.45;height:auto;padding:9px 12px";
     b.textContent=op;
     b.onclick=()=>{sfx("tap");$("askOlay").classList.remove("open");res(i);};
     box.appendChild(b);
   });
   const c=document.createElement("button");
-  c.className="btn small ghost";c.style.flex="1 1 100%";c.textContent="キャンセル";
+  c.className="btn small ghost";c.style.cssText="flex:0 0 auto;width:100%;white-space:normal;height:auto;padding:9px 12px";c.textContent="キャンセル";
   c.onclick=()=>{$("askOlay").classList.remove("open");res(null);};
   box.appendChild(c);
   $("askOlay").classList.add("open");
@@ -2286,6 +2291,44 @@ function battleCreatures(pi,exceptId){
 /* 現在この場のカードがNEO進化として扱われているか（進化元を持つ or フラグ） */
 function isNeoEvoInstance(c){return !!(c&&(c.neoEvo||(c.under&&c.under.length)));}
 /* NEOクリーチャーを手札等からバトルへ：出し方を確認パネルで選ぶ */
+/* ⤴ 通常の進化クリーチャー／究極進化を、ドラッグで表向きに出す時の進化元選択。
+   進化は必ず進化元に重ねる（通常召喚では出せない）。進化元が無ければ出せない。 */
+async function playEvoCreature(p,zone,id){
+  const Z=zonesOf(p);
+  const f0=findCard(p,zone,id);
+  if(!f0){renderAll();return;}
+  const rc=getReg(f0.card);
+  const isUlt=rc&&rc.ctype==="ultimate";
+  // 進化元候補（自分のクリーチャー／シンカライズ持ち）。究極進化は進化クリーチャーの上に重ねる想定だが、ここでは任意のクリーチャーを許可。
+  const pool=Z.battle.filter(x=>x.id!==id&&(()=>{const rr=getReg(x);return rr&&(isCreatureReg(rr)||rr.shinkalize);})());
+  if(!pool.length){
+    toast(`⚠ 《${faceNameOf(f0.card)}》は進化元になるクリーチャーがいないため出せません（${isUlt?"究極進化":"進化"}）`);
+    renderAll();return;
+  }
+  const k=pool.length===1?0:await pickCard(`⤴ 《${faceNameOf(f0.card)}》を重ねる進化元を選択（自分のクリーチャー）`,pool,{sub:x=>{const rr=getReg(x);return rr&&rr.shinkalize?"シンカライズ":(x.tapped?"タップ":"");}});
+  if(k===null){renderAll();return;}
+  const host=pool[k];
+  const f=findCard(p,zone,id);
+  if(!f){renderAll();return;}
+  snap();
+  f.arr.splice(f.idx,1);
+  const evc=f.card;
+  evc.faceup=true;evc.tapped=host.tapped;
+  evc.under=[host,...(host.under?host.under.splice(0):[]),...(evc.under||[])];
+  if(host.gear&&host.gear.length){evc.gear=host.gear.splice(0);}
+  const bi=Z.battle.findIndex(x=>x.id===host.id);
+  Z.battle[bi]=evc;
+  transferAtkState([host.id],evc); // ⚔ 攻撃中の進化元の攻撃を引き継ぐ
+  markArrive(evc);
+  emitEvent(p,"summon");
+  if(S.expert&&S.autoTap&&!S.freePlay){
+    MOVE_TAP_CHAIN=MOVE_TAP_CHAIN.then(()=>autoTapCost(p,evc)).catch(()=>{});
+  }
+  enqueueFx(p,evc);
+  closeSel();
+  sfx("ok");renderAll();
+  toast(`⤴ ${isUlt?"究極進化":"進化"}！ ${faceNameOf(evc)}（進化元：${faceNameOf(host)}）`);
+}
 async function playNeoCreature(p,zone,id){
   const f0=findCard(p,zone,id);
   if(!f0){renderAll();return;}
@@ -2695,7 +2738,7 @@ function startGame(picks){
   fxQueue.length=0;fxRunning=false;
   WATCH_CHAIN=Promise.resolve();
   MOVE_TAP_CHAIN=Promise.resolve();
-  FX_HOLD=false;GAME_PAUSE=false;LABY_RUN=false;
+  FX_HOLD=false;GAME_PAUSE=false;LABY_RUN=false;{const rw=document.getElementById("resumeFxWrap");if(rw)rw.style.display="none";}
   MUGETSU_BUSY=false;MUGETSU_TE_DONE=false;MUGETSU_ASKED={};MUGETSU_PENDING=new Set();
   S._watchOnce={};S.pendingAtk=null;MOVE_BLOCKED=false;
   try{$("fxBanner").classList.remove("show");}catch(e){}
@@ -2915,7 +2958,7 @@ function nextTurn(){
         if(yes){
           NT_RUN_ID++;
           NEXT_TURN_HOLD=0;TURN_END_PHASE="";
-          fxQueue.length=0;fxRunning=false;fxInsertAt=null;
+          fxQueue.length=0;fxRunning=false;fxInsertAt=null;{const rw=document.getElementById("resumeFxWrap");if(rw)rw.style.display="none";}
           WATCH_CHAIN=Promise.resolve();
           toast("⏱ 強制解除しました。もう一度「次のターン ▶」を押してください");
           renderAll();
@@ -6520,9 +6563,9 @@ async function runFxList(pi,list,srcCard,inPump){
       }
     }else if(f.t==="pauseManual"){
       // ⏸ 手動処理タイム：処理を止めて盤面を自由に操作 →「▶ 続行」で再開
-      toast("⏸ 手動処理タイム：盤面で処理してください（カード移動・タップなど自由）→ 左の「▶ 効果処理を続行」で再開");
+      toast(`⏸ 手動処理タイム${srcCard?`：《${faceNameOf(srcCard)}》`:""}：盤面で処理してください（カード移動・タップなど自由）→ 画面下の「▶ 効果処理を続行」で再開`);
       renderAll();
-      await waitManualResume();
+      await waitManualResume(srcCard?faceNameOf(srcCard):"");
       toast("▶ 効果処理を再開します");
     }else if(f.t==="tapMyN"){
       // 自分のクリーチャーをn体選んでタップ
@@ -8952,36 +8995,33 @@ async function startAttack(pi,id){
   await execAttack(pi,id,tg);
 }
 function showResumeBtn(){
-  let b=document.getElementById("resumeAtkBtn");
-  if(!b){
-    b=document.createElement("button");
+  let wrap=document.getElementById("resumeAtkWrap");
+  if(!wrap){
+    wrap=document.createElement("div");
+    wrap.id="resumeAtkWrap";
+    wrap.style.cssText="position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:100000;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none";
+    const msg=document.createElement("div");
+    msg.id="resumeAtkMsg";
+    msg.style.cssText="background:rgba(10,14,22,.92);color:#ffcf6a;border:1px solid #d97706;border-radius:10px;padding:6px 14px;font-size:12.5px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.5);text-align:center;max-width:88vw";
+    msg.textContent="⏸ 攻撃を保留中 — 効果を解決したら下のボタンで続行";
+    const b=document.createElement("button");
     b.id="resumeAtkBtn";
-    b.className="btn small primary";
-    b.style.cssText="position:fixed;left:10px;top:120px;z-index:60;box-shadow:0 4px 16px rgba(0,0,0,.5);touch-action:none";
-    // 長押し不要のドラッグ移動（山札ボタン等と重なったら好きな場所へ動かせる）
-    let _drg=null;b.__dragged=false;
-    b.addEventListener("pointerdown",e=>{_drg={dx:e.clientX-b.getBoundingClientRect().left,dy:e.clientY-b.getBoundingClientRect().top,mv:false};try{b.setPointerCapture(e.pointerId);}catch(_){}});
-    b.addEventListener("pointermove",e=>{
-      if(!_drg)return;
-      const nx=e.clientX-_drg.dx,ny=e.clientY-_drg.dy;
-      if(Math.abs(nx-b.getBoundingClientRect().left)+Math.abs(ny-b.getBoundingClientRect().top)>3)_drg.mv=true;
-      if(_drg.mv){b.style.left=Math.max(0,nx)+"px";b.style.top=Math.max(0,ny)+"px";b.style.bottom="auto";}
-    });
-    b.addEventListener("pointerup",()=>{b.__dragged=!!(_drg&&_drg.mv);_drg=null;setTimeout(()=>{b.__dragged=false;},250);});
+    b.className="btn primary";
+    b.style.cssText="pointer-events:auto;font-size:15px;padding:11px 22px;box-shadow:0 6px 20px rgba(217,119,6,.6);animation:pulseBtn 1.2s ease-in-out infinite";
+    b.textContent="▶ 攻撃を再開";
     b.addEventListener("click",async ()=>{
-      if(b.__dragged)return; // ドラッグ直後の誤タップは無視
       const pa=S.pendingAtk;
       hideResumeBtn();
       if(!pa)return;
-      const c2=zonesOf(pa.pi).battle.find(x=>x.id===pa.id);
+      const c2=zonesOf(pa.pi).battle.find(x=>x.id===pa.id)||zonesOf(pa.pi).battle.find(x=>x.under&&x.under.some(u=>u.id===pa.id));
       if(!c2){toast("攻撃クリーチャーが場にいないため再開できません");S.pendingAtk=null;return;}
       S.pendingAtk=null;
-      await execAttack(pa.pi,pa.id,pa.tg);
+      await execAttack(pa.pi,c2.id,pa.tg);
     });
-    document.body.appendChild(b);
+    wrap.appendChild(msg);wrap.appendChild(b);
+    document.body.appendChild(wrap);
   }
-  b.textContent="▶ 攻撃を再開";
-  b.style.display="";
+  wrap.style.display="flex";
 }
 /* ⚔ 進化などで攻撃中のクリーチャーが別カードに置き換わった時、保留中の攻撃を新カードに引き継ぐ */
 function transferAtkState(oldIds,newC){
@@ -8995,24 +9035,37 @@ function transferAtkState(oldIds,newC){
   if(typeof CUR_ATTACKER!=="undefined"&&ids.includes(CUR_ATTACKER))CUR_ATTACKER=newC.id;
 }
 /* ⏸ 手動処理タイム：フローティング「▶ 続行」ボタンが押されるまで待つ */
-function waitManualResume(){
+function waitManualResume(label){
   return new Promise(res=>{
-    let b=document.getElementById("resumeFxBtn");
-    if(!b){
-      b=document.createElement("button");
+    let wrap=document.getElementById("resumeFxWrap");
+    if(!wrap){
+      wrap=document.createElement("div");
+      wrap.id="resumeFxWrap";
+      wrap.style.cssText="position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:100000;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none";
+      const msg=document.createElement("div");
+      msg.id="resumeFxMsg";
+      msg.style.cssText="background:rgba(10,14,22,.92);color:#ffe08a;border:1px solid #7b4bd6;border-radius:10px;padding:6px 14px;font-size:12.5px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.5);text-align:center;max-width:88vw";
+      const b=document.createElement("button");
       b.id="resumeFxBtn";
       b.className="btn primary";
-      b.style.cssText="position:fixed;left:10px;top:170px;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.5)";
-      document.body.appendChild(b);
+      b.style.cssText="pointer-events:auto;font-size:15px;padding:11px 22px;box-shadow:0 6px 20px rgba(123,75,214,.6);animation:pulseBtn 1.2s ease-in-out infinite";
+      wrap.appendChild(msg);wrap.appendChild(b);
+      document.body.appendChild(wrap);
+      // ⏸ パルス用のキーフレーム（未定義なら追加）
     }
+    const msg=document.getElementById("resumeFxMsg");
+    const b=document.getElementById("resumeFxBtn");
+    msg.textContent=`⏸ 手動処理タイム${label?`：《${label}》`:""} — 盤面を処理したら下のボタンで再開`;
     b.textContent="▶ 効果処理を続行";
-    b.style.display="";
-    b.onclick=()=>{b.style.display="none";res();};
+    wrap.style.display="flex";
+    b.onclick=()=>{wrap.style.display="none";res();};
   });
 }
 function hideResumeBtn(){
+  const w=document.getElementById("resumeAtkWrap");
+  if(w)w.style.display="none";
   const b=document.getElementById("resumeAtkBtn");
-  if(b)b.style.display="none";
+  if(b)b.style.display="";
 }
 /* ✅ 攻撃が完了・中止した時に呼ぶ：保留中攻撃の状態を消し、フローティング「▶ 攻撃を再開」ボタンも隠す。
    これを呼び忘れると、攻撃していないのに再開ボタンが残ったり、別の場面で古い攻撃が再開されてしまう。 */
@@ -9024,6 +9077,18 @@ async function execAttack(pi,id,tg){
   const Z=zonesOf(pi);
   let c=Z.battle.find(x=>x.id===id);
   if(!c){toast("攻撃クリーチャーが場を離れたため、攻撃は中止されました");renderAll();return;}
+  // ⚔ 攻撃中に進化などで攻撃者が別カードに変わることがある（コッコ・ルピア→ボルシャック等）。
+  //    そのときは transferAtkState が CUR_ATTACKER を更新するので、再チェックは CUR_ATTACKER を追って
+  //    新しいクリーチャー（進化後）を攻撃者として続行する。見つからなければ本当に離場した＝中止。
+  const stillAtk=()=>{
+    let a=Z.battle.find(x=>x.id===CUR_ATTACKER)||Z.battle.find(x=>x.id===id);
+    if(!a){
+      // 進化で下に潜ったケース：元idを under に含む場のクリーチャーを攻撃者とみなす
+      a=Z.battle.find(x=>x.under&&x.under.some(u=>u.id===id||u.id===CUR_ATTACKER));
+    }
+    if(a){c=a;id=a.id;CUR_ATTACKER=a.id;}
+    return a;
+  };
   if(S.expert&&c.sick){
     const rA=getReg(c);
     const saOk=rA&&rA.sa;
@@ -9087,7 +9152,7 @@ async function execAttack(pi,id,tg){
           renderAll();
           return;
         }
-        if(!Z.battle.find(x=>x.id===id)){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
+        if(!stillAtk()){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
         {
           const j9=await askChoice(`⚡ 攻撃時効果の処理が終わったら選択`,["⚔ そのまま攻撃を続ける","⏸ 処理中にする（攻撃を保留→▶再開）"]);
           if(j9===1){
@@ -9125,7 +9190,7 @@ async function execAttack(pi,id,tg){
         await runModeChoice(pi,rsx,c);
       }
       else{toast(`🔗 超魂X：${faceNameOf(sx)} の登録効果を実行`);await runFxList(pi,cipFx,c);}
-      if(!Z.battle.find(x=>x.id===id)){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
+      if(!stillAtk()){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
     }
     c._sxAtkDone=true;
   }
@@ -9162,7 +9227,7 @@ async function execAttack(pi,id,tg){
         renderAll();
         return;
       }
-      if(!Z.battle.find(x=>x.id===id)){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
+      if(!stillAtk()){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
     }
     c._allyAtkDone=true;
   }
@@ -9173,7 +9238,7 @@ async function execAttack(pi,id,tg){
       c._mbDone=true;
       await doMagibomber(pi,c,rMB0);
       renderAll();
-      if(!Z.battle.find(x=>x.id===id)){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
+      if(!stillAtk()){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
     }
   }
   // 侵略・革命チェンジ・S級侵略（ゾーン横断・複数回可・重ねた順に処理）
@@ -9621,7 +9686,7 @@ async function execAttack(pi,id,tg){
         renderAll();
         return;
       }
-      if(!Z.battle.find(x=>x.id===id)){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
+      if(!stillAtk()){toast("攻撃クリーチャーが場を離れたため中止");renderAll();return;}
     }
   }
   if(S.expert&&Z.battle.some(b=>{const rb=getReg(b);return rb&&rb.stUnblock;})){
@@ -14025,6 +14090,15 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
           if(baseOK){
             MOVE_BLOCKED=true;
             playNeoCreature(pTo,fromZone,f.card.id);
+            return;
+          }
+        }
+        // ⤴ 通常の進化クリーチャー／究極進化：ドラッグで表向きに出す時は必ず進化元を選ばせる（NEO以外・ツインパクトも上面が進化なら対象）
+        else if(isEvoReg(rN)&&!isNeoReg(rN)&&rN.ctype!=="evocrossgear"&&!S.freePlay&&!f.card._neoAsked&&pFrom===pTo&&["hand","grave","mana"].includes(fromZone)){
+          const baseOK=zonesOf(pTo).battle.some(x=>x.id!==f.card.id&&(()=>{const rr=getReg(x);return rr&&(isCreatureReg(rr)||rr.shinkalize);})());
+          if(baseOK){
+            MOVE_BLOCKED=true;
+            playEvoCreature(pTo,fromZone,f.card.id);
             return;
           }
         }
@@ -21473,9 +21547,18 @@ function bRender(){
   const g=$("bGrid");g.innerHTML="";
   const q=normName($("bSearch").value);
   const tf=$("bTypeFilter")?$("bTypeFilter").value:"";
+  const civSel=B.civSel||(B.civSel=new Set());
+  const civMulti=!!B.civMulti;
+  const civOk=(k)=>{
+    if(!civSel.size&&!civMulti)return true;
+    const r=FXDB.get(k);const cs=(r&&r.civs)||[];
+    if(civMulti&&cs.length<2)return false;
+    if(!civSel.size)return true;
+    return [...civSel].every(cv=>cs.includes(cv)); // 選んだ文明を全て含む（光+水で光水多色 等）
+  };
   const counts=B.counts[B.mode];
   const keys=Array.from(dispName.keys())
-    .filter(k=>(!q||k.includes(q))&&typeMatch(k,tf))
+    .filter(k=>(!q||k.includes(q))&&typeMatch(k,tf)&&civOk(k))
     .sort((a,b)=>dispName.get(a).localeCompare(dispName.get(b),"ja"));
   for(const k of keys){
     const n=counts.get(k)||0;
@@ -21524,20 +21607,37 @@ function bSetMode(m){
 $("btnBuilder").addEventListener("click",()=>{
   if(!dispName.size){toast("先に画像を登録してください");return;}
   bSeed();bSetMode("main");
-  $("builderOlay").classList.add("open");
+  bBuildCivBar();$("builderOlay").classList.add("open");
 });
 $("bTabMain").addEventListener("click",()=>bSetMode("main"));
 $("bTabGR").addEventListener("click",()=>bSetMode("gr"));
 $("bTabHy").addEventListener("click",()=>bSetMode("hy"));
 $("bTabEx").addEventListener("click",()=>bSetMode("ex"));
 $("bTypeFilter").addEventListener("change",bRender);
+// 🎨 デッキビルダーの文明フィルタバーを構築（光/水/闇/火/自然/ゼロ＋多色＋クリア）
+function bBuildCivBar(){
+  const bar=$("bCivBar");if(!bar||bar.dataset.built)return;bar.dataset.built="1";
+  const CV=[["light","光","#ffe082"],["water","水","#7fd7ff"],["dark","闇","#c58cff"],["fire","火","#ff8a80"],["nature","自然","#a5e88a"],["zero","ゼロ","#cfd8dc"]];
+  B.civSel=B.civSel||new Set();B.civMulti=false;
+  for(const [id,lb,col] of CV){
+    const b=document.createElement("button");b.type="button";b.textContent=lb;
+    b.style.cssText=`font-size:12px;padding:4px 11px;border:1px solid ${col};border-radius:14px;background:transparent;color:${col};cursor:pointer;font-weight:700`;
+    b.onclick=()=>{if(B.civSel.has(id))B.civSel.delete(id);else B.civSel.add(id);b.style.background=B.civSel.has(id)?col:"transparent";b.style.color=B.civSel.has(id)?"#0b0f1a":col;bRender();};
+    bar.appendChild(b);
+  }
+  const mb=document.createElement("button");mb.type="button";mb.textContent="多色";
+  mb.style.cssText="font-size:12px;padding:4px 11px;border:1px solid #f0a;border-radius:14px;background:transparent;color:#f6a;cursor:pointer;font-weight:700";
+  mb.onclick=()=>{B.civMulti=!B.civMulti;mb.style.background=B.civMulti?"#f0a":"transparent";mb.style.color=B.civMulti?"#0b0f1a":"#f6a";bRender();};bar.appendChild(mb);
+  const cl=document.createElement("button");cl.type="button";cl.textContent="文明クリア";cl.className="btn small ghost";cl.style.cssText="font-size:11px;padding:3px 9px";
+  cl.onclick=()=>{B.civSel.clear();B.civMulti=false;[...bar.querySelectorAll("button")].forEach(x=>{if(x!==cl){x.style.background="transparent";x.style.color=x.style.borderColor;}});bRender();};bar.appendChild(cl);
+}
 $("bListView").addEventListener("click",()=>{
   $("builderOlay").classList.remove("open");
   const prevCancel=$("vCancel").onclick;
   $("vCancel").onclick=()=>{
     closeViewer();
     $("vCancel").onclick=prevCancel;
-    $("builderOlay").classList.add("open");
+    bBuildCivBar();$("builderOlay").classList.add("open");
   };
   const t=(m)=>Array.from(m.values()).reduce((a,b)=>a+b,0);
   $("vHint").textContent="タップで＋1／左上の「−」で−1（⌘/Ctrl＋タップでも−1）。ゲーム外はタップで枚数入力。0で一覧から外れます。閉じるとビルダーに戻ります";
