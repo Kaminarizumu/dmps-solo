@@ -1289,6 +1289,7 @@ body.shake{animation:bodyShake .4s ease-out}
       </div>
       <div class="row" style="gap:12px">
         <label><input type="checkbox" id="fxCantAtk"> 攻撃できない</label>
+        <label title="このクリーチャーはバトルの後、破壊される（勝敗問わず・黒神龍マリシラ型）"><input type="checkbox" id="fxBattleSelfKill"> 💀 バトルの後、このクリーチャーを破壊</label>
         <label style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap" title="条件式を満たしていない間は攻撃できない（例：墓地:ドラゴン>=5）"><span style="font-size:12px;font-weight:700">⛔ 条件を満たさないと攻撃できない</span><input type="text" id="fxCantAtkCond" placeholder="条件式（例：墓地:ドラゴン>=5・空欄＝なし）" style="width:230px"></label>
         <label><input type="checkbox" id="fxCantAtkP"> 相手プレイヤーを攻撃できない</label>
         <label style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap" title="ここに書いた対象（種族など・「／」区切り）以外のクリーチャーは、出たターン攻撃できない（両者・SAでも不可）"><span style="font-size:12px;font-weight:700">🥶 常在：対象以外は出たターン攻撃不可</span><input type="text" id="fxStSickAll" list="raceList" placeholder="対象（例：スノーフェアリー／オリジン・空欄＝無効）" style="width:230px"></label>
@@ -1751,6 +1752,7 @@ body.shake{animation:bodyShake .4s ease-out}
         <input type="number" id="fxAltCost" style="width:76px" placeholder="支払[n]" min="0">
         <input type="text" id="fxAltCiv" placeholder="条件文明（例：光／水／自然＝マナに全文明必要・空欄＝条件なし）" style="flex:1;min-width:170px">
         <input type="text" id="fxAltCond" placeholder="条件式（例：マナ：エンジェル・コマンド>=3・空欄＝条件なし）" style="flex:1;min-width:170px">
+        <label style="flex:1 1 100%" title="代替コストで召喚した場合、出た時効果の解決後にこのクリーチャーを破壊する（蒼神龍クォ・ヴァディス型）"><input type="checkbox" id="fxAltCostKill"> 💀 代替コストで召喚したら、出た時のあとにこのクリーチャーを破壊</label>
         <span style="font-size:11px;color:var(--muted);flex:1 1 100%">手札からの召喚時、条件達成なら「通常コスト／代替コスト[n]」を選択できます（大集合！アカネ&アサギ&コハク／王導聖霊アルファディオス型）</span>
       </div>
       <div class="row" style="gap:12px;flex-wrap:wrap">
@@ -4494,6 +4496,8 @@ const FX_TYPES=[
   ["tempBlockerAll","🛡 自分の〔対象〕すべてに「ブロッカー」を与える（次の自分のターン開始時まで・条件欄で対象指定、空欄＝全員）"],
   ["selfToZone","↪ このクリーチャー自身を〔ゾーン〕に置く（条件欄：マナ／手札／墓地／山札の下／シールド。ターン終了時誘発と組み合わせて）"],
   ["tempPowSelf1k","💪 そのターン、このクリーチャー自身のパワーを＋n×1000（ターン終了時まで・誘発と組み合わせて）"],
+  ["foePowDownAll","⬇ そのターン、条件に合う相手クリーチャーすべてのパワーを−n×1000（ターン終了時まで・条件欄で対象指定・空欄＝全部・HADES型）"],
+  ["foePowDownPick","⬇ 相手クリーチャー1体を選び、そのターン、パワーを−n×1000（ターン終了時まで・パワー0以下で破壊・メテオバーン等の対象指定に）"],
   ["flipTopMana","🔍 山札の上からn枚を1枚ずつ表向きにし、条件に合えばマナゾーンへ・合わなければ山札の下へ（条件欄で対象を指定）"],
   ["revealTakeAll","👀 山札の上からn枚を公開し、条件に合うカードをすべて手札に加え、残りをランダムな順番で山札の下に置く（条件欄で対象・ブローチ型）"],
   ["revealTakeGrave","👀 山札の上からn枚を表向きにし、条件に合うカードをすべて手札に加え、それ以外を墓地に置く（条件欄で対象・コアクアンのおつかい型）"],
@@ -4720,6 +4724,7 @@ async function autoTapCost(pi,c){
         renderAll();
         if(nA<payA)toast(`⚠ マナ不足：${nA}/${payA} だけタップしました`);
         else toast(`⚖ 代替コスト[${r.altCost}]で召喚：マナ自動タップ${payA}`);
+        if(r.altCostKill)c._altKill=true; // 💀 代替コスト召喚→出た時のあとに破壊（クォ・ヴァディス型）
         return;
       }
     }
@@ -4972,6 +4977,48 @@ async function autoTapCost(pi,c){
       }
     }
   }
+}
+/* ⚡ 同期でおおよその現在パワーを計算（プロンプトを出さない。基礎パワー不明ならnull＝破壊判定しない）。
+   パワー0以下の状態破壊チェック用。 */
+function powNow(c){
+  const r=getReg(c);
+  if(!r||r.power===""||r.power==null||isNaN(+r.power))return null;
+  let p=+r.power;
+  if(c.hyper&&r.hmPow)p=+r.hmPow;
+  if(c.buff)p+=(c.buff.pa||0)+(c.buff.pm||0)+(+c.buff.pow||0);
+  p+=powPerBonus(c,r,false,false);
+  const own=[0,1].find(pp=>zonesOf(pp)&&zonesOf(pp).battle.includes(c));
+  if(own!=null){
+    for(const b of zonesOf(own).battle){const rb=getReg(b);if(!rb||!rb.stAuraPow||isSealed(b)||isIgnored(b,own))continue;if(rb.stAuraOthers&&b.id===c.id)continue;if(rb.stAuraFilt&&!lockFilterOk(rb.stAuraFilt,r,c))continue;p+=(+rb.stAuraPow||0);}
+    p+=gearPowSum(c,own);
+  }
+  if(r.cstPow&&(r.cstPowCond||r.cstPowNeo)){const condOk=r.cstPowNeo?isNeoEvoInstance(c):(own!=null&&zoneCondOk(r.cstPowCond,own));if(condOk)p+=(+r.cstPow||0);}
+  return p;
+}
+/* 💥 状態ベースのパワー0以下破壊：パワーが0以下のクリーチャーを破壊する（デュエプレのルール）。
+   パワー修正効果（全体-9000など）の後に呼ぶ。真・エスケープ等の離場置換は destroyCreature 側で処理。 */
+let ZERO_POW_RUNNING=false;
+async function checkZeroPower(){
+  if(!S.expert||ZERO_POW_RUNNING)return;
+  ZERO_POW_RUNNING=true;
+  try{
+    for(let pass=0;pass<8;pass++){ // 破壊で常在が変わり連鎖することがあるので数回まわす
+      let hit=null,hitPi=0;
+      for(const pi of [0,1]){
+        const Z=zonesOf(pi);
+        for(const c of Z.battle){
+          const r=getReg(c);if(!r||!isCreatureReg(r))continue;
+          const p=powNow(c);
+          if(p!=null&&p<=0){hit=c;hitPi=pi;break;}
+        }
+        if(hit)break;
+      }
+      if(!hit)break;
+      toast(`💥 ${faceNameOf(hit)} はパワー0以下のため破壊`);
+      await destroyCreature(hitPi,hit);
+      renderAll();
+    }
+  }finally{ZERO_POW_RUNNING=false;}
 }
 async function destroyCreature(pi,c){
   const Z=zonesOf(pi);
@@ -5432,7 +5479,7 @@ async function runFxList(pi,list,srcCard,inPump){
   for(const f of list){
     const Z=zonesOf(pi), OZ=zonesOf(op);
     const n=Math.max(1,f.n|0);
-    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","retrieveManaGrave","diaBliz","deckRecruit","deckTopRecruitMana","deckSearch","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone","sumRecruit","foeAllShield","foeHandShieldRand","deckEvo","suspenseReveal","shieldMakeRand","untapFilt","handStFree","foeToShield","selfBounceAll","deckCastSpell","revealTakeGrave","handRecruitBlkNext","deckTopPlay","revealTakeAll","flipTopMana","foeBounceAll","handCastSpell","foeNoSpell"]);
+    const FILT_COND=new Set(["nextCost","bounceFilt","retrieveHand","retrieveManaGrave","diaBliz","deckRecruit","deckTopRecruitMana","deckSearch","foePowDownAll","graveRecruit","handRecruit","destroyFilt","graveToMana","zoneMove","destroyPick","manaPick","bouncePick","destroyElemPick","manaElemPick","bounceElemPick","selfDestroy","selfMana","selfBounce","foeSelfDestroy","foeSelfMana","foeSelfBounce","tempBlockerAll","selfToZone","sumRecruit","foeAllShield","foeHandShieldRand","deckEvo","suspenseReveal","shieldMakeRand","untapFilt","handStFree","foeToShield","selfBounceAll","deckCastSpell","revealTakeGrave","handRecruitBlkNext","deckTopPlay","revealTakeAll","flipTopMana","foeBounceAll","handCastSpell","foeNoSpell"]);
     // 🪧 「召喚時のみ」の効果：このカードの出た方法を1回だけ確認してゲート
     if(f.sumOnly&&srcCard){
       if(srcCard._wasSummon==null){
@@ -6246,12 +6293,12 @@ async function runFxList(pi,list,srcCard,inPump){
           let stacked=false;
           const rc2=getReg(cc);
           if(rc2&&EVO_CTYPES.includes(rc2.ctype)){
-            const basePool=Z.battle.filter(x=>x.id!==cc.id);
+            const basePool=Z.battle.filter(x=>x.id!==cc.id&&isCreatureReg(getReg(x)));
             if(basePool.length){
-              const ev=await askChoice(`《${faceNameOf(cc)}》は進化クリーチャーです。どう出しますか？`,["進化元に重ねて出す","そのまま出す"]);
+              const ev=await askChoice(`《${faceNameOf(cc)}》は${rc2.ctype==="neoevo"?"NEOクリーチャー":"進化クリーチャー"}です。どう出しますか？`,["進化元に重ねて出す（進化）",rc2.ctype==="neoevo"?"そのまま出す（非進化として）":"そのまま出す"]);
               if(ev===0){
-                const bj=await pickCard("進化元を選択",basePool);
-                if(bj!==null){const base=basePool[bj];const bi2=Z.battle.findIndex(x=>x.id===base.id);cc.under=[base,...(base.under?base.under.splice(0):[]),...(cc.under||[])];if(base.gear&&base.gear.length)cc.gear=[...(cc.gear||[]),...base.gear.splice(0)];Z.battle.splice(bi2,1);Z.battle.push(cc);stacked=true;}
+                const bj=basePool.length===1?0:await pickCard("進化元を選択",basePool);
+                if(bj!==null){const base=basePool[bj];const bi2=Z.battle.findIndex(x=>x.id===base.id);cc.under=[base,...(base.under?base.under.splice(0):[]),...(cc.under||[])];if(base.gear&&base.gear.length)cc.gear=[...(cc.gear||[]),...base.gear.splice(0)];cc.tapped=base.tapped;if(isNeoReg(rc2))cc.neoEvo=true;Z.battle.splice(bi2,1);Z.battle.push(cc);transferAtkState([base.id],cc);stacked=true;toast(`⤴ ${faceNameOf(base)} に重ねて${rc2.ctype==="neoevo"?"NEO進化":"進化"}！ → ${faceNameOf(cc)}`);}
               }
             }
           }
@@ -6437,11 +6484,11 @@ async function runFxList(pi,list,srcCard,inPump){
           {
             const rc2=getReg(cc);
             if(rc2&&EVO_CTYPES.includes(rc2.ctype)){
-              const basePool=Z.battle.filter(x=>x.id!==cc.id);
+              const basePool=Z.battle.filter(x=>x.id!==cc.id&&isCreatureReg(getReg(x)));
               if(basePool.length){
                 const ev=await askChoice(`《${faceNameOf(cc)}》は${rc2.ctype==="neoevo"?"NEOクリーチャー":"進化クリーチャー"}です。どう出しますか？`,["進化元に重ねて出す（進化）",rc2.ctype==="neoevo"?"そのまま出す（非進化として）":"そのまま出す"]);
                 if(ev===0){
-                  const bj=await pickCard("進化元を選択",basePool,{hint:"タップで選択"});
+                  const bj=basePool.length===1?0:await pickCard("進化元を選択",basePool,{hint:"タップで選択"});
                   if(bj!==null){
                     const base=basePool[bj];
                     const bi2=Z.battle.findIndex(x=>x.id===base.id);
@@ -6449,10 +6496,11 @@ async function runFxList(pi,list,srcCard,inPump){
                     cc.under=[base,...(base.under?base.under.splice(0):[]),...(cc.under||[])];
                     if(base.gear&&base.gear.length)cc.gear=[...(cc.gear||[]),...base.gear.splice(0)];
                     cc.tapped=wasT;
+                    if(isNeoReg(rc2))cc.neoEvo=true; // 🧬 NEO進化フラグ
                     Z.battle[bi2]=cc;
                     transferAtkState([base.id],cc);
                     markArrive(cc);played.push(cc);
-                    toast(`⤴ ${faceNameOf(base)} に重ねて進化！ → ${faceNameOf(cc)}`);
+                    toast(`⤴ ${faceNameOf(base)} に重ねて${rc2.ctype==="neoevo"?"NEO進化":"進化"}！ → ${faceNameOf(cc)}`);
                     renderAll();
                     stacked=true;
                   }
@@ -6478,6 +6526,34 @@ async function runFxList(pi,list,srcCard,inPump){
           emitEvent(pi,"summon");enqueueFx(pi,cc);
         }
       }
+    }else if(f.t==="foePowDownPick"){
+      // ⬇ 相手クリーチャー1体を選び、そのターン、パワーを−n×1000（メテオバーンで出たクリーチャーを狙う等）
+      const amt=n*1000;
+      const pool=zonesOf(op).battle.filter(x=>{const rx=getReg(x);return rx&&isCreatureReg(rx);});
+      if(!pool.length){toast("相手のクリーチャーがいません");}
+      else{
+        const j=pool.length===1?0:await pickCard(`⬇ パワー−${amt}する相手クリーチャーを選択`,pool);
+        if(j!==null){
+          const tgt=pool[j];
+          tgt.buff=tgt.buff||{};tgt.buff.pow=(+tgt.buff.pow||0)-amt;markBuffTurn(tgt,["pow"]);
+          sfx("ok");renderAll();
+          toast(`⬇ ${faceNameOf(tgt)} のパワー−${amt}（ターン終了時まで）`);
+          await checkZeroPower(); // 💥 パワー0以下は破壊
+        }
+      }
+    }else if(f.t==="foePowDownAll"){
+      // ⬇ そのターン、条件(f.cond)に合う相手クリーチャーすべてのパワーを−n×1000（ターン終了時まで）
+      const filt=String(f.cond||"").trim();
+      const amt=n*1000;
+      let cnt=0;
+      for(const x of zonesOf(op).battle){
+        const rx=getReg(x);if(!rx||!isCreatureReg(rx))continue;
+        if(filt&&!lockFilterOk(filt,rx,x))continue;
+        x.buff=x.buff||{};x.buff.pow=(+x.buff.pow||0)-amt;markBuffTurn(x,["pow"]);cnt++;
+      }
+      sfx("ok");renderAll();
+      toast(`⬇ 相手の${filt?filt+"の":""}クリーチャー${cnt}体のパワー−${amt}（ターン終了時まで）`);
+      await checkZeroPower(); // 💥 パワー0以下は破壊
     }else if(f.t==="tempPowSelf1k"){
       // 💪 そのターン、このクリーチャー自身のパワー＋n×1000（ターン切り替わりで解除）
       if(!srcCard){toast("💪 対象カードが特定できないためスキップしました");continue;}
@@ -6722,7 +6798,18 @@ async function runFxList(pi,list,srcCard,inPump){
         snap();
         const cc=Z[o.zn].splice(di,1)[0];
         cc.faceup=true;cc.tapped=false;cc.sideways=false;
-        Z.battle.push(cc);markArrive(cc);
+        let sumStacked=false;
+        if(rx&&EVO_CTYPES.includes(rx.ctype)){
+          const basePool=Z.battle.filter(x=>x.id!==cc.id&&isCreatureReg(getReg(x)));
+          if(basePool.length){
+            const ev=await askChoice(`《${faceNameOf(cc)}》は${rx.ctype==="neoevo"?"NEOクリーチャー":"進化クリーチャー"}です。どう出しますか？`,["進化元に重ねて出す（進化）",rx.ctype==="neoevo"?"そのまま出す（非進化として）":"そのまま出す"]);
+            if(ev===0){
+              const bj=basePool.length===1?0:await pickCard("進化元を選択",basePool);
+              if(bj!==null){const base=basePool[bj];const bi2=Z.battle.findIndex(x=>x.id===base.id);cc.under=[base,...(base.under?base.under.splice(0):[]),...(cc.under||[])];if(base.gear&&base.gear.length)cc.gear=[...(cc.gear||[]),...base.gear.splice(0)];cc.tapped=base.tapped;if(isNeoReg(rx))cc.neoEvo=true;Z.battle[bi2]=cc;transferAtkState([base.id],cc);markArrive(cc);sumStacked=true;toast(`⤴ ${faceNameOf(base)} に重ねて${rx.ctype==="neoevo"?"NEO進化":"進化"}！ → ${faceNameOf(cc)}`);}
+            }
+          }
+        }
+        if(!sumStacked){Z.battle.push(cc);markArrive(cc);}
         sum+=+rx.cost;put++;
         toast(`🌋 ${faceNameOf(cc)}（${rx.cost}c）を${o.zj}から出した（合計${sum}/${cap}）`);
         emitEvent(pi,"summon");enqueueFx(pi,cc); // CIPはキュー順で解決（ポンプ内なのでwaitFxIdle禁止）
@@ -7602,6 +7689,15 @@ async function pumpFx(){
         }
       }
     }
+    // 💀 代替コストで召喚したクリーチャーは、出た時の解決後に破壊（クォ・ヴァディス型）
+    if(c._altKill){
+      c._altKill=false;
+      if(zonesOf(pi).battle.some(x=>x.id===c.id)){
+        toast(`💀 ${faceNameOf(c)} は代替コストで召喚したため破壊`);
+        await destroyCreature(pi,c);
+        renderAll();
+      }
+    }
   }
   }catch(e){console.error("pumpFx error:",e);toast("⚠ 効果処理中にエラーが発生しました（処理を再開できます）");}
   finally{fxRunning=false;fxInsertAt=null;}
@@ -8408,8 +8504,15 @@ async function doBattle(pa,a,pd,d){
     };
     if(aAlive&&!dAlive)await fireWin(pa,a);
     if(dAlive&&!aAlive)await fireWin(pd,d);
+    // 💀 バトルの後、このクリーチャーを破壊する（黒神龍マリシラ型・勝敗問わず・生き残っていれば）
+    for(const [pp,w] of [[pa,a],[pd,d]]){
+      if(!zonesOf(pp).battle.some(x=>x.id===w.id))continue;
+      const rw=getReg(w);
+      if(rw&&rw.battleSelfKill){toast(`💀 ${faceNameOf(w)} はバトルの後、破壊される`);await destroyCreature(pp,w);}
+    }
   }
   renderAll();
+  await checkZeroPower(); // 💥 バトルによるパワー変化でパワー0以下になったものを破壊
 }
 /* ブレイク処理パネル（S・トリガー / S・バック / サバキZ 対応） */
 /* ⚡ 盾→手札に加えるカードへのS・トリガー付与（クローネ型・常在）。opのバトルゾーンに付与元がいて対象条件に合えばtrue */
@@ -10833,6 +10936,7 @@ function renderFxEditor(){
   $("fxSlayer").checked=!!FXEDIT.slayer;
   $("fxAtkUn").checked=!!FXEDIT.atkUn;
   $("fxCantAtk").checked=!!FXEDIT.cantAtk;
+  $("fxBattleSelfKill").checked=!!FXEDIT.battleSelfKill;
   {const e=$("fxCantAtkCond");if(e)e.value=FXEDIT.cantAtkCond||"";}
   {const e=$("fxStSickAll");if(e)e.value=FXEDIT.stSickAll||"";}
   {const e=$("fxStShieldStG");if(e)e.value=FXEDIT.stShieldStG||"";}
@@ -10936,6 +11040,7 @@ function renderFxEditor(){
   {const e=$("fxStHandNeoRedF");if(e)e.value=FXEDIT.stHandNeoRedF||"";}
   $("fxGalaxy").value=String(FXEDIT.galaxy||0);
   $("fxAltCost").value=FXEDIT.altCost!=null?FXEDIT.altCost:"";
+  $("fxAltCostKill").checked=!!FXEDIT.altCostKill;
   $("fxAltCiv").value=FXEDIT.altCiv||"";
   $("fxAltCond").value=FXEDIT.altCond||"";
   $("fxStLockSpell").checked=!!FXEDIT.stLockSpell;
@@ -11266,6 +11371,14 @@ function extractEffects(text,mode){
     const _before=fx.length;
     // 「〜してもよい。そうしなかった場合〜」の分岐（選択しなかった時のオマケ）は選択依存なので自動化しない
     if(/^(?:そうしなかった場合|しなかった場合|選ばなかった場合)/.test(cl))continue;
+    // ⬇ 相手クリーチャー全体のパワー-N（そのターン・HADES型）
+    if(/相手の?クリーチャー(?:すべて|全て|全部)?の?パワーを?[-−]?(\d+)\s*(?:する|下げ|マイナス)/.test(cl)&&/相手/.test(cl)&&!/以下|以上/.test(cl.split("パワー")[0]||"")){
+      const mA=cl.match(/パワーを?[-−]?(\d+)/);
+      if(mA&&/すべて|全て|全部/.test(cl)){
+        const mF=cl.match(/コスト(\d+)(以下|以上)/);
+        fx.push({t:"foePowDownAll",n:Math.max(1,Math.round(+mA[1]/1000)),cond:mF?`コスト${mF[1]}${mF[2]}`:""});
+      }
+    }
     // ドロー
     if(/引く/.test(cl)&&!/相手/.test(cl.split("引く")[0].slice(-8))){
       const n=numOf(cl,/(\d+)枚(?:を)?引く/); fx.push({t:"draw",n});
@@ -11736,6 +11849,19 @@ function parseCardText(txt,mode){
     }
   }
   // ── 代替コスト / G・ゼロ の条件式を自動設定 ──
+  // 💀 「このクリーチャーを〔n〕を支払って召喚してもよい。そうした場合、このクリーチャーを破壊する」（クォ・ヴァディス型）
+  {
+    const mAK=t.match(/この(?:クリーチャー|カード)を[〔（(【]?[○◯]?([0-9０-９①-⑩⓪]+)[〕）)】]?を?支払って召喚してもよい/);
+    if(mAK&&out.set.altCost==null){
+      const circ="①②③④⑤⑥⑦⑧⑨⑩".indexOf(mAK[1]);
+      const nAlt=circ>=0?circ+1:parseInt(mAK[1].replace(/[０-９]/g,d=>"０１２３４５６７８９".indexOf(d)),10);
+      if(!isNaN(nAlt)){
+        out.set.altCost=nAlt;
+        if(/そうした場合[、,]?\s*この(?:クリーチャー|カード)を破壊/.test(t))out.set.altCostKill=true;
+        out.notes.push({msg:`⚖ 代替コスト[${nAlt}]で召喚${out.set.altCostKill?"→出た時のあと破壊":""}を設定しました`,q:"代替コスト"});
+      }
+    }
+  }
   if(/G・?ゼロ/.test(t)){
     if(out.set.altCost==null)out.set.altCost=0;
     const seg=(t.split(/G・?ゼロ[：:]?/)[1]||"").split(/あれば|なら/)[0];
@@ -11759,6 +11885,8 @@ function parseCardText(txt,mode){
       if(seen.size>=4)break;
     }
   }
+  // 💀 バトルの後、このクリーチャーを破壊する（黒神龍マリシラ型）
+  if(/バトル(?:する時)?[、,]?\s*バトルの?後[、,]?\s*この(?:クリーチャー|カード)を破壊/.test(t))out.set.battleSelfKill=true;
   // キーワード能力（付与文を除外したtSelfで判定）
   const KW=[
     [/スピードアタッカー/,"sa"],[/ブロッカー/,"blocker"],[/スレイヤー/,"slayer"],
@@ -12445,6 +12573,7 @@ function openFxEditor(key){
     slayer:cur?!!cur.slayer:false,
     atkUn:cur?!!cur.atkUn:false,
     cantAtk:cur?!!cur.cantAtk:false,
+    battleSelfKill:cur?!!cur.battleSelfKill:false,
     cantAtkCond:cur&&cur.cantAtkCond||"",
     stSickAll:cur&&cur.stSickAll||"",
     stShieldStG:cur&&cur.stShieldStG||"",
@@ -12543,6 +12672,7 @@ function openFxEditor(key){
     galaxy:cur&&(+cur.galaxy||0)||0,
     altCost:cur&&cur.altCost!=null?+cur.altCost:null,
     altCiv:cur&&cur.altCiv||"",
+    altCostKill:cur?!!cur.altCostKill:false,
     altCond:cur&&cur.altCond||"",
     stLockSpell:cur?!!cur.stLockSpell:false,
     stSpellPT:cur&&cur.stSpellPT||0,
@@ -12773,6 +12903,7 @@ $("fxSave").addEventListener("click",async ()=>{
     slayer:$("fxSlayer").checked,
     atkUn:$("fxAtkUn").checked,
     cantAtk:$("fxCantAtk").checked,
+    battleSelfKill:$("fxBattleSelfKill").checked,
     cantAtkCond:($("fxCantAtkCond")?$("fxCantAtkCond").value:"").trim(),
     stSickAll:($("fxStSickAll")?$("fxStSickAll").value:"").trim(),
     stShieldStG:($("fxStShieldStG")?$("fxStShieldStG").value:"").trim(),
@@ -12871,6 +13002,7 @@ $("fxSave").addEventListener("click",async ()=>{
     galaxy:+$("fxGalaxy").value||0,
     altCost:$("fxAltCost").value===""?null:Math.max(0,+$("fxAltCost").value||0),
     altCiv:$("fxAltCiv").value.trim(),
+    altCostKill:$("fxAltCostKill").checked,
     altCond:$("fxAltCond").value.trim(),
     stLockSpell:$("fxStLockSpell").checked,
     stSpellPT:+$("fxStSpellPT").value||0,
