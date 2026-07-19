@@ -2274,7 +2274,7 @@ function dreamDupOf(pi,c){
   return zonesOf(pi).battle.find(x=>x.id!==c.id&&normName(x.name)===nm)||null;
 }
 /* クリーチャー種別判定（呪文/クロスギア/タマシード/D2フィールド/城/オーラ等は非クリーチャー）。未設定は通常クリーチャー扱い */
-const CRE_CTYPES=["creature","dream","evo","neoevo","starevo","smaxevo","onismaxevo","gneo","neodream","gneodream","psyevo","twinpact","lunatic","ultimate","exile"];
+const CRE_CTYPES=["creature","dream","evo","neoevo","starevo","smaxevo","onismaxevo","gneo","neodream","gneodream","psyevo","psychic","twinpact","lunatic","ultimate","exile"];
 function isCreatureReg(r){
   if(!r||!r.ctype)return true;
   return CRE_CTYPES.includes(r.ctype);
@@ -3662,6 +3662,11 @@ function emitEvent(actor,type){
             const yes=await ask(`🌀 オリオティス！\n《${faceNameOf(hc)}》（コスト${getReg(hc).cost}）は${S.players[actor].label}のマナ（${manaN}枚）より大きい。\n山札の一番下に置きますか？`);
             if(!yes)return;
             snap();
+            // ♾ エターナルΩ：離れるかわりに手札へ（オリオティスの山札下送りも「離れる」ため置換される）
+            if(hasEtOmega(actor,hc,getReg(hc))){
+              etOmegaToHand(actor,hc,AZ0.battle);
+              return;
+            }
             const bi=AZ0.battle.findIndex(x=>x.id===hc.id);
             if(bi<0)return;
             AZ0.battle.splice(bi,1);
@@ -3752,15 +3757,16 @@ async function findByCond(pi){
   if(idx<0)return;
   snap();
   const c=Z.deck.splice(idx,1)[0];
-  const dst=await askChoice(`《${c.name}》の行き先`,["手札へ","バトルへ","マナへ","墓地へ","シールドへ（裏）","シールドへ（表向き）"]);
+  const dst=await askChoice(`《${c.name}》の行き先`,["手札へ","バトルへ","マナへ","墓地へ","シールドへ（裏）","シールドへ（表向き）","解決中へ"]);
   c.faceup=true;c.tapped=false;
-  if(dst===1){if(!battleEntryOk(pi,c)){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}else if(enterBattleOrGrave(pi,c)){emitEvent(pi,"summon");enqueueFx(pi,c);}}
+  if(dst===1){if(!battleEntryOk(pi,c)){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}else{const ok=await summonCreatureNeoAware(pi,c,{});if(!ok){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}}}
   else if(dst===2)Z.mana.push(c);
   else if(dst===3)Z.grave.push(c);
   else if(dst===4||dst===5){
     if(!shieldCapOk(Z,dst===5)){toast(`🛡 シールド上限（10枚）：${c.name} は手札へ`);Z.hand.push(c);markArrive(c);}
     else{c.faceup=(dst===5);c.mark=S.turn>0;Z.shield.push(c);}
   }
+  else if(dst===6){Z.resolve.push(c);emitEvent(pi,"spell");enqueueFx(pi,c);}
   else{Z.hand.push(c);markArrive(c);}
   shuffleDeck(Z);
   toast(`サーチ：${c.name} → 山札をシャッフル`);
@@ -3806,15 +3812,16 @@ async function searchZone(pi,zone,kinds){
   if(idx<0)return;
   snap();
   const c=src.splice(idx,1)[0];
-  const dst=await askChoice(`《${c.name}》の行き先`,["手札へ","バトルへ","マナへ","墓地へ","シールドへ（裏）","シールドへ（表向き）"]);
+  const dst=await askChoice(`《${c.name}》の行き先`,["手札へ","バトルへ","マナへ","墓地へ","シールドへ（裏）","シールドへ（表向き）","解決中へ"]);
   c.faceup=true;c.tapped=false;
-  if(dst===1){if(!battleEntryOk(pi,c)){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}else if(enterBattleOrGrave(pi,c)){emitEvent(pi,"summon");enqueueFx(pi,c);}}
+  if(dst===1){if(!battleEntryOk(pi,c)){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}else{const ok=await summonCreatureNeoAware(pi,c,{});if(!ok){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}}}
   else if(dst===2)Z.mana.push(c);
   else if(dst===3)Z.grave.push(c);
   else if(dst===4||dst===5){
     if(!shieldCapOk(Z,dst===5)){toast(`🛡 シールド上限（10枚）：${c.name} は手札へ`);Z.hand.push(c);markArrive(c);}
     else{c.faceup=(dst===5);c.mark=S.turn>0;Z.shield.push(c);}
   }
+  else if(dst===6){Z.resolve.push(c);emitEvent(pi,"spell");enqueueFx(pi,c);}
   else{Z.hand.push(c);markArrive(c);}
   if(zone==="deck"){shuffleDeck(Z);toast(`探索：${c.name} → 山札をシャッフル`);}
   else toast(`探索：${c.name}`);
@@ -5640,7 +5647,11 @@ async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone,inPump){
   if(played.length){
     if(played.length>1)toast(`✨ ${played.length}体を出しました → それぞれの「出た時」を順に処理します`);
     for(const cc of played){
-      if(!Z.battle.find(x=>x.id===cc.id))continue; // 既に離れていたらスキップ
+      // 既に離れていたらスキップ。ただし進化元として下に潜った（battleのunder内にいる）場合は「出た」誘発が済んでいるので解決する（トユキテラス→プリマ重ね型）
+      const onBattle=Z.battle.find(x=>x.id===cc.id);
+      const asBase=!onBattle&&Z.battle.some(x=>x.under&&x.under.some(u=>u.id===cc.id));
+      if(!onBattle&&!asBase)continue;
+      if(asBase)toast(`⚡ ${faceNameOf(cc)} は進化元になったが、出た時効果は誘発済みのため解決します`);
       LAST_ARRIVED=cc;
       emitEvent(pi,"summon");enqueueFx(pi,cc);
     }
@@ -8850,7 +8861,9 @@ function processBroken(op,stack,label){
               toast(`⚡ 解決（${stDefer.indexOf(d)+1}/${stDefer.length}）：${faceNameOf(cc)}`);
               emitEvent(op,"spell");enqueueFx(op,cc);
             }else{
-              if(!Z.battle.find(x=>x.id===cc.id))continue; // 既に離れていたらスキップ
+              const onB=Z.battle.find(x=>x.id===cc.id);
+              const asB=!onB&&Z.battle.some(x=>x.under&&x.under.some(u=>u.id===cc.id));
+              if(!onB&&!asB)continue; // 既に離れていたらスキップ（進化元に潜った場合は誘発済みのため解決）
               toast(`⚡ 出た時効果（${stDefer.indexOf(d)+1}/${stDefer.length}）：${faceNameOf(cc)}`);
               emitEvent(op,"summon");enqueueFx(op,cc);
             }
@@ -19697,7 +19710,7 @@ function renderRevealPanel(){
     info.style.cssText="font-size:12px;font-weight:700;align-self:center";
     info.textContent=`${rvMulti.size}枚選択中（⌘タップで追加/解除）→`;
     bar.appendChild(info);
-    const targets2=[["hand","手札へ"],["mana","マナへ"],["battle","バトルへ"],["grave","墓地へ"],["shield","シールドへ"],["deckTop","山札の上へ"],["deckBottom","山札の下へ"]];
+    const targets2=[["hand","手札へ"],["mana","マナへ"],["battle","バトルへ"],["resolve","解決中へ"],["grave","墓地へ"],["shield","シールドへ"],["deckTop","山札の上へ"],["deckBottom","山札の下へ"]];
     for(const [tz,label] of targets2){
       const b=document.createElement("button");
       b.className="btn small"+(tz==="hand"?" primary":"");
@@ -19726,6 +19739,7 @@ function renderRevealPanel(){
           else{
             cc.faceup=true;
             Z2[tz].push(cc);
+            if(tz==="resolve"){emitEvent(rvPi,"spell");enqueueFx(rvPi,cc);} // ⚡ 解決中へ＝呪文の解決（効果発火）
           }
         }
         rvMulti.clear();
@@ -19739,7 +19753,7 @@ function renderRevealPanel(){
   }
   if(rvSel!=null){
     bar.style.display="";
-    const targets=[["hand","手札へ"],["mana","マナへ"],["battle","バトルへ"],["grave","墓地へ"],["shield","シールドへ"],["deckTop","山札の上へ"],["deckBottom","山札の下へ"]];
+    const targets=[["hand","手札へ"],["mana","マナへ"],["battle","バトルへ"],["resolve","解決中へ"],["grave","墓地へ"],["shield","シールドへ"],["deckTop","山札の上へ"],["deckBottom","山札の下へ"]];
     for(const [tz,label] of targets){
       const b=document.createElement("button");
       b.className="btn small"+(tz==="hand"?" primary":"");
@@ -20487,9 +20501,9 @@ function openDeckViewer(pi){
     if(!dvMode){dvMode=true;updateBar();return;}
     if(!dvSel.size){dvMode=false;updateBar();return;}
     const j=await askChoice(`${dvSel.size}枚の行き先を選択`,
-      ["手札へ","マナへ","墓地へ","シールドへ（裏）","シールドへ（表向き）","バトルへ","ゲーム外へ","山札の下へ"]);
+      ["手札へ","マナへ","墓地へ","シールドへ（裏）","シールドへ（表向き）","バトルへ","解決中へ","ゲーム外へ","山札の下へ"]);
     if(j===null)return;
-    const dest=["hand","mana","grave","shield","shieldUp","battle","exile","deckBottom"][j];
+    const dest=["hand","mana","grave","shield","shieldUp","battle","resolve","exile","deckBottom"][j];
     snap();
     const ids=Z.deck.filter(c=>dvSel.has(c.id)).map(c=>c.id);
     for(const id of ids)moveCardX(pi,"deck",id,pi,dest);
