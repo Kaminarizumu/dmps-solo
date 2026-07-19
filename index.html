@@ -2327,7 +2327,7 @@ async function playEvoCreature(p,zone,id){
   const f0=findCard(p,zone,id);
   if(!f0){renderAll();return;}
   const rc=getReg(f0.card);
-  const isUlt=rc&&rc.ctype==="ultimate";
+  const isUlt=evoKindOf(rc)==="ultimate";
   // 進化元候補（自分のクリーチャー／シンカライズ持ち）。究極進化は進化クリーチャーの上に重ねる想定だが、ここでは任意のクリーチャーを許可。
   const pool=Z.battle.filter(x=>x.id!==id&&(()=>{const rr=getReg(x);return rr&&(isCreatureReg(rr)||rr.shinkalize);})());
   if(!pool.length){
@@ -5429,7 +5429,7 @@ async function runModeChoice(pi,reg,c,inPump){
   }
   const rest=parsed.slice();
   for(let i=0;i<baseN;i++){
-    const list2=reg.modeDup?parsed:rest;
+    const list2=(reg.modeDup||parsed.length===1)?parsed:rest; // モードが1行だけなら重複可を自動適用（スパイナー型・チェック忘れ対策）
     if(!list2.length)break;
     const j=await askChoice(`《${faceNameOf(c)}》選択効果（${i+1}/${baseN}回目）`,[...list2.map(o=>o.label),"以降選ばない"]);
     if(j===null||j>=list2.length)break;
@@ -14557,7 +14557,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
       // ⤴ NEOクリーチャーの手動プレイ：常に出し方（通常／NEO進化）を確認（盤面7面でも進化なら出せる）
       {
         const rN=getReg(f.card);
-        if(isNeoReg(rN)&&!f.card._neoAsked&&pFrom===pTo&&["hand","grave","mana","deck","shield","exile"].includes(fromZone)){
+        if(isNeoReg(rN)&&!f.card._neoAsked&&pFrom===pTo&&["hand","grave","mana","deck","shield","exile","look","reveal"].includes(fromZone)){
           const baseOK=zonesOf(pTo).battle.some(x=>x.id!==f.card.id&&(()=>{const rr=getReg(x);return rr&&(isCreatureReg(rr)||rr.shinkalize);})());
           if(baseOK){
             MOVE_BLOCKED=true;
@@ -14566,7 +14566,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
           }
         }
         // ⤴ 通常の進化クリーチャー／究極進化：ドラッグで表向きに出す時は必ず進化元を選ばせる（NEO以外・ツインパクトも上面が進化なら対象）
-        else if(isEvoReg(rN)&&!isNeoReg(rN)&&rN.ctype!=="evocrossgear"&&!S.freePlay&&!f.card._neoAsked&&pFrom===pTo&&["hand","grave","mana","deck","shield","exile"].includes(fromZone)){
+        else if(isEvoReg(rN)&&!isNeoReg(rN)&&rN.ctype!=="evocrossgear"&&!S.freePlay&&!f.card._neoAsked&&pFrom===pTo&&["hand","grave","mana","deck","shield","exile","look","reveal"].includes(fromZone)){
           const baseOK=zonesOf(pTo).battle.some(x=>x.id!==f.card.id&&(()=>{const rr=getReg(x);return rr&&(isCreatureReg(rr)||rr.shinkalize);})());
           if(baseOK){
             MOVE_BLOCKED=true;
