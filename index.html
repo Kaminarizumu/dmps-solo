@@ -2781,7 +2781,7 @@ function startGame(picks){
   fxQueue.length=0;fxRunning=false;
   WATCH_CHAIN=Promise.resolve();
   MOVE_TAP_CHAIN=Promise.resolve();
-  FX_HOLD=false;GAME_PAUSE=false;LABY_RUN=false;{const rw=document.getElementById("resumeFxWrap");if(rw)rw.style.display="none";}
+  FX_HOLD=false;GAME_PAUSE=false;LABY_RUN=false;try{ORI_QUEUE.length=0;TOGRAVE_PENDING.length=0;TRIG_PENDING.length=0;}catch(e){}{const rw=document.getElementById("resumeFxWrap");if(rw)rw.style.display="none";}
   MUGETSU_BUSY=false;MUGETSU_TE_DONE=false;MUGETSU_ASKED={};MUGETSU_PENDING=new Set();
   S._watchOnce={};S.pendingAtk=null;MOVE_BLOCKED=false;
   try{$("fxBanner").classList.remove("show");}catch(e){}
@@ -3001,7 +3001,7 @@ function nextTurn(){
         if(yes){
           NT_RUN_ID++;
           NEXT_TURN_HOLD=0;TURN_END_PHASE="";
-          fxQueue.length=0;fxRunning=false;fxInsertAt=null;{const rw=document.getElementById("resumeFxWrap");if(rw)rw.style.display="none";}
+          fxQueue.length=0;fxRunning=false;fxInsertAt=null;ORI_QUEUE.length=0;TOGRAVE_PENDING.length=0;TRIG_PENDING.length=0;{const rw=document.getElementById("resumeFxWrap");if(rw)rw.style.display="none";}
           WATCH_CHAIN=Promise.resolve();
           toast("⏱ 強制解除しました。もう一度「次のターン ▶」を押してください");
           renderAll();
@@ -3559,12 +3559,18 @@ function runWatchFx(pi,type,trigCard){
       });
       if(fx.length){
         const _oks=_onceKeys.slice();
-        enqueueWatchJob(async()=>{
-          toast(`⚡誘発処理：${faceNameOf(c)}`);
-          await runFxList(pi,fx,c);
-          S._watchOnce=S._watchOnce||{};
-          for(const k of _oks)S._watchOnce[k]=`${S.turn}:${S.who}`;
-        });
+        // ⏱ APNAP：CIPポンプ稼働中の誘発は保留キューへ（ターンプレイヤーの誘発はCIP前・非ターン側は全CIP後に処理）。
+        //    ポンプ停止中（攻撃時誘発など）は従来通り即時ジョブ＝挙動不変。
+        if(S.expert&&S.vs&&fxRunning){
+          TRIG_PENDING.push({pi,fx,c,onceKeys:_oks});
+        }else{
+          enqueueWatchJob(async()=>{
+            toast(`⚡誘発処理：${faceNameOf(c)}`);
+            await runFxList(pi,fx,c);
+            S._watchOnce=S._watchOnce||{};
+            for(const k of _oks)S._watchOnce[k]=`${S.turn}:${S.who}`;
+          });
+        }
       }
     }
   }
@@ -3655,45 +3661,13 @@ function emitEvent(actor,type){
         const hits=newsOri.filter(x=>!x._oriChk&&(()=>{const rx=getReg(x);return rx&&isCreatureReg(rx)&&rx.cost!=null&&rx.cost>manaN;})());
         for(const hc of hits){
           hc._oriChk=true;
-          // 誘発ジョブキューで直列化：B・A・D確認や出た時効果パネルと同時に開いて片方が消えるのを防ぐ
-          enqueueWatchJob(async()=>{
-            try{await MOVE_TAP_CHAIN;}catch(e){}
-            if(!AZ0.battle.some(x=>x.id===hc.id))return; // 既にバトルゾーンを離れていたら中止
-            const yes=await ask(`🌀 オリオティス！\n《${faceNameOf(hc)}》（コスト${getReg(hc).cost}）は${S.players[actor].label}のマナ（${manaN}枚）より大きい。\n山札の一番下に置きますか？`);
-            if(!yes)return;
-            snap();
-            // ♾ エターナルΩ：離れるかわりに手札へ（オリオティスの山札下送りも「離れる」ため置換される）
-            if(hasEtOmega(actor,hc,getReg(hc))){
-              etOmegaToHand(actor,hc,AZ0.battle);
-              return;
-            }
-            const bi=AZ0.battle.findIndex(x=>x.id===hc.id);
-            if(bi<0)return;
-            AZ0.battle.splice(bi,1);
-            if(hc.gear&&hc.gear.length){const gs=hc.gear.splice(0);gs.forEach(g=>gearOut(AZ0,g));}
-            const rh=getReg(hc);
-            const sendBottom=x=>{
-              const rx=getReg(x);
-              if(x.isPsy||(rx&&(rx.ctype==="psychic"||rx.ctype==="psyevo"))){
-                x.face=0;x.rot=0;x.tapped=false;x.faceup=true;x.isPsy=false;
-                AZ0.hyper.push(x);
-                toast(`🌌 サイキック：${x.name} は超次元ゾーンへ（通常処理）`);
-              }else if(x.isGR){
-                x.faceup=false;x.tapped=false;x.rot=0;
-                AZ0.gr.push(x);
-                toast(`GR：${x.name} はGRゾーンの下へ（通常処理）`);
-              }else{
-                x.faceup=false;x.tapped=false;
-                AZ0.deck.push(x);
-              }
-            };
-            const us=hc.under?hc.under.splice(0):[];
-            sendBottom(hc);
-            us.forEach(sendBottom);
-            sfx("grave");renderAll();
-            toast(`🌀 オリオティス：${faceNameOf(hc)}${us.length?`と進化元${us.length}枚`:""} は山札の一番下へ`);
-          });
+          // ⏱ APNAP：処理順はターンプレイヤーで変わるため、専用キューに積んでポンプ側で振り分ける
+          //   ・オリオティス所有者(defO)がターンプレイヤー → 出た時(CIP)より先に判定
+          //   ・出した側(actor)がターンプレイヤー → 全CIP解決後に判定
+          ORI_QUEUE.push({actor,defO,hc,manaN});
         }
+        // オリオティス所有者がターンプレイヤーなら、CIPポンプ前に処理されるよう誘発ジョブでも起動（保険）
+        if(S.who===defO)enqueueWatchJob(async()=>{await drainOriotis(true);});
       }
       // 🌀 判定を終えた新着はフラグ消費（後からオリオティスが出ても遡って対象にならないように）
       for(const x of newsOri)x._oriNew=false;
@@ -4575,6 +4549,7 @@ const FX_TYPES=[
   ["tapMyN","自分のクリーチャーをn体選んでタップ"],
   ["breakOneAsk","💥 シールドをn枚ブレイクする（自分／相手どちらの盾かは実行時に選択・S・トリガー処理つき）"],
   ["breakMineAny","💥 自分のシールドを好きな数ブレイクする（ライオネル・フィナーレ型・1枚ずつ選択→S・トリガー処理つき・やめるまで繰り返し）"],
+  ["breakMineRandPeek","🛡👁 自分のランダムなシールドをn枚、1枚ずつ見てから「ブレイクするか」を任意で選ぶ（ライオネル型・S・トリガー処理つき・割らなければ盾に戻す）"],
   ["handShield","🛡 自分の手札からn枚まで選んで裏向きにシールド化（キャンセルで打ち切り）"],
   ["foeToShield","🛡 相手のクリーチャーをn体、裏向きの新しいシールドにする（条件欄でコスト等指定・爆進オリジナル・チューニング型）"],
   ["deckCastSpell","🔮 山札の上からn枚を見て、条件に合う呪文1枚をコストを支払わず唱えてよい→残りをランダムに山札の下（トユケテラス型・条件欄で文明/コスト指定）"],
@@ -6913,6 +6888,26 @@ async function runFxList(pi,list,srcCard,inPump){
         await processBroken(tp,stack,"効果によるブレイク");
         renderAll();
       }
+    }else if(f.t==="breakMineRandPeek"){
+      // 🛡👁 自分のランダムなシールドをn枚、1枚ずつ「見てから」割るか選ぶ（ライオネル型）。割らなければそのまま盾に戻す
+      const seen=[];
+      for(let i=0;i<n;i++){
+        const TZ=zonesOf(pi);
+        const pool=TZ.shield.filter(x=>!seen.includes(x.id));
+        if(!pool.length){if(i===0)toast("シールドがありません");break;}
+        const sc=pool[Math.floor(Math.random()*pool.length)];
+        seen.push(sc.id);
+        const nm=faceNameOf(sc);
+        const yes=await askChoice(`🛡👁 ランダムに選ばれたシールド（${i+1}/${n}）：《${nm}》\nこのシールドをブレイクしますか？（ブレイクした場合、あなたはS・トリガーを使えます）`,["💥 ブレイクする","ブレイクしない（盾のまま）"]);
+        logOnly(`🛡👁 盾を確認：《${nm}》`);
+        if(yes===0){
+          const idx=TZ.shield.findIndex(x=>x.id===sc.id);
+          if(idx>=0)await breakShields(pi,1,null,idx);
+        }else{
+          toast(`🛡 《${nm}》は盾のまま残した`);
+        }
+        renderAll();
+      }
     }else if(f.t==="breakMineAny"){
       // 💥 自分のシールドを好きな数ブレイク（同時ブレイク：先に全部選ぶ→まとめてブレイク→S・トリガーを一括処理）
       const picked=[];
@@ -7865,7 +7860,11 @@ async function pumpFx(){
   while(fxQueue.length){
     const {pi,c,reg}=fxQueue.shift();
     fxInsertAt=0; // 🔢 このカードの子CIP（結果出たカード）は残りキューの先頭から順に入れる＝深さ優先で先に解決
-    if(fxQueue.length>=1||true){toast(`▶ 効果処理：${faceNameOf(c)}`);await new Promise(r=>setTimeout(r,380));}
+    // ▶ 効果処理の演出待ち：連続処理（キューが多い）時は短縮して詰まり感を軽減
+    // ⏱ APNAP：オリオティス所有者がターンプレイヤーなら、出た時(CIP)より先に判定
+    if(ORI_QUEUE.length&&ORI_QUEUE.some(o=>S.who===o.defO))await drainOriotis(true);
+    if(TRIG_PENDING.length&&TRIG_PENDING.some(t=>S.who===t.pi))await drainTrig(true); // ⏱ ターンプレイヤーの誘発はCIPより先
+    {const _wt=fxQueue.length>=3?120:fxQueue.length>=1?220:380;toast(`▶ 効果処理：${faceNameOf(c)}`);await new Promise(r=>setTimeout(r,_wt));}
     snap();
     // 🚩 革命N：自分の盾がN枚以下でのみ追加能力が有効。未達なら発動しない（他の効果があれば選択）
     // ※革命はクリーチャー側の能力なので、ツインパクトの呪文面を解決する時はゲートしない（SST下面の効果が革命確認でスキップされるのを防ぐ）
@@ -7969,6 +7968,8 @@ async function pumpFx(){
     }
     // ⚡ このカードの解決が完全に終わったので、解決中に墓地へ落ちたカードの「墓地に置かれた時」を発火（割り込まない）
     await drainToGrave();
+    // ⏱ APNAP：出した側がターンプレイヤーの場合、キューが空（＝全CIP解決後）になってからオリオティス判定
+    if(!fxQueue.length){if(TRIG_PENDING.length)await drainTrig(false);if(ORI_QUEUE.length)await drainOriotis(false);}
   }
   }catch(e){console.error("pumpFx error:",e);toast("⚠ 効果処理中にエラーが発生しました（処理を再開できます）");}
   finally{fxRunning=false;fxInsertAt=null;}
@@ -8140,9 +8141,11 @@ async function waitFxIdle(inPump){
   //    enqueueFxした子CIPは、このハンドラを抜けた後に同じポンプループが順番に処理するので、ここで待つ必要はない。
   if(inPump)return;
   let guard=0;
-  while((fxRunning||fxQueue.length)&&guard++<600)await new Promise(r=>setTimeout(r,60));
+  while((fxRunning||fxQueue.length)&&guard++<1400)await new Promise(r=>setTimeout(r,25));
   // ⚡ 一連の効果解決が終わったので、解決中に墓地へ落ちたカードの「墓地に置かれた時」を発火（割り込まない）
   await drainToGrave();
+  if(TRIG_PENDING.length)await drainTrig(false);
+  if(ORI_QUEUE.length)await drainOriotis(false); // ⏱ 残ったオリオティス判定（非アクティブ側）を処理
 }
 
 /* ================= 攻撃・バトル ================= */
@@ -9417,6 +9420,81 @@ async function fireToGrave(pi,c){
     const fxG=rG.watchFx.filter(w=>w.ev==="toGrave");
     if(fxG.length){toast(`⚡墓地に置かれた時の効果：${faceNameOf(c)}`);await runFxList(pi,fxG,c);}
   }
+}
+/* 🌀 オリオティス判定キュー（APNAP対応）：
+   ・オリオティス所有者がターンプレイヤー → CIPポンプの各カード処理より先に判定（activeOnly=true）
+   ・出した側がターンプレイヤー → 全CIP解決後（ポンプ末尾/waitFxIdle）に判定
+   誘発済みのCIPは対象が山札下へ飛んでも解決される（enqueueFx済みのため）。 */
+/* ⏱ 誘発の汎用APNAP保留キュー：CIPポンプ稼働中に発火した誘発（watchFx）をデータで保留し、
+   ・所有者がターンプレイヤー → 各CIP処理の前に実行（アクティブ優先）
+   ・非ターンプレイヤー → 全CIP解決後に実行
+   ポンプ内から実行するため runFxList は inPump=true で呼ぶ（waitFxIdleデッドロック防止）。 */
+let TRIG_PENDING=[];
+let TRIG_DRAINING=false;
+async function drainTrig(activeOnly){
+  if(TRIG_DRAINING||!TRIG_PENDING.length)return;
+  TRIG_DRAINING=true;
+  try{
+    let g=0;
+    while(g++<60){
+      const ix=TRIG_PENDING.findIndex(t=>activeOnly?(S.who===t.pi):true);
+      if(ix<0)break;
+      const t=TRIG_PENDING.splice(ix,1)[0];
+      toast(`⚡誘発処理：${faceNameOf(t.c)}`);
+      await runFxList(t.pi,t.fx,t.c,fxRunning);
+      S._watchOnce=S._watchOnce||{};
+      for(const k of (t.onceKeys||[]))S._watchOnce[k]=`${S.turn}:${S.who}`;
+    }
+  }finally{TRIG_DRAINING=false;}
+}
+let ORI_QUEUE=[];
+let ORI_DRAINING=false;
+async function drainOriotis(activeOnly){
+  if(ORI_DRAINING||!ORI_QUEUE.length)return;
+  ORI_DRAINING=true;
+  try{
+    let guard=0;
+    while(guard++<40){
+      const ix=ORI_QUEUE.findIndex(o=>activeOnly?(S.who===o.defO):true);
+      if(ix<0)break;
+      const {actor,defO,hc,manaN}=ORI_QUEUE.splice(ix,1)[0];
+      const AZ0=zonesOf(actor);
+      try{await MOVE_TAP_CHAIN;}catch(e){}
+      if(!AZ0.battle.some(x=>x.id===hc.id))continue; // 既にバトルゾーンを離れていたら中止
+      const yes=await ask(`🌀 オリオティス！\n《${faceNameOf(hc)}》（コスト${getReg(hc).cost}）は${S.players[actor].label}のマナ（${manaN}枚）より大きい。\n山札の一番下に置きますか？`);
+      if(!yes)continue;
+      snap();
+      // ♾ エターナルΩ：離れるかわりに手札へ
+      if(hasEtOmega(actor,hc,getReg(hc))){
+        etOmegaToHand(actor,hc,AZ0.battle);
+        continue;
+      }
+      const bi=AZ0.battle.findIndex(x=>x.id===hc.id);
+      if(bi<0)continue;
+      AZ0.battle.splice(bi,1);
+      if(hc.gear&&hc.gear.length){const gs=hc.gear.splice(0);gs.forEach(g=>gearOut(AZ0,g));}
+      const sendBottom=x=>{
+        const rx=getReg(x);
+        if(x.isPsy||(rx&&(rx.ctype==="psychic"||rx.ctype==="psyevo"))){
+          x.face=0;x.rot=0;x.tapped=false;x.faceup=true;x.isPsy=false;
+          AZ0.hyper.push(x);
+          toast(`🌌 サイキック：${x.name} は超次元ゾーンへ（通常処理）`);
+        }else if(x.isGR){
+          x.faceup=false;x.tapped=false;x.rot=0;
+          AZ0.gr.push(x);
+          toast(`GR：${x.name} はGRゾーンの下へ（通常処理）`);
+        }else{
+          x.faceup=false;x.tapped=false;
+          AZ0.deck.push(x);
+        }
+      };
+      const us=hc.under?hc.under.splice(0):[];
+      sendBottom(hc);
+      us.forEach(sendBottom);
+      sfx("grave");renderAll();
+      toast(`🌀 オリオティス：${faceNameOf(hc)}${us.length?`と進化元${us.length}枚`:""} は山札の一番下へ`);
+    }
+  }finally{ORI_DRAINING=false;}
 }
 /* ⚡ toGrave遅延キュー：1枚のカードの効果解決の途中で墓地に落ちたカード（mill等）の「墓地に置かれた時」は、
    割り込まずに、そのカードの解決が完全に終わってから順に発火する（マガマガルピアの破壊まで終えてからゾルザーク）。*/
@@ -15217,6 +15295,17 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
   if(S.expert&&S.autoTap&&!S.freePlay&&fromZone==="hand"&&(toZone==="battle"||toZone==="resolve")){
     MOVE_TAP_CHAIN=MOVE_TAP_CHAIN.then(()=>autoTapCost(pTo,c)).catch(()=>{});
   }
+  // 💰 墓地からの「召喚」（ダーク・ルピア型）：支払うか確認してからautoTapCost（シンパシー等の軽減が適用される）。
+  //    蘇生・踏み倒し（支払わない）の場合は「いいえ」でそのまま。
+  if(S.expert&&S.autoTap&&!S.freePlay&&fromZone==="grave"&&toZone==="battle"){
+    const rGS=getReg(c);
+    if(rGS&&isCreatureReg(rGS)&&rGS.cost!=null){
+      MOVE_TAP_CHAIN=MOVE_TAP_CHAIN.then(async()=>{
+        const y=await ask(`💰 ${faceNameOf(c)} を墓地から「召喚」しますか？\nはい＝コストを支払う（シンパシー等の軽減適用・マナ自動タップ）\nいいえ＝支払わずに出す（蘇生・踏み倒し）`);
+        if(y)await autoTapCost(pTo,c);
+      }).catch(()=>{});
+    }
+  }
   if(S.expert&&fromZone==="hand"&&toZone==="battle"){
     const rY=getReg(c);
     if(rY&&rY.yobinion){
@@ -19416,6 +19505,27 @@ function openMultiSheet(){
   $("sheetName").textContent=`複数選択中：${S.msel.length}枚`;
   $("sheetDesc").style.display="none";
   const box=$("sheetActions");box.innerHTML="";
+  // 🛡 選択に盾が含まれていたら「まとめてブレイク」を出す（ブレイクパネル経由＝S・トリガー処理込み）
+  {
+    const shSel=S.msel.filter(s=>s.zone==="shield");
+    if(shSel.length){
+      box.appendChild(actBtn(`🛡 選択した盾をまとめてブレイク（${shSel.length}枚・S・トリガー処理あり）`,async ()=>{
+        closeSheet();
+        snap();
+        const byP=new Map();
+        for(const s of shSel){if(!byP.has(s.p))byP.set(s.p,[]);byP.get(s.p).push(s.id);}
+        for(const [pp,ids2] of byP){
+          for(const sid of ids2){
+            const ZP=zonesOf(pp);
+            const idx=ZP.shield.findIndex(x=>x.id===sid);
+            if(idx<0)continue; // 置換等で既に無い
+            await breakShields(pp,1,null,idx);
+          }
+        }
+        endMulti();renderAll();
+      },"primary"));
+    }
+  }
   if(!S.msel.length){$("sheet").classList.remove("open");return;}
   box.appendChild(actBtn("まとめてタップ/アンタップ",()=>{
     for(const s of S.msel){const f=findCard(s.p,s.zone,s.id);if(f)f.card.tapped=!f.card.tapped;}
