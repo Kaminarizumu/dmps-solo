@@ -5344,6 +5344,8 @@ const MODE_FX_ALIAS={
   "蘇生":"graveRecruit","手札踏み倒し":"handRecruit","踏み倒し":"handRecruit",
   "ハンデス":"handes","ランダムハンデス":"handes",
   "タップ":"tapOpN","全タップ":"tapAllOp","相手全タップ":"tapAllOp","スパーク":"tapAllOp",
+  "パワーダウン":"foePowDownPick","パワー低下":"foePowDownPick","選んでパワーダウン":"foePowDownPick","パワーマイナス":"foePowDownPick",
+  "全体パワーダウン":"foePowDownAll","相手全体パワーダウン":"foePowDownAll",
   "呪文詠唱":"handCastSpell","手札詠唱":"handCastSpell","手札呪文詠唱":"handCastSpell","手札から呪文":"handCastSpell","無料詠唱":"handCastSpell",
   "S詠唱":"handStFree","手札S詠唱":"handStFree",
   "全ブロッカー付与":"tempBlockerAll","攻撃ブロック封じ":"lockFoeAtkBlock","攻撃封じ":"lockFoeAtkP",
@@ -7458,6 +7460,12 @@ function zoneCountSimple(zn,filt,pi){
 function lockFilterOk(filt,r,c,lockPi,face){
   // ロック対象条件：「／」区切り＝すべて満たすものだけを禁止（AND）。「X以外」で否定（例：光以外）
   if(!filt)return true;
+  // 🔤 表記ゆれの正規化：全角数字→半角、「パワ−/パワｰ」（マイナス・半角長音）→「パワー」、＜＞＝→半角
+  filt=String(filt)
+    .replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0))
+    .replace(/パワ[−ｰ-]/g,"パワー")
+    .replace(/＜/g,"<").replace(/＞/g,">").replace(/＝/g,"=")
+    .replace(/(^|[／\/・、,])(\d{3,})(以下|以上)/g,"$1パワー$2$3"); // 「4000以下」だけでもパワーとして解釈（3桁以上＝パワー値）
   const civMap={"光":"light","水":"water","闇":"dark","火":"fire","自然":"nature","ゼロ":"zero"};
   // 🃏 ツインパクトは面によってコストが違う。face==="spell"（呪文面として評価）なら下面コスト(cost2)を使う。
   const isTwin=!!(r&&(r.twin||r.ctype==="twinpact"));
@@ -14549,7 +14557,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
       // ⤴ NEOクリーチャーの手動プレイ：常に出し方（通常／NEO進化）を確認（盤面7面でも進化なら出せる）
       {
         const rN=getReg(f.card);
-        if(isNeoReg(rN)&&!f.card._neoAsked&&pFrom===pTo&&["hand","grave","mana"].includes(fromZone)){
+        if(isNeoReg(rN)&&!f.card._neoAsked&&pFrom===pTo&&["hand","grave","mana","deck","shield","exile"].includes(fromZone)){
           const baseOK=zonesOf(pTo).battle.some(x=>x.id!==f.card.id&&(()=>{const rr=getReg(x);return rr&&(isCreatureReg(rr)||rr.shinkalize);})());
           if(baseOK){
             MOVE_BLOCKED=true;
@@ -14558,7 +14566,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
           }
         }
         // ⤴ 通常の進化クリーチャー／究極進化：ドラッグで表向きに出す時は必ず進化元を選ばせる（NEO以外・ツインパクトも上面が進化なら対象）
-        else if(isEvoReg(rN)&&!isNeoReg(rN)&&rN.ctype!=="evocrossgear"&&!S.freePlay&&!f.card._neoAsked&&pFrom===pTo&&["hand","grave","mana"].includes(fromZone)){
+        else if(isEvoReg(rN)&&!isNeoReg(rN)&&rN.ctype!=="evocrossgear"&&!S.freePlay&&!f.card._neoAsked&&pFrom===pTo&&["hand","grave","mana","deck","shield","exile"].includes(fromZone)){
           const baseOK=zonesOf(pTo).battle.some(x=>x.id!==f.card.id&&(()=>{const rr=getReg(x);return rr&&(isCreatureReg(rr)||rr.shinkalize);})());
           if(baseOK){
             MOVE_BLOCKED=true;
@@ -19632,7 +19640,7 @@ function renderRevealPanel(){
       const b=document.createElement("button");
       b.className="btn small"+(tz==="hand"?" primary":"");
       b.textContent=`${label}（${rvMulti.size}枚）`;
-      b.addEventListener("click",()=>{
+      b.addEventListener("click",async ()=>{
         snap();
         const arr2=rvArr();
         const ids=arr2.filter(x=>rvMulti.has(x.id)).map(x=>x.id);
@@ -19645,10 +19653,17 @@ function renderRevealPanel(){
           if(tz==="shield"){cc.faceup=false;Z2.shield.push(cc);}
           else if(tz==="deckTop"){cc.faceup=false;Z2.deck.unshift(cc);}
           else if(tz==="deckBottom"){cc.faceup=false;Z2.deck.push(cc);}
+          else if(tz==="battle"){
+            // ⤴ 進化・NEO・究極進化（ツインパクト上面含む）は出し方を確認して配置（通常クリーチャー化バグの修正）
+            cc.faceup=true;
+            const rvOldDefer=RV_CIP_DEFER;RV_CIP_DEFER=null; // summonCreatureNeoAware内のenqueueFxを直接使う
+            const done=await summonCreatureNeoAware(rvPi,cc,{});
+            RV_CIP_DEFER=rvOldDefer;
+            if(!done){cc.faceup=true;Z2.hand.push(cc);toast(`（出せなかったため手札へ）`);}
+          }
           else{
             cc.faceup=true;
             Z2[tz].push(cc);
-            if(tz==="battle"){markArrive(cc);emitEvent(rvPi,"summon");if(RV_CIP_DEFER)RV_CIP_DEFER.push([rvPi,cc]);else enqueueFx(rvPi,cc);}
           }
         }
         rvMulti.clear();
