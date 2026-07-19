@@ -1069,6 +1069,7 @@ body.shake{animation:bodyShake .4s ease-out}
       </select>
     </div>
     <div class="row" id="bCivBar" style="gap:5px;flex-wrap:wrap;margin-top:-4px"></div>
+    <div id="bSummary" style="margin-top:-2px"></div>
     <div id="bGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;overflow-y:auto;max-height:66dvh;padding:4px"></div>
   </div>
 </div>
@@ -2192,6 +2193,7 @@ const arrived=new Set();
 let ENTERED_CNT=0;
 let MOVE_BLOCKED=false;  // moveCardXが意図的にブロックした時true（「移動が完了していません」トースト抑制用）
 let CUR_ATTACKER=null;   // 現在攻撃中のクリーチャーID（allyAtkのatkNoLeaveSelf等で参照）
+let HILITE_ID=null;      // 一時ハイライト表示するカードID（メテオバーンでどのカードか強調する等）
 let LAST_ARRIVED=null; // 直近にバトルゾーンへ出たカード（allyEnter誘発の対象判定に使う）
 function markArrive(c){
   c.dealIdx=null;c._pfAsked=false;arrived.add(c.id);setTimeout(()=>arrived.delete(c.id),1000);
@@ -3474,6 +3476,15 @@ function runWatchFx(pi,type,trigCard){
           if(S._watchOnce[onceKey]===`${S.turn}:${S.who}`)return;
         }
         let w2=w;
+        // 🕐 ターン限定（自分ターン/相手ターン）は全イベント共通でゲート（allyEnter以外の誘発に登録しても効くように）
+        {
+          const cndAll=String(w.cond||"");
+          const turnTok=cndAll.split(/[＆&／\/、,]/).map(x=>x.trim()).find(x=>/^(?:自分|相手)の?ターン$/.test(x));
+          if(turnTok){
+            const wantSelf=/自分/.test(turnTok);
+            if((wantSelf&&S.who!==pi)||(!wantSelf&&S.who===pi))return;
+          }
+        }
         // 自分のクリーチャーが出た時：条件欄は「出たカード」の対象条件として判定
         // （<=/>=/以上/以下 を含む式はゾーン条件式として従来どおり判定）
         if(type==="allyEnter"&&trigCard){
@@ -3488,7 +3499,7 @@ function runWatchFx(pi,type,trigCard){
             const _diag=(why)=>{if(trigCard.id===c.id)toast(`💡 ${faceNameOf(c)} の「出た時」誘発は不発：条件「${cnd}」${why}。自身にも反応させるには条件欄を見直してください（種族の登録漏れ等）`);};
             // ＆区切りで「対象条件＆ゾーン条件式」を併用可（例：ブロッカー＆手札<=9）。ゾーン式はゾーン名で始まる項・ターン項
             const _parts=cnd.split(/[＆&]/).map(x=>x.trim()).filter(Boolean);
-            const _isExpr=p2=>/^(?:相手|自分の?)?(?:マナ|墓地(?:合計)?|手札|盾(?:合計)?|シールド|バトル(?:マナ)?|山札)/.test(p2)||/^(?:自分|相手)ターン$/.test(p2)||/鬼タイム|革命\d/.test(p2);
+            const _isExpr=p2=>/^(?:相手|自分の?)?(?:マナ|墓地(?:合計)?|手札|盾(?:合計)?|シールド|バトル(?:マナ)?|山札)/.test(p2)||/^(?:自分|相手)の?ターン$/.test(p2)||/鬼タイム|革命\d/.test(p2);
             const _exprs=_parts.filter(_isExpr), _filts=_parts.filter(p2=>!_isExpr(p2));
             if(_parts.length>1||_exprs.length){
               if(_exprs.length&&!zoneCondOk(_exprs.join("＆"),pi)){_diag("のゾーン条件を満たしていません");return;}
@@ -5333,9 +5344,12 @@ async function runModeChoice(pi,reg,c,inPump){
   const parsed=String(reg.modeOpts||"").split("\n").map(x=>x.trim()).filter(Boolean).map(parseModeChoice);
   if(!parsed.length)return;
   // 🚦 発動条件（例：マナ:ドラゴン>=3）：満たさなければ選択を出さない（ゾルザーク型）
-  if(reg.modeCond&&typeof zoneCondOk==="function"&&!zoneCondOk(reg.modeCond,pi)){
-    toast(`⏸ 選択効果は発動条件（${reg.modeCond}）を満たさないため発動しません`);
-    return;
+  if(reg.modeCond&&String(reg.modeCond).trim()){
+    if(typeof zoneCondOk==="function"&&!zoneCondOk(reg.modeCond,pi)){
+      toast(`⏸ ${faceNameOf(c)} の選択効果：発動条件（${reg.modeCond}）を満たさないため発動しません`);
+      return;
+    }
+    toast(`✅ 発動条件（${reg.modeCond}）達成 → 選択効果を発動`);
   }
   // 1️⃣ 各ターン1回：このターン既に使っていればスキップ（このカードのIDで管理）
   if(reg.modeOnce){
@@ -5613,7 +5627,7 @@ async function runFxList(pi,list,srcCard,inPump){
       for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;dropped.push(faceNameOf(c));if(!graveShuffleRepApply(c,pi)){Z.grave.push(c);_milled.push(c);}}
       if(dropped.length)toast(`🪦 墓地肥やし：${dropped.join("、")} を墓地へ`);
       sfx("grave");
-      for(const mc of _milled)fireToGrave(pi,mc); // ⚡ 山札→墓地でも「墓地に置かれた時」を発火（ゾルザーク型）
+      for(const mc of _milled)queueToGrave(pi,mc); // ⚡ 山札→墓地：このカードの解決が終わってから発火（割り込まない・ゾルザーク型）
     }else if(f.t==="millUntilCre"){
       // 🗲 ヴォルグ・サンダー：対象プレイヤーの山札の上から、クリーチャーがn体墓地に置かれるまで置く
       // デュエプレは対象＝自分のみ。TCGは自分/相手を選択。フォーエバー・プリンセスが墓地に置かれる時は置換でシャッフル（クリーチャーとしてカウントしない）
@@ -6284,19 +6298,30 @@ async function runFxList(pi,list,srcCard,inPump){
       //    置けない・キャンセルの場合は break で以降のfxを中止（＝メテオバーンできなければ効果は発動しない）
       const srcLive=srcCard&&zonesOf(pi).battle.find(x=>x.id===srcCard.id);
       const un=srcLive&&srcLive.under?srcLive.under:null;
+      // 🏷 同名クリーチャーが複数いる時、どのカードのメテオバーンか区別できるようにラベルを作る（位置＋下の枚数）
+      let mbTag="";
+      if(srcLive){
+        const sameName=zonesOf(pi).battle.filter(x=>faceNameOf(x)===faceNameOf(srcLive));
+        if(sameName.length>=2){
+          const idx=zonesOf(pi).battle.findIndex(x=>x.id===srcLive.id);
+          mbTag=`【左から${idx+1}体目・下${srcLive.under?srcLive.under.length:0}枚】`;
+        }
+      }
       if(srcLive&&un){
         // 場に残っている＝通常のメテオバーン（下をn枚選んで墓地へ。足りない/中止で以降の効果を停止）
         if(un.length<n){toast(`☄ メテオバーン：下のカードが${n}枚ないため効果は発動しない（${un.length}枚）`);break;}
+        // 🔎 どのHADESか一目で分かるよう、対象カードをハイライトしてから選ばせる
+        if(mbTag){HILITE_ID=srcLive.id;renderAll();toast(`☄ ${faceNameOf(srcLive)} ${mbTag} のメテオバーンを処理します`);await new Promise(r=>setTimeout(r,450));}
         let mbOk=true;
         for(let i=0;i<n;i++){
-          const j=un.length===1?0:await pickCard(`☄ メテオバーン（${i+1}/${n}枚目）\n墓地に置く下のカードを選択（キャンセル＝効果ごと中止）`,un);
+          const j=un.length===1?0:await pickCard(`☄ ${faceNameOf(srcLive)}${mbTag} のメテオバーン（${i+1}/${n}枚目）\n墓地に置く下のカードを選択（キャンセル＝効果ごと中止）`,un);
           if(j===null){mbOk=false;break;}
           const u=un.splice(j,1)[0];
           u.faceup=true;u.tapped=false;u.isCross=false;
           Z.grave.push(u);
           toast(`☄ メテオバーン：${faceNameOf(u)} を墓地へ（残り${un.length}枚）`);
         }
-        renderAll();
+        HILITE_ID=null;renderAll();
         if(!mbOk){toast("☄ メテオバーンを中止（以降の効果は発動しない）");break;}
         sfx("grave");
       }else{
@@ -7783,6 +7808,8 @@ async function pumpFx(){
         renderAll();
       }
     }
+    // ⚡ このカードの解決が完全に終わったので、解決中に墓地へ落ちたカードの「墓地に置かれた時」を発火（割り込まない）
+    await drainToGrave();
   }
   }catch(e){console.error("pumpFx error:",e);toast("⚠ 効果処理中にエラーが発生しました（処理を再開できます）");}
   finally{fxRunning=false;fxInsertAt=null;}
@@ -7955,6 +7982,8 @@ async function waitFxIdle(inPump){
   if(inPump)return;
   let guard=0;
   while((fxRunning||fxQueue.length)&&guard++<600)await new Promise(r=>setTimeout(r,60));
+  // ⚡ 一連の効果解決が終わったので、解決中に墓地へ落ちたカードの「墓地に置かれた時」を発火（割り込まない）
+  await drainToGrave();
 }
 
 /* ================= 攻撃・バトル ================= */
@@ -7999,6 +8028,42 @@ function dispCost(c,pi){
     if(S.nextPlay&&S.nextPlay[pi])for(const g of S.nextPlay[pi]){
       const wOK=!g.word||String(g.word).split(/[／\/、,]/).some(tk=>tk&&(raceMatch(r,tk)||faceNameOf(c).includes(tk)));
       if((!g.civ||(r.civs&&r.civs.includes(g.civ)))&&wOK)cost-=g.n;
+    }
+    // 💞 シンパシー（表示に反映・墓地/マナ等のゾーン指定対応・クリーチャーのみ）
+    if(r.sympathy&&r.ctype!=="spell"){
+      let w=r.sympathy,symZone="battle";
+      const mZ=String(w).match(/^(墓地|マナ|手札|山札|盾|シールド|バトル)[:：]/);
+      if(mZ){symZone={"墓地":"grave","マナ":"mana","手札":"hand","山札":"deck","盾":"shield","シールド":"shield","バトル":"battle"}[mZ[1]];w=String(w).slice(mZ[0].length);}
+      const toks=String(w).split(/[／\/、,]/).map(x=>x.trim()).filter(Boolean);
+      const srcZone=zonesOf(pi)[symZone]||zonesOf(pi).battle;
+      const cnt=srcZone.filter(b=>{
+        if(b.id===c.id)return false;const rb=getReg(b);
+        return toks.some(tk=>{
+          if(tk==="クリーチャー")return rb&&isCreatureReg(rb);
+          const mP=tk.match(/^(?:パワー)?(\d+)以上$/);if(mP){const pw=rb&&rb.power!=null?+rb.power:null;return pw!=null&&pw>=+mP[1];}
+          const mC=tk.match(/^コスト(\d+)以上$/);if(mC)return rb&&rb.cost!=null&&rb.cost>=+mC[1];
+          return (rb&&raceMatch(rb,tk))||faceNameOf(b).includes(tk);
+        });
+      }).length;
+      if(cnt>0){const mult=r.symX||1;cost-=Math.min(cnt*mult,Math.max(0,cost-1));}
+    }
+    // 💠 各ターン最初の召喚コスト軽減（表示に反映・このターン未使用の軽減元のみ）
+    if(r.ctype!=="spell"){
+      S.firstSumUsed=S.firstSumUsed||{};
+      const evoBases=(c.under&&c.under.length)?[c.under[0]]:[];
+      let redTotal=0;
+      for(const b of [...zonesOf(pi).battle,...evoBases]){
+        const rb=getReg(b);
+        if(!rb||!rb.firstRed||+rb.firstRed<=0)continue;
+        if(b.id===c.id)continue;
+        if(isSealed(b)||isIgnored(b,pi))continue;
+        if(rb.firstRedF&&rb.firstRedF!=="クリーチャー"&&!lockFilterOk(rb.firstRedF,r,c))continue;
+        if(S.firstSumUsed[`${pi}_${b.id}`])continue; // 使用済みは表示に出さない
+        let add=+rb.firstRed;
+        if(+rb.firstRedNeo>0&&typeof isNeoReg==="function"&&isNeoReg(r))add+=+rb.firstRedNeo;
+        redTotal+=add;
+      }
+      if(redTotal>0)cost=Math.max(cost>0?1:0,cost-redTotal);
     }
   }catch(e){}
   const civ0=r.civs||[];
@@ -9184,13 +9249,33 @@ async function startAttack(pi,id){
 }
 /* ⚡ カードが「どこからでも墓地に置かれた時（toGrave）」の誘発を発火する共通ヘルパ。
    moveCardXを通らない直接の墓地送り（mill＝山札→墓地など）でも呼ぶ。srcCardを渡すのでrunMode等も動く。 */
-function fireToGrave(pi,c){
+async function fireToGrave(pi,c){
   if(!S.expert||!c)return;
   const rG=getReg(c);
   if(rG&&rG.watchFx){
     const fxG=rG.watchFx.filter(w=>w.ev==="toGrave");
-    if(fxG.length){toast(`⚡墓地に置かれた時の効果：${faceNameOf(c)}`);runFxList(pi,fxG,c);}
+    if(fxG.length){toast(`⚡墓地に置かれた時の効果：${faceNameOf(c)}`);await runFxList(pi,fxG,c);}
   }
+}
+/* ⚡ toGrave遅延キュー：1枚のカードの効果解決の途中で墓地に落ちたカード（mill等）の「墓地に置かれた時」は、
+   割り込まずに、そのカードの解決が完全に終わってから順に発火する（マガマガルピアの破壊まで終えてからゾルザーク）。*/
+let TOGRAVE_PENDING=[];
+let TOGRAVE_DRAINING=false;
+function queueToGrave(pi,c){
+  if(!S.expert||!c)return;
+  const rG=getReg(c);
+  if(rG&&rG.watchFx&&rG.watchFx.some(w=>w.ev==="toGrave"))TOGRAVE_PENDING.push({pi,c});
+}
+async function drainToGrave(){
+  if(TOGRAVE_DRAINING)return;
+  TOGRAVE_DRAINING=true;
+  try{
+    let guard=0;
+    while(TOGRAVE_PENDING.length&&guard++<60){
+      const {pi,c}=TOGRAVE_PENDING.shift();
+      await fireToGrave(pi,c);
+    }
+  }finally{TOGRAVE_DRAINING=false;}
 }
 function showResumeBtn(){
   let wrap=document.getElementById("resumeAtkWrap");
@@ -12187,7 +12272,14 @@ function parseCardText(txt,mode){
   else if(/[TＴエ]・?ブレイカー/.test(tSelf))out.set.breaks="3";
   else if(/W・?ブレイカー/.test(tSelf))out.set.breaks="2";
   // シンパシー
-  m=t.match(/シンパシー[：: ]?([^（(。■]+)/); if(m)out.set.sympathy=m[1].trim();
+  m=t.match(/シンパシー[：: ]?([^（(。■]+)/);
+  if(m){
+    let sy=m[1].trim();
+    // 「自分の墓地のクリーチャー」「自分のマナのドラゴン」等 → 「墓地:クリーチャー」「マナ:ドラゴン」のゾーン指定に変換（既定はバトルゾーン）
+    const mz=sy.match(/^自分の(墓地|マナ|手札|山札|シールド|盾)(?:ゾーン)?の(.+)$/);
+    if(mz){const zl={"墓地":"墓地","マナ":"マナ","手札":"手札","山札":"山札","シールド":"盾","盾":"盾"}[mz[1]];sy=`${zl}:${mz[2].trim()}`;}
+    out.set.sympathy=sy;
+  }
   // 💞 「（召喚）コストを、自分の〔ゾーン〕にある〔対象〕1体につきN少なくする」→ シンパシー（ゾーン指定）。オブザ08号型
   if(!out.set.sympathy){
     const mSY=t.match(/(?:召喚)?コストを[、,]?\s*自分の(墓地|マナ|手札|山札|シールド)(?:ゾーン)?にある([ァ-ヶー・ｦ-ﾟ一-龠]{2,12}?)(?:1体|1枚)につき(\d+)少なく/);
@@ -15220,7 +15312,7 @@ function hotkeyMap(){
   const def={};HOTKEY_ACTS.forEach(([k,_,d])=>def[k]=d);
   return Object.assign(def,S.hotkeys||{});
 }
-function runHotkey(act){
+async function runHotkey(act){
   if(GAME_PAUSE&&act!=="undo"){
     toast("⏸ 処理中です（「▶ 再開」で解除）");
     return;
@@ -15278,7 +15370,7 @@ function runHotkey(act){
     if(!Z.deck.length){toast("山札がありません");return;}
     snap();const c=Z.deck.shift();c.faceup=true;Z.grave.push(c);
     sfx("grave");renderAll();toast(`山上→墓地：${faceNameOf(c)}`);
-    fireToGrave(pi,c);
+    await fireToGrave(pi,c);
   }else if(act==="handes"){
     const OZ=zonesOf(op);
     if(!OZ.hand.length){toast("相手の手札がありません");return;}
@@ -15722,6 +15814,7 @@ async function gearMenu(pi,host,g){
 function cardEl(pi,zone,c){
   const el=document.createElement("div");
   el.className="card";
+  if(HILITE_ID&&c.id===HILITE_ID){el.style.outline="4px solid #ffcf3a";el.style.outlineOffset="1px";el.style.boxShadow="0 0 18px 5px rgba(255,207,58,.8)";el.style.zIndex="30";}
   const showBLab=!(zone==="battle"&&S.battleLabels===false); // バトルのラベル/タグ表示
   const showBBtn=!(zone==="battle"&&S.battleBtns===false);    // バトルの操作ボタン表示
   const hidden=(S.vs&&S.hideOpp&&pi!==(S.seat|0)&&zone==="hand");
@@ -15879,7 +15972,7 @@ function cardEl(pi,zone,c){
       el.appendChild(sy);
     }
   }
-  if(zone==="hand"&&!hidden&&c.faceup&&(!S.vs||pi===S.seat)&&S.expert){
+  if((zone==="hand"||zone==="grave")&&!hidden&&c.faceup&&(!S.vs||pi===S.seat)&&S.expert){
     const dc=dispCost(c,pi);
     if(dc){
       const cb2=document.createElement("span");
@@ -16116,14 +16209,14 @@ function renderPlayer(pi){
     img:top&&imgURL.get(faceKeyOf(top))||null,
     onTap:()=>openGraveViewer(pi)}));
   const gb=document.createElement("button");gb.className="pmenu";gb.textContent="山上→墓地";
-  gb.addEventListener("click",e=>{
+  gb.addEventListener("click",async e=>{
     e.stopPropagation();
     if(!Z.deck.length){toast("山札がありません");return;}
     snap();
     const c=Z.deck.shift();c.faceup=true;Z.grave.push(c);
     sfx("grave");
     renderAll();toast(`山上→墓地：${c.name}`);
-    fireToGrave(pi,c);
+    await fireToGrave(pi,c);
   });
   gwrap.appendChild(gb);
   row.appendChild(gwrap);
@@ -16335,7 +16428,7 @@ function renderAll(){
   checkMugetsu(false);
   // 🩹 保険：保留中の攻撃が無いのに「▶ 攻撃を再開」ボタンが残っていたら隠す（取りこぼしの自己修復）。
   //    攻撃していないのに再開ボタンが出る／変な場面で攻撃が再開される不具合の最後の砦。
-  if(!S.pendingAtk){const _rb=document.getElementById("resumeAtkBtn");if(_rb&&_rb.style.display!=="none")_rb.style.display="none";}
+  if(!S.pendingAtk){const _rw=document.getElementById("resumeAtkWrap");if(_rw&&_rw.style.display!=="none")_rw.style.display="none";}
   const order=S.vs?[1,0]:[0];
   for(const pi of order)renderPlayer(pi);
   document.querySelectorAll(".pboard").forEach(pb=>{
@@ -21727,6 +21820,61 @@ function bTotals(){
   $("bTotalHy").textContent=t(B.counts.hy);
   $("bTotalEx").textContent=t(B.counts.ex);
 }
+/* 📊 デッキ集計（文明別の枚数・タイプ別の枚数）を計算してDOM要素で返す。作りながら見られるよう、リスト確認に表示する。 */
+function buildDeckSummaryEl(m){
+  const CIV=[["light","光","#e8c65a"],["water","水","#5ab0e8"],["dark","闇","#a97fe0"],["fire","火","#e87a6a"],["nature","自然","#6fc46a"],["zero","無色","#b8c0cc"]];
+  const civCnt={light:0,water:0,dark:0,fire:0,nature:0,zero:0};
+  let multi=0,total=0;
+  const typeCnt=new Map();
+  const typeLabel=k=>{
+    const r=FXDB.get(k);const ct=r&&r.ctype||"creature";
+    if(ct==="spell")return "呪文";
+    if(ct==="twinpact"||(r&&r.twin))return "ツインパクト";
+    if(ct==="crossgear"||ct==="evocrossgear")return "クロスギア";
+    if(ct==="aura")return "オーラ";
+    if(ct==="d2"||ct==="castle"||ct==="gcastle")return "フィールド/城";
+    if(["evo","neoevo","starevo","smaxevo","onismaxevo","gneo","neodream","gneodream","psyevo","lunatic","ultimate"].includes(ct))return "進化クリーチャー";
+    if(ct==="psychic")return "サイキック";
+    return "クリーチャー";
+  };
+  for(const [k,n] of m){
+    total+=n;
+    const r=FXDB.get(k);
+    const cs=(r&&r.civs)||[];
+    if(!cs.length)civCnt.zero+=n;
+    else{cs.forEach(cv=>{if(civCnt[cv]!=null)civCnt[cv]+=n;});if(cs.length>=2)multi+=n;}
+    const tl=typeLabel(k);typeCnt.set(tl,(typeCnt.get(tl)||0)+n);
+  }
+  const wrap=document.createElement("div");
+  wrap.style.cssText="grid-column:1/-1;background:rgba(12,16,24,.6);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:4px;display:flex;flex-direction:column;gap:6px";
+  // 文明別
+  const civRow=document.createElement("div");
+  civRow.style.cssText="display:flex;flex-wrap:wrap;gap:6px;align-items:center";
+  const cl=document.createElement("span");cl.textContent="🎨 文明";cl.style.cssText="font-size:11px;font-weight:900;color:var(--muted);margin-right:2px";civRow.appendChild(cl);
+  for(const [id,lb,col] of CIV){
+    if(!civCnt[id])continue;
+    const chip=document.createElement("span");
+    chip.style.cssText=`font-size:12px;font-weight:800;color:${col};border:1px solid ${col};border-radius:11px;padding:2px 9px`;
+    chip.textContent=`${lb} ${civCnt[id]}`;
+    civRow.appendChild(chip);
+  }
+  if(multi){const mc=document.createElement("span");mc.style.cssText="font-size:12px;font-weight:800;color:#f6a;border:1px solid #f0a;border-radius:11px;padding:2px 9px";mc.textContent=`多色 ${multi}`;civRow.appendChild(mc);}
+  wrap.appendChild(civRow);
+  // タイプ別
+  const typeRow=document.createElement("div");
+  typeRow.style.cssText="display:flex;flex-wrap:wrap;gap:6px;align-items:center";
+  const tl2=document.createElement("span");tl2.textContent="🃏 種類";tl2.style.cssText="font-size:11px;font-weight:900;color:var(--muted);margin-right:2px";typeRow.appendChild(tl2);
+  const order=["クリーチャー","進化クリーチャー","サイキック","呪文","ツインパクト","クロスギア","オーラ","フィールド/城"];
+  const keys=[...typeCnt.keys()].sort((a,b)=>(order.indexOf(a)+99*(order.indexOf(a)<0))-(order.indexOf(b)+99*(order.indexOf(b)<0)));
+  for(const tk of keys){
+    const chip=document.createElement("span");
+    chip.style.cssText="font-size:12px;font-weight:800;color:var(--text);border:1px solid var(--line);border-radius:11px;padding:2px 9px;background:rgba(255,255,255,.04)";
+    chip.textContent=`${tk} ${typeCnt.get(tk)}`;
+    typeRow.appendChild(chip);
+  }
+  wrap.appendChild(typeRow);
+  return wrap;
+}
 function bSeed(){
   B.counts.main.clear();B.counts.gr.clear();B.counts.hy.clear();B.counts.ex.clear();
   for(const e of parseList($("deckText").value)){const k=normName(e.name);if(dispName.has(k))B.counts.main.set(k,Math.min(e.count,4));}
@@ -21759,8 +21907,8 @@ function zoneCondOk(expr,pi){
       return map[key]!=null?ZZ[map[key]].length:null;
     };
     return terms.every(t=>{
-      if(t==="相手ターン")return S.who!==pi;
-      if(t==="自分ターン")return S.who===pi;
+      if(t==="相手ターン"||t==="相手のターン")return S.who!==pi;
+      if(t==="自分ターン"||t==="自分のターン")return S.who===pi;
       {
         const m2=t.match(/^((?:相手|自分の?)?(?:盾|墓地|手札|バトル|マナ|山札))(>=|<=|>|<|=)((?:相手|自分の?)?(?:盾|墓地|手札|バトル|マナ|山札))$/);
         if(m2){
@@ -21831,6 +21979,8 @@ function typeMatch(k,tf){
 }
 function bRender(){
   const g=$("bGrid");g.innerHTML="";
+  // 📊 集計バー更新（作りながら文明別・タイプ別を確認）
+  {const sm=$("bSummary");if(sm){sm.innerHTML="";sm.appendChild(buildDeckSummaryEl(B.counts[B.mode]||new Map()));}}
   const q=normName($("bSearch").value);
   const tf=$("bTypeFilter")?$("bTypeFilter").value:"";
   const civSel=B.civSel||(B.civSel=new Set());
@@ -21877,6 +22027,7 @@ function bRender(){
       el.querySelector(".cnt").textContent=next;
       el.classList.toggle("picked",next>0);
       bTotals();
+      {const sm=$("bSummary");if(sm){sm.innerHTML="";sm.appendChild(buildDeckSummaryEl(B.counts[B.mode]||new Map()));}}
     });
     g.appendChild(el);
   }
@@ -21993,6 +22144,7 @@ $("bListView").addEventListener("click",()=>{
     const sc=g.scrollTop;
     $("vTitle").textContent=`📋 現在のリスト（メイン${t(B.counts.main)} / GR${t(B.counts.gr)} / 超次元${t(B.counts.hy)} / ゲーム外${t(B.counts.ex)}）`;
     g.innerHTML="";
+    g.appendChild(buildDeckSummaryEl(B.counts.main)); // 📊 メインの文明別・タイプ別集計（作りながら見られる）
     sec("メイン",B.counts.main,"main");
     sec("超GR",B.counts.gr,"gr");
     sec("超次元",B.counts.hy,"hy");
