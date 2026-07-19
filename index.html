@@ -2248,6 +2248,15 @@ function isEvoReg(r){
   if((r.twin||r.ctype==="twinpact")&&r.twinTop&&EVO_CTYPES.includes(r.twinTop))return true;
   return false;
 }
+/* 実効の進化タイプを返す（単体ならctype・ツインパクトならtwinTop・非進化ならnull）。
+   ライジングNEX等の「神ゲー」ツインパクト版（ctype=twinpact/twinTop=ultimate）でも正しく究極進化として扱うために使う。 */
+function evoKindOf(r){
+  if(!r)return null;
+  if(EVO_CTYPES.includes(r.ctype))return r.ctype;
+  if((r.twin||r.ctype==="twinpact")&&r.twinTop&&EVO_CTYPES.includes(r.twinTop))return r.twinTop;
+  return null;
+}
+function evoKindLabel(k){return k==="ultimate"?"究極進化":k==="neoevo"||k==="neodream"?"NEO":k==="lunatic"?"ルナティック進化":"進化";}
 /* NEOクリーチャー判定（単体neoevo/neodream or ツインパクト上面neoevo） */
 function isNeoReg(r){
   if(!r)return false;
@@ -2439,11 +2448,11 @@ async function summonCreatureNeoAware(pi,t,opts){
   const r=getReg(t);
   t.neoEvo=false;
   // 🧬 NEO：非進化としても出せる。⤴ 進化・究極進化（ultimate等）：進化元がいれば「重ねて出す」を選べる（ライジングNEX対応）
-  if(r&&(isNeoReg(r)||EVO_CTYPES.includes(r.ctype))){
+  if(r&&(isNeoReg(r)||isEvoReg(r))){
     const isNeo=isNeoReg(r);
     const bases=Z.battle.filter(x=>x.id!==t.id&&x.id!==opts.excludeId&&(()=>{const rr=getReg(x);return rr&&(isCreatureReg(rr)||rr.shinkalize);})());
     if(bases.length){
-      const evoLbl=r.ctype==="ultimate"?"究極進化":"進化";
+      const evoLbl=evoKindLabel(evoKindOf(r));
       const m=await askChoice(
         isNeo
           ?`《${faceNameOf(t)}》はNEOクリーチャー。出し方を選択${opts.excludeId?"\n（攻撃中のクリーチャーには進化できません）":""}`
@@ -2465,7 +2474,7 @@ async function summonCreatureNeoAware(pi,t,opts){
             transferAtkState([host.id],t);
             markArrive(t);
             emitEvent(pi,"summon");enqueueFx(pi,t);
-            toast(`⤴ ${faceNameOf(host)} に重ねて${isNeo?"NEO進化":(r.ctype==="ultimate"?"究極進化":"進化")}！ → ${faceNameOf(t)}`);
+            toast(`⤴ ${faceNameOf(host)} に重ねて${isNeo?"NEO進化":evoKindLabel(evoKindOf(r))}！ → ${faceNameOf(t)}`);
             return true;
           }
         }
@@ -5465,7 +5474,7 @@ async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone,inPump){
       const lk=LINKS.get(normName(cc.name));
       if(lk&&lk.length>1){
         const fj=await askChoice(`《${dispName.get(lk[0])||cc.name}》は多面カードです。どの面で出しますか？`,
-          lk.map(k=>{const fr=FXDB.get(k);const tl=fr?(fr.ctype==="ultimate"?"究極進化":EVO_CTYPES.includes(fr.ctype)?"進化":"クリーチャー"):"";return `《${dispName.get(k)||k}》${tl?`（${tl}${fr&&fr.cost!=null?`・コスト${fr.cost}`:""}）`:""}`;}));
+          lk.map(k=>{const fr=FXDB.get(k);const tl=fr?(evoKindOf(fr)?evoKindLabel(evoKindOf(fr)):"クリーチャー"):"";return `《${dispName.get(k)||k}》${tl?`（${tl}${fr&&fr.cost!=null?`・コスト${fr.cost}`:""}）`:""}`;}));
         if(fj!==null){
           cc.face=fj;
           const fr=FXDB.get(lk[fj]);
@@ -5526,7 +5535,7 @@ async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone,inPump){
         toast(`⤴ 進化クロスギア！ 《${faceNameOf(base.card)}》の上に《${faceNameOf(cc)}》を重ねた${base.where==="gear"?"（クロス状態を継続）":""}`);
       }else{
         // 進化クリーチャー：重ねて出すか、そのまま出す（非進化として）を選べる（究極進化・ライジングNEX等）
-        const evoLbl2=rCC.ctype==="ultimate"?"究極進化":"進化";
+        const evoLbl2=evoKindLabel(evoKindOf(rCC));
         const evc=await askChoice(`《${faceNameOf(cc)}》は${evoLbl2}クリーチャーです。どう出しますか？`,
           [`${evoLbl2}として出す（進化元に重ねる）`,"そのまま出す（進化元なし・非進化として）"]);
         if(evc===1){
@@ -6415,13 +6424,13 @@ async function runFxList(pi,list,srcCard,inPump){
           const cc=revealed.splice(ri,1)[0];cc.faceup=true;cc.tapped=false;
           let stacked=false;
           const rc2=getReg(cc);
-          if(rc2&&EVO_CTYPES.includes(rc2.ctype)){
+          if(rc2&&isEvoReg(rc2)){
             const basePool=Z.battle.filter(x=>x.id!==cc.id&&isCreatureReg(getReg(x)));
             if(basePool.length){
-              const ev=await askChoice(`《${faceNameOf(cc)}》は${rc2.ctype==="neoevo"?"NEOクリーチャー":"進化クリーチャー"}です。どう出しますか？`,["進化元に重ねて出す（進化）",rc2.ctype==="neoevo"?"そのまま出す（非進化として）":"そのまま出す"]);
+              const ev=await askChoice(`《${faceNameOf(cc)}》は${isNeoReg(rc2)?"NEOクリーチャー":evoKindLabel(evoKindOf(rc2))+"クリーチャー"}です。どう出しますか？`,["進化元に重ねて出す（進化）",isNeoReg(rc2)?"そのまま出す（非進化として）":"そのまま出す（進化元なし・非進化として）"]);
               if(ev===0){
                 const bj=basePool.length===1?0:await pickCard("進化元を選択",basePool);
-                if(bj!==null){const base=basePool[bj];const bi2=Z.battle.findIndex(x=>x.id===base.id);cc.under=[base,...(base.under?base.under.splice(0):[]),...(cc.under||[])];if(base.gear&&base.gear.length)cc.gear=[...(cc.gear||[]),...base.gear.splice(0)];cc.tapped=base.tapped;if(isNeoReg(rc2))cc.neoEvo=true;Z.battle.splice(bi2,1);Z.battle.push(cc);transferAtkState([base.id],cc);stacked=true;toast(`⤴ ${faceNameOf(base)} に重ねて${rc2.ctype==="neoevo"?"NEO進化":"進化"}！ → ${faceNameOf(cc)}`);}
+                if(bj!==null){const base=basePool[bj];const bi2=Z.battle.findIndex(x=>x.id===base.id);cc.under=[base,...(base.under?base.under.splice(0):[]),...(cc.under||[])];if(base.gear&&base.gear.length)cc.gear=[...(cc.gear||[]),...base.gear.splice(0)];cc.tapped=base.tapped;if(isNeoReg(rc2))cc.neoEvo=true;Z.battle.splice(bi2,1);Z.battle.push(cc);transferAtkState([base.id],cc);stacked=true;toast(`⤴ ${faceNameOf(base)} に重ねて${isNeoReg(rc2)?"NEO進化":evoKindLabel(evoKindOf(rc2))}！ → ${faceNameOf(cc)}`);}
               }
             }
           }
@@ -6606,10 +6615,10 @@ async function runFxList(pi,list,srcCard,inPump){
           let stacked=false;
           {
             const rc2=getReg(cc);
-            if(rc2&&EVO_CTYPES.includes(rc2.ctype)){
+            if(rc2&&isEvoReg(rc2)){
               const basePool=Z.battle.filter(x=>x.id!==cc.id&&isCreatureReg(getReg(x)));
               if(basePool.length){
-                const ev=await askChoice(`《${faceNameOf(cc)}》は${rc2.ctype==="neoevo"?"NEOクリーチャー":"進化クリーチャー"}です。どう出しますか？`,["進化元に重ねて出す（進化）",rc2.ctype==="neoevo"?"そのまま出す（非進化として）":"そのまま出す"]);
+                const ev=await askChoice(`《${faceNameOf(cc)}》は${isNeoReg(rc2)?"NEOクリーチャー":evoKindLabel(evoKindOf(rc2))+"クリーチャー"}です。どう出しますか？`,["進化元に重ねて出す（進化）",isNeoReg(rc2)?"そのまま出す（非進化として）":"そのまま出す（進化元なし・非進化として）"]);
                 if(ev===0){
                   const bj=basePool.length===1?0:await pickCard("進化元を選択",basePool,{hint:"タップで選択"});
                   if(bj!==null){
@@ -6623,7 +6632,7 @@ async function runFxList(pi,list,srcCard,inPump){
                     Z.battle[bi2]=cc;
                     transferAtkState([base.id],cc);
                     markArrive(cc);played.push(cc);
-                    toast(`⤴ ${faceNameOf(base)} に重ねて${rc2.ctype==="neoevo"?"NEO進化":"進化"}！ → ${faceNameOf(cc)}`);
+                    toast(`⤴ ${faceNameOf(base)} に重ねて${isNeoReg(rc2)?"NEO進化":evoKindLabel(evoKindOf(rc2))}！ → ${faceNameOf(cc)}`);
                     renderAll();
                     stacked=true;
                   }
@@ -6958,13 +6967,13 @@ async function runFxList(pi,list,srcCard,inPump){
         const cc=Z[o.zn].splice(di,1)[0];
         cc.faceup=true;cc.tapped=false;cc.sideways=false;
         let sumStacked=false;
-        if(rx&&EVO_CTYPES.includes(rx.ctype)){
+        if(rx&&isEvoReg(rx)){
           const basePool=Z.battle.filter(x=>x.id!==cc.id&&isCreatureReg(getReg(x)));
           if(basePool.length){
-            const ev=await askChoice(`《${faceNameOf(cc)}》は${rx.ctype==="neoevo"?"NEOクリーチャー":"進化クリーチャー"}です。どう出しますか？`,["進化元に重ねて出す（進化）",rx.ctype==="neoevo"?"そのまま出す（非進化として）":"そのまま出す"]);
+            const ev=await askChoice(`《${faceNameOf(cc)}》は${isNeoReg(rx)?"NEOクリーチャー":evoKindLabel(evoKindOf(rx))+"クリーチャー"}です。どう出しますか？`,["進化元に重ねて出す（進化）",isNeoReg(rx)?"そのまま出す（非進化として）":"そのまま出す（進化元なし・非進化として）"]);
             if(ev===0){
               const bj=basePool.length===1?0:await pickCard("進化元を選択",basePool);
-              if(bj!==null){const base=basePool[bj];const bi2=Z.battle.findIndex(x=>x.id===base.id);cc.under=[base,...(base.under?base.under.splice(0):[]),...(cc.under||[])];if(base.gear&&base.gear.length)cc.gear=[...(cc.gear||[]),...base.gear.splice(0)];cc.tapped=base.tapped;if(isNeoReg(rx))cc.neoEvo=true;Z.battle[bi2]=cc;transferAtkState([base.id],cc);markArrive(cc);sumStacked=true;toast(`⤴ ${faceNameOf(base)} に重ねて${rx.ctype==="neoevo"?"NEO進化":"進化"}！ → ${faceNameOf(cc)}`);}
+              if(bj!==null){const base=basePool[bj];const bi2=Z.battle.findIndex(x=>x.id===base.id);cc.under=[base,...(base.under?base.under.splice(0):[]),...(cc.under||[])];if(base.gear&&base.gear.length)cc.gear=[...(cc.gear||[]),...base.gear.splice(0)];cc.tapped=base.tapped;if(isNeoReg(rx))cc.neoEvo=true;Z.battle[bi2]=cc;transferAtkState([base.id],cc);markArrive(cc);sumStacked=true;toast(`⤴ ${faceNameOf(base)} に重ねて${isNeoReg(rx)?"NEO進化":evoKindLabel(evoKindOf(rx))}！ → ${faceNameOf(cc)}`);}
             }
           }
         }
@@ -22007,7 +22016,7 @@ function zoneCondOk(expr,pi){
           const r=getReg(x);
           return toks.some(tk=>{
             if(tk==="多色")return r&&r.civs&&r.civs.length>=2;
-            if(tk==="呪文")return r&&r.ctype==="spell";
+            if(tk==="呪文")return r&&(r.ctype==="spell"||r.twin||r.ctype==="twinpact"); // ツインパクトは呪文としても数える（呪文貯蔵型・デュエプレ準拠）
             if(tk==="クリーチャー")return r&&r.ctype!=="spell";
             if(tk==="ツインパクト")return r&&(r.twin||r.ctype==="twinpact");
             if(tk==="ブロッカー")return !!((r&&r.blocker)||(x.buff&&x.buff.blocker)||gearBlockerOn(x));
