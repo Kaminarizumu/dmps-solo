@@ -1559,7 +1559,7 @@ body.shake{animation:bodyShake .4s ease-out}
         <span style="font-size:12px;font-weight:700">└ SF有効中</span>
         <select id="fxSForceFx" style="width:auto;flex:0 0 220px">
           <option value="">アナウンスのみ（効果は手動）</option>
-          <option value="noLeave">バトルゾーンを離れない（P・ギャラクシー型）</option>
+          <option value="noLeave">バトルゾーンを離れない（P・ギャラクシー／パーフェクト・エイティー型）</option>
           <option value="noDestroy">破壊されない</option>
           <option value="pw">パワー＋n</option>
           <option value="break">ブレイク数＋n</option>
@@ -4605,7 +4605,7 @@ const FX_TYPES=[
   ["retrieveHand","マナ/墓地/シールド等からn枚 手札に戻す（回収・ゾーンは実行時選択・条件欄で対象指定可）"],
   ["retrieveManaGrave","↩ マナと墓地から合計n枚 手札に戻す（両ゾーンを組み合わせて自由に選択・条件欄で対象指定・ベートーベン型）"],
   ["meteoburn","☄ メテオバーン：このクリーチャーの下のカードをn枚墓地に置く（置けない/キャンセル時は、この行より下に登録した効果を中止・マーキュリー/ヴィーナス型の1枚ずつ形式）"],
-  ["untapFilt","🔄 自分の対象クリーチャーをすべてアンタップ（条件欄で対象指定・聖霊王ナルカミ型）"],
+  ["untapFilt","🔄 アンタップ：自分の対象クリーチャーをすべてアンタップする（条件欄で対象指定・カード名で自身のみも可・ターン終了時アンタップ／聖霊王ナルカミ／パーフェクト・エイティー型）"],
   ["grantStayBlk","🛡⚓ 自分の「ブロッカー」を持つクリーチャーすべてに『離れる時、パワーが0より大きいならかわりにとどまる』を次の自分のターン開始時まで付与（Shin-Ka Musical型）"],
   ["handStFree","⚡ 自分の手札の「S・トリガー」持ちを1枚、コストを支払わずに実行（クリーチャー→召喚／呪文→詠唱・条件欄で追加対象指定可）"],
   ["handCastSpell","🔮 自分の手札から条件に合う呪文を1枚、コストを支払わずに唱えてもよい（条件欄で文明/コスト指定・シャッフ型）"],
@@ -5229,7 +5229,7 @@ async function destroyCreature(pi,c){
       toast(`⚓ ${faceNameOf(c)} はパワー0超のためバトルゾーンにとどまる！`);
       return;
     }
-    if(!IGN&&rCX&&rCX.cstCond&&(rCX.cstFx==="noDestroy"||rCX.cstFx==="noLeave")&&zoneCondOk(rCX.cstCond,pi)){
+    if(!IGN&&rCX&&rCX.cstCond&&(rCX.cstFx==="noDestroy"||rCX.cstFx==="noLeave")&&zoneCondOk(rCX.cstCond,pi,c)){
       toast(`✨ 条件常在（${rCX.cstCond}）：${faceNameOf(c)} は${rCX.cstFx==="noLeave"?"⚓離れない":"🪨破壊されない"}！`);
       return;
     }
@@ -7679,7 +7679,7 @@ function stLockerOf(pi,key,filtKey,r,c){
     if(rb[key]&&lockFilterOk(rb[filtKey],r,c,op2))return b;
     if(b.hyper&&rb[hmKey]&&lockFilterOk(rb[hmFiltKey],r,c))return b;
     // ✨ 条件付き常在「相手は呪文を唱えられない」（マキア型：条件式を満たす間のみ）
-    if(key==="stLockSpell"&&rb.cstCond&&rb.cstFx==="noSpell"&&zoneCondOk(rb.cstCond,op2))return b;
+    if(key==="stLockSpell"&&rb.cstCond&&rb.cstFx==="noSpell"&&zoneCondOk(rb.cstCond,op2,b))return b;
   }
   // 🔒 両者ロック（stLockBoth）：自分の場のロック持ちも自分に効く（暴走龍5000GT型・自身は除外）
   for(const b of zonesOf(pi).battle){
@@ -8387,7 +8387,7 @@ function dispPower(c){
    ソース：条件常在(cstFx=sa)・ハイパーモードSA・1ターン付与(buff.sa)・全員SA常在(stAllSA)・味方SA付与(stAuraSA) */
 function saGrantSource(pi,c,r){
   if(!S.expert)return null;
-  if(r&&r.cstCond&&r.cstFx==="sa"&&zoneCondOk(r.cstCond,pi))return "条件常在";
+  if(r&&r.cstCond&&r.cstFx==="sa"&&zoneCondOk(r.cstCond,pi,c))return "条件常在";
   if(c.hyper&&r&&r.hmSA)return "ハイパーモード";
   if(c.buff&&c.buff.sa)return "付与";
   for(const b of zonesOf(pi).battle){
@@ -8834,7 +8834,7 @@ async function doBattle(pa,a,pd,d){
   d=await battleSubPick(pd,d);
   for(const [pp,x] of [[pa,a],[pd,d]]){
     const rx=getReg(x);
-    if(rx&&rx.cstCond&&rx.cstFx==="slayer"&&!isSealed(x)&&zoneCondOk(rx.cstCond,pp)){
+    if(rx&&rx.cstCond&&rx.cstFx==="slayer"&&!isSealed(x)&&zoneCondOk(rx.cstCond,pp,x)){
       toast(`✨ 条件常在（${rx.cstCond}）：${faceNameOf(x)} はスレイヤー！（負けても相手を破壊）`);
     }
     if(rx&&rx.hmSlayer&&x.hyper&&!isSealed(x)){
@@ -9694,7 +9694,7 @@ async function execAttack(pi,id,tg){
       c.sick=false;
     }else{
       const rSelf=getReg(c);
-      const condSA=(rSelf&&rSelf.cstCond&&rSelf.cstFx==="sa"&&zoneCondOk(rSelf.cstCond,pi))||(c.hyper&&rSelf&&rSelf.hmSA);
+      const condSA=(rSelf&&rSelf.cstCond&&rSelf.cstFx==="sa"&&zoneCondOk(rSelf.cstCond,pi,c))||(c.hyper&&rSelf&&rSelf.hmSA);
       if(condSA)toast(`✨ 条件常在（${rSelf.cstCond}）：スピードアタッカー！`);
       const _auraSAsrc=Z.battle.find(b=>{const rb=getReg(b);if(!rb||!rb.stAuraSA)return false;if(isSealed(b)||isIgnored(b,pi))return false;if(rb.stAuraOthers&&b.id===c.id)return false;return !rb.stAuraFilt||(rA&&lockFilterOk(rb.stAuraFilt,rA,c));});
       const hasAllSA=condSA||(c.buff&&c.buff.sa)||Z.battle.some(b=>{const rb=getReg(b);return rb&&rb.stAllSA&&!isSealed(b);})||!!_auraSAsrc;
@@ -10232,7 +10232,7 @@ async function execAttack(pi,id,tg){
     if(gearBlockerOn(b))return true; // ⚙ クロスギアの「ブロッカー」付与
     if(rb&&(rb.hmBlocker||rb.hmBK)&&b.hyper&&!isSealed(b)&&!isIgnored(b,op))return true;
     if(!isSealed(b)&&!isIgnored(b,op)&&allyGrant(op,"agBlocker"))return true;
-    if(rb&&rb.cstCond&&rb.cstFx==="blocker"&&!isSealed(b)&&!isIgnored(b,op)&&zoneCondOk(rb.cstCond,op))return true;
+    if(rb&&rb.cstCond&&rb.cstFx==="blocker"&&!isSealed(b)&&!isIgnored(b,op)&&zoneCondOk(rb.cstCond,op,b))return true;
     return false;
   };
   const blockers=(aregNB&&aregNB.noBlock)?[]:OZ.battle.filter(b=>!b.tapped&&!noAtkBlkOf(b)&&isBlk(b));
@@ -15483,7 +15483,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
       renderAll();
       return;
     }
-    if(rCX&&rCX.cstCond&&rCX.cstFx==="noLeave"&&zoneCondOk(rCX.cstCond,pFrom)){
+    if(rCX&&rCX.cstCond&&rCX.cstFx==="noLeave"&&zoneCondOk(rCX.cstCond,pFrom,c)){
       const ZT3=zonesOf(pTo);
       const key3=(toZone==="deckTop"||toZone==="deckBottom")?"deck":(toZone==="shieldUp"?"shield":toZone);
       const arr3=ZT3[key3];
@@ -17899,8 +17899,8 @@ function showCardPreview(ctx){
         if(r0.slayer||(c.buff&&c.buff.slayer)||(r0.hmSlayer&&c.hyper))tags.push("☠スレイヤー");
         const bk0=c.hyper&&r0.hmBk?r0.hmBk:r0.breaks;
         if(bk0&&bk0!=="1")tags.push(bk0==="2"?"W・ブレイカー":bk0==="3"?"T・ブレイカー":bk0==="all"?"ワールド・ブレイカー":bk0+"枚ブレイク");
-        if((c.buff&&c.buff.noDestroy)||(c.sfActive&&r0.sforceFx==="noDestroy")||(r0.cstCond&&r0.cstFx==="noDestroy"&&zoneCondOk(r0.cstCond,ctx.p))||(r0.ggg&&(r0.ggg==="noDestroy"||r0.ggg==="noDestroyGrp")&&zonesOf(ctx.p).hand.length<=1))tags.push("🪨破壊されない");
-        if((c.buff&&c.buff.noLeave)||(c.sfActive&&r0.sforceFx==="noLeave")||(r0.cstCond&&r0.cstFx==="noLeave"&&zoneCondOk(r0.cstCond,ctx.p)))tags.push("⚓離れない");
+        if((c.buff&&c.buff.noDestroy)||(c.sfActive&&r0.sforceFx==="noDestroy")||(r0.cstCond&&r0.cstFx==="noDestroy"&&zoneCondOk(r0.cstCond,ctx.p,c))||(r0.ggg&&(r0.ggg==="noDestroy"||r0.ggg==="noDestroyGrp")&&zonesOf(ctx.p).hand.length<=1))tags.push("🪨破壊されない");
+        if((c.buff&&c.buff.noLeave)||(c.sfActive&&r0.sforceFx==="noLeave")||(r0.cstCond&&r0.cstFx==="noLeave"&&zoneCondOk(r0.cstCond,ctx.p,c)))tags.push("⚓離れない");
         if(tags.length){
           const tb=document.createElement("span");
           tb.textContent=tags.join("　");
@@ -22277,7 +22277,7 @@ function bSeed(){
   for(const e of parseList($("hyText").value)){const k=normName(e.name);if(dispName.has(k))B.counts.hy.set(k,Math.min(e.count,4));}
   for(const e of parseList($("exText").value)){const k=normName(e.name);if(dispName.has(k))B.counts.ex.set(k,e.count);}
 }
-function zoneCondOk(expr,pi){
+function zoneCondOk(expr,pi,selfCard){
   try{
     const op2=pi===0?1:0, Z=zonesOf(pi), OZ=zonesOf(op2);
     // 全角・半角の揺れを正規化（＞＜＝、全角数字、全角スペース）
@@ -22304,6 +22304,15 @@ function zoneCondOk(expr,pi){
     return terms.every(t=>{
       if(t==="相手ターン"||t==="相手のターン")return S.who!==pi;
       if(t==="自分ターン"||t==="自分のターン")return S.who===pi;
+      // 💪 このクリーチャー自身の実効パワー条件（マイナス/プラスも反映）。「自分パワー>=12000」「パワー>=12000」等
+      {
+        const mp=t.match(/^(?:自分|この)?パワー(>=|<=|>|<|=)(\d+)$/);
+        if(mp){
+          if(!selfCard||typeof powNow!=="function")return false;
+          const pw=powNow(selfCard);const nn=+mp[2];const o3=mp[1];
+          return o3===">="?pw>=nn:o3==="<="?pw<=nn:o3===">"?pw>nn:o3==="<"?pw<nn:pw===nn;
+        }
+      }
       {
         const m2=t.match(/^((?:相手|自分の?)?(?:盾|墓地|手札|バトル|マナ|山札))(>=|<=|>|<|=)((?:相手|自分の?)?(?:盾|墓地|手札|バトル|マナ|山札))$/);
         if(m2){
