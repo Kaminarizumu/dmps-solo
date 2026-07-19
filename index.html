@@ -2201,6 +2201,16 @@ function markArrive(c){
     if([0,1].some(p=>zonesOf(p)&&zonesOf(p).battle&&zonesOf(p).battle.includes(c)))LAST_ARRIVED=c;
   }catch(e){}
   try{
+    // 🕐 このターンにバトルゾーンへ出たカードの履歴（「初めて〔対象〕が出た時」の初回判定用・キューティー・ルピア型）
+    const own=[0,1].find(p=>zonesOf(p)&&zonesOf(p).battle&&zonesOf(p).battle.includes(c));
+    if(own!=null){
+      S._turnArrived=S._turnArrived||{};
+      const tk=`${S.turn}:${S.who}`;
+      if(S._turnArrived.key!==tk){S._turnArrived={key:tk,list:[]};}
+      S._turnArrived.list.push({pi:own,id:c.id,name:faceNameOf(c),reg:getReg(c)});
+    }
+  }catch(e){}
+  try{
     if([0,1].some(p=>zonesOf(p)&&zonesOf(p).battle&&zonesOf(p).battle.includes(c)))ENTERED_CNT++;
   }catch(e){}
   try{
@@ -2428,21 +2438,34 @@ async function summonCreatureNeoAware(pi,t,opts){
   const Z=zonesOf(pi);
   const r=getReg(t);
   t.neoEvo=false;
-  if(isNeoReg(r)){
+  // 🧬 NEO：非進化としても出せる。⤴ 進化・究極進化（ultimate等）：進化元がいれば「重ねて出す」を選べる（ライジングNEX対応）
+  if(r&&(isNeoReg(r)||EVO_CTYPES.includes(r.ctype))){
+    const isNeo=isNeoReg(r);
     const bases=Z.battle.filter(x=>x.id!==t.id&&x.id!==opts.excludeId&&(()=>{const rr=getReg(x);return rr&&(isCreatureReg(rr)||rr.shinkalize);})());
     if(bases.length){
-      const m=await askChoice(`《${faceNameOf(t)}》はNEOクリーチャー。出し方を選択${opts.excludeId?"\n（攻撃中のクリーチャーには進化できません）":""}`,
-        ["NEOクリーチャーとして出す（通常召喚・召喚酔いあり）","NEO進化として出す（自分のクリーチャー／シンカライズに重ねる）"]);
-      if(m===1){
+      const evoLbl=r.ctype==="ultimate"?"究極進化":"進化";
+      const m=await askChoice(
+        isNeo
+          ?`《${faceNameOf(t)}》はNEOクリーチャー。出し方を選択${opts.excludeId?"\n（攻撃中のクリーチャーには進化できません）":""}`
+          :`《${faceNameOf(t)}》は${evoLbl}クリーチャー。どう出しますか？${opts.excludeId?"\n（攻撃中のクリーチャーには進化できません）":""}`,
+        isNeo
+          ?["NEOクリーチャーとして出す（通常召喚・召喚酔いあり）","NEO進化として出す（自分のクリーチャー／シンカライズに重ねる）"]
+          :[`${evoLbl}として出す（進化元に重ねる）`,"そのまま出す（進化元なし・非進化として）"]);
+      const wantStack=isNeo?(m===1):(m===0);
+      if(m!==null&&wantStack){
         const k=bases.length===1?0:await pickCard("進化元を選択（自分のクリーチャー／シンカライズ）",bases,{sub:x=>{const rr=getReg(x);return rr&&rr.shinkalize?"シンカライズ":(rr&&isCreatureReg(rr)?"クリーチャー":"");}});
         if(k!==null){
           const host=bases[k];const bi=Z.battle.findIndex(x=>x.id===host.id);
           if(bi>=0){
-            t.faceup=true;t.tapped=host.tapped;t.neoEvo=true;
+            t.faceup=true;t.tapped=host.tapped;
+            if(isNeo)t.neoEvo=true;
             t.under=[host,...(host.under?host.under.splice(0):[]),...(t.under||[])];
             if(host.gear&&host.gear.length)t.gear=[...(t.gear||[]),...host.gear.splice(0)];
-            Z.battle[bi]=t;markArrive(t);
+            Z.battle[bi]=t;
+            transferAtkState([host.id],t);
+            markArrive(t);
             emitEvent(pi,"summon");enqueueFx(pi,t);
+            toast(`⤴ ${faceNameOf(host)} に重ねて${isNeo?"NEO進化":(r.ctype==="ultimate"?"究極進化":"進化")}！ → ${faceNameOf(t)}`);
             return true;
           }
         }
@@ -3474,6 +3497,16 @@ function runWatchFx(pi,type,trigCard){
         if(w.once){
           S._watchOnce=S._watchOnce||{};
           if(S._watchOnce[onceKey]===`${S.turn}:${S.who}`)return;
+          // 🕐 「初めて〔対象〕が出た時」：このターン、既に条件に合うカードが出ていたら（＝今回のが初回でなければ）不発。
+          //    キューティー・ルピア型＝先にドラゴンが出た後で自分が出て、その後のドラゴンには反応しない。
+          if(type==="allyEnter"&&trigCard&&S._turnArrived&&S._turnArrived.key===`${S.turn}:${S.who}`){
+            const cndF=String(w.cond||"").split(/[＆&]/).map(x=>x.trim()).filter(x=>x&&!/^(?:自分|相手)の?ターン$/.test(x)&&!/^(?:相手|自分の?)?(?:マナ|墓地|手札|盾|シールド|バトル|山札)/.test(x)&&!/[<>=]|以上|以下/.test(x)).join("／").replace(/^他の/,"");
+            const prior=S._turnArrived.list.filter(a=>a.pi===pi&&a.id!==trigCard.id&&(!cndF||lockFilterOk(cndF,a.reg,a)));
+            // trigCard自身より前に条件対象が出ていれば「初めて」ではない
+            const selfIdx=S._turnArrived.list.findIndex(a=>a.id===trigCard.id);
+            const before=prior.filter(a=>{const ai=S._turnArrived.list.findIndex(x=>x.id===a.id);return ai>=0&&(selfIdx<0||ai<selfIdx);});
+            if(before.length){return;} // 既に出ている＝初めてではない→不発
+          }
         }
         let w2=w;
         // 🕐 ターン限定（自分ターン/相手ターン）は全イベント共通でゲート（allyEnter以外の誘発に登録しても効くように）
@@ -4581,6 +4614,7 @@ const FX_TYPES=[
   ["hold","⏸ 処理中にする（攻撃を保留して手動で解決。もう一度攻撃で続行）"],
   ["pauseManual","⏸ 手動処理タイム（出た時などの処理を一時停止して盤面を自由に操作 →「▶ 効果処理を続行」ボタンで再開。メテオバーンや特殊処理に）"],
   ["runMode","🔀 このカードの「選択効果（モード）」を実行（出た時以外の誘発＝墓地に置かれた時などから選択を出す・ゾルザーク型）"],
+  ["noLoseTurn","🏆 このターン、自分はゲームに負けない（ターン効果・発動後にこのカードが離れても持続・革命0コッコルピア型。n=持続ターン切替回数、通常1）"],
   ["oriotis1","このターン（次の相手ターン）オリオティス効果を得る（真悠I）"],
   ["drawTapped","自分のタップしているクリーチャー1体につき1ドロー（真悠II）"],
   ["nextCost","次に召喚するクリーチャーのコスト−n（実行時に文明指定・プレリュード型）"],
@@ -4817,9 +4851,12 @@ async function autoTapCost(pi,c){
     }).length;
     if(cnt>0){
       const mult=r.symX||1;
-      const dec=Math.min(cnt*mult,Math.max(0,cost-1)); // 0以下にならない（下限1）
+      // ⚖ 下限＝そのカードの文明数（多色2文明なら最低2・単色1・ゼロ0）。シンパシーは文明数より少なくならない
+      const civ0S=r.civs||[];
+      const civFloorS=(civ0S.length===1&&civ0S[0]==="zero")?0:Math.max(1,civ0S.length||1);
+      const dec=Math.min(cnt*mult,Math.max(0,cost-civFloorS));
       cost-=dec;
-      toast(`💞 ${mult>1?"ダブル":""}シンパシー（${symZone==="battle"?"":({grave:"墓地",mana:"マナ",hand:"手札",deck:"山札",shield:"盾"}[symZone]||symZone)+"の"}${w}）：${cnt}体×${mult} → コスト${dec}軽減（残り${cost}）`);
+      toast(`💞 ${mult>1?"ダブル":""}シンパシー（${symZone==="battle"?"":({grave:"墓地",mana:"マナ",hand:"手札",deck:"山札",shield:"盾"}[symZone]||symZone)+"の"}${w}）：${cnt}体×${mult} → コスト${dec}軽減（残り${cost}・下限は文明数${civFloorS}）`);
     }
   }
   // 💠 各ターン最初に召喚する〔種族〕のコスト軽減（コッコ・ルピア型）。0以下にはならない。
@@ -5423,6 +5460,19 @@ async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone,inPump){
     const di=src.findIndex(x=>x.id===tgt.id);
     if(di<0)continue;
     const cc=src.splice(di,1)[0];cc.faceup=true;cc.tapped=false;
+    // 🔁 多面カード（ボルシャック・ライジング等）：どの面で出すか選ぶ（面によって進化/非進化・コストが違う）
+    {
+      const lk=LINKS.get(normName(cc.name));
+      if(lk&&lk.length>1){
+        const fj=await askChoice(`《${dispName.get(lk[0])||cc.name}》は多面カードです。どの面で出しますか？`,
+          lk.map(k=>{const fr=FXDB.get(k);const tl=fr?(fr.ctype==="ultimate"?"究極進化":EVO_CTYPES.includes(fr.ctype)?"進化":"クリーチャー"):"";return `《${dispName.get(k)||k}》${tl?`（${tl}${fr&&fr.cost!=null?`・コスト${fr.cost}`:""}）`:""}`;}));
+        if(fj!==null){
+          cc.face=fj;
+          const fr=FXDB.get(lk[fj]);
+          cc.rot=(fr&&(fr.wide||fr.d2))?90:0;
+        }
+      }
+    }
     const rCC=getReg(cc);
     // 🧬 NEO系（neoevo/gneo/neodream/gneodream・ツインパクト上面neoevo）は、踏み倒しでも
     //    「NEO進化として重ねる」か「通常クリーチャーとして出す」を選べる（強制進化にしない）。
@@ -5475,6 +5525,18 @@ async function deckRecruitCore(pi,filt,n,searchN,labelJa,zone,inPump){
         markArrive(cc);
         toast(`⤴ 進化クロスギア！ 《${faceNameOf(base.card)}》の上に《${faceNameOf(cc)}》を重ねた${base.where==="gear"?"（クロス状態を継続）":""}`);
       }else{
+        // 進化クリーチャー：重ねて出すか、そのまま出す（非進化として）を選べる（究極進化・ライジングNEX等）
+        const evoLbl2=rCC.ctype==="ultimate"?"究極進化":"進化";
+        const evc=await askChoice(`《${faceNameOf(cc)}》は${evoLbl2}クリーチャーです。どう出しますか？`,
+          [`${evoLbl2}として出す（進化元に重ねる）`,"そのまま出す（進化元なし・非進化として）"]);
+        if(evc===1){
+          cc.neoEvo=false;
+          Z.battle.push(cc);markArrive(cc);played.push(cc);
+          put++;renderAll();
+          toast(`🃏 ${faceNameOf(cc)} をそのまま出した（非進化）`);
+          continue;
+        }
+        if(evc===null){cc.faceup=true;Z.hand.push(cc);toast(`（出さずに手札へ戻しました）`);renderAll();continue;}
         // 進化クリーチャー：下敷きの上に重ねる
         const host=base.card;const bi=Z.battle.findIndex(x=>x.id===host.id);
         cc.under=[host,...(host.under?host.under.splice(0):[]),...(cc.under||[])];
@@ -6726,6 +6788,13 @@ async function runFxList(pi,list,srcCard,inPump){
       renderAll();
       await waitManualResume(srcCard?faceNameOf(srcCard):"");
       toast("▶ 効果処理を再開します");
+    }else if(f.t==="noLoseTurn"){
+      // 🏆 このターン、自分はゲームに負けない（カードが離れても持続するターン効果・革命0コッコルピア型）
+      const nT=Math.max(1,n||1);
+      S.noLoseCnt=S.noLoseCnt||{};
+      S.noLoseCnt[pi]=Math.max(S.noLoseCnt[pi]||0,nT);
+      sfx("ok");
+      toast(`🏆 ${S.players[pi].label}：このターン、ゲームに負けない！${srcCard?`（${faceNameOf(srcCard)}）`:""}`);
     }else if(f.t==="runMode"){
       // 🔀 このカードのモード選択を実行（墓地に置かれた時などの誘発から呼ぶ・ゾルザーク型）
       if(srcCard){
@@ -8045,7 +8114,7 @@ function dispCost(c,pi){
           return (rb&&raceMatch(rb,tk))||faceNameOf(b).includes(tk);
         });
       }).length;
-      if(cnt>0){const mult=r.symX||1;cost-=Math.min(cnt*mult,Math.max(0,cost-1));}
+      if(cnt>0){const mult=r.symX||1;const civ0S=r.civs||[];const civFloorS=(civ0S.length===1&&civ0S[0]==="zero")?0:Math.max(1,civ0S.length||1);cost-=Math.min(cnt*mult,Math.max(0,cost-civFloorS));}
     }
     // 💠 各ターン最初の召喚コスト軽減（表示に反映・このターン未使用の軽減元のみ）
     if(r.ctype!=="spell"){
@@ -11895,15 +11964,21 @@ function parseCardText(txt,mode){
       const v=+String(mR[1]).replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0));
       if(v>=0&&v<=2)out.set.revoN=v;
     }
-    // 🏆 「そのターン、自分はゲームに負けず（相手はゲームに勝てない）」＝CIPの一時「負けない」（コッコ・ルピア型）。ダイハード特殊効果を2切替＝1往復ぶん登録
+    // 🏆 「そのターン、自分はゲームに負けず（相手はゲームに勝てない）」＝CIPの一時「負けない」（コッコ・ルピア型）。
+    //    離場しても持続するターン効果（noLoseTurn）。ダイハード型の手入力は不要。
     if(/そのターン[、,]?[^■]{0,20}?(?:自分は)?(?:ゲームに)?負け(?:ず|ない)/.test(t)){
-      out.set.watchFx=(out.set.watchFx||[]);
-      // CIP扱いにするため faces[0] 側の効果として push（sp:名でダイハード効果。回数nはS.noLoseCnt用に2）
-      out.fx.push({t:"sp:nターンの間、自分は負けない（ダイハード型）",n:2});
+      out.fx.push({t:"noLoseTurn",n:1});
       out._noLoseTurn=true;
-      out.notes.push({msg:"🏆「そのターン負けない」を出た時効果として登録しました（革命0はカード上部の🚩革命Nを0にしてください＝盾0枚のときだけ発動）",q:"革命"});
+      out.notes.push({msg:"🏆「そのターン負けない」を出た時のターン効果として登録しました（発動後にこのカードが離れても持続。革命0はカード上部の🚩革命Nを0に＝盾0枚のときだけ発動）",q:"革命"});
     }
-    // 🏆 革命N「自分は（ゲームに）負けない」→ 条件付き「負けない」（盾N枚以下の間・常在型）
+    // 🏆 革命N「自分は（ゲームに）負けない」→ 「このターン」ならターン効果（noLoseTurn fx・離場しても持続）、それ以外は常在型
+    const mNLT=t.match(/革命([0-9０-９])(?!トリガー)[^■]{0,80}?このターン[^■]{0,40}?(?:自分は)?(?:ゲームに)?負けない/);
+    if(mNLT){
+      const v2=+String(mNLT[1]).replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0));
+      out._noLoseTurn=true;
+      out.fx.push({t:"noLoseTurn",n:1,cond:`盾<=${v2}`});
+      out.notes.push({msg:`🏆 革命${v2}「このターン、負けない」を出た時のターン効果として設定しました（発動後にこのカードが離れても持続）`,q:"負けない"});
+    }
     const mNL=!out._noLoseTurn&&t.match(/革命([0-9０-９])(?!トリガー)[^■]{0,80}?(?:自分は)?(?:ゲームに)?負けない/);
     if(mNL){
       const v2=+String(mNL[1]).replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0));
