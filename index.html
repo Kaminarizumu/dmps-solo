@@ -1610,6 +1610,7 @@ body.shake{animation:bodyShake .4s ease-out}
           <label><input type="checkbox" id="fxStLockSpell"> 相手は呪文を唱えられない</label>
           <input type="text" id="fxStLockSpellF" placeholder="対象条件（例：光以外／コスト5以下・「／」＝すべて満たす呪文のみ禁止・空欄＝全て）" style="flex:1;min-width:170px">
           <label><input type="checkbox" id="fxStLockCre"> 相手はクリーチャーを出せない</label>
+          <label title="召喚だけを禁止し、踏み倒し（コストを支払わずに出す・侵略・チェンジ等）は許可する（クロス・NEX型）"><input type="checkbox" id="fxStLockCreSum"> 召喚のみ禁止（踏み倒しは可）</label>
           <label title="このロックを自分にも適用する＝すべてのプレイヤーが対象（暴走龍5000GT型）"><input type="checkbox" id="fxStLockBoth"> 両者に適用（自分も）</label>
           <label title="超次元ゾーンからサイキック・クリーチャーを出せない（5000GT型・「両者に適用」と併用で全プレイヤー）"><input type="checkbox" id="fxStLockPsy"> 🌌 サイキックを出せない</label>
           <input type="text" id="fxStLockCreF" placeholder="対象条件（例：コスト5以下／パワー5000以下／光以外・空欄＝全て）" style="flex:1;min-width:170px">
@@ -3962,8 +3963,8 @@ function battleEntryOk(pi,c){
   }
   const cap=perTurnCapHit(pi,"creature");
   if(cap){sfx("flip");toast(`⛔ ${faceNameOf(cap.by)}：${S.players[pi].label}はこのターン、${cap.kind==="play"?`クリーチャーと呪文を合計${cap.limit}回まで`:`クリーチャーを${cap.limit}体まで`}しか実行できない（既に${cap.used}${cap.kind==="play"?"回":"体"}）`);return false;}
-  const lk=stLockerOf(pi,"stLockCre","stLockCreF",r,c);
-  // 「出す」ゲート：召喚専用ロック（ミラダンテⅫ型）は踏み倒しを防げないため、ここでは「出せない」ロックのみ判定
+  const lk=stLockerOf(pi,"stLockCre","stLockCreF",r,c,"enter");
+  // 「出す」ゲート：召喚専用ロック（ミラダンテⅫ型・クロス・NEX型「召喚のみ禁止」）は踏み倒しを防げないため、ここでは「出せない」ロックのみ判定
   const tl=lk?null:turnLockHit(pi,"creatureEnter",r);
   const tlU=(lk||tl)?null:turnLockUnknown(pi,"creatureEnter",r);
   if(lk||tl){
@@ -7648,6 +7649,11 @@ function zoneCountSimple(zn,filt,pi){
 function lockFilterOk(filt,r,c,lockPi,face){
   // ロック対象条件：「／」区切り＝すべて満たすものだけを禁止（AND）。「X以外」で否定（例：光以外）
   if(!filt)return true;
+  // 🔀 ORグループ：「｜」または「または」区切り＝いずれかのグループを満たせば対象（例：ゴッド｜コスト4以下）
+  {const fs=String(filt);
+   if(fs.includes("｜")||fs.includes("または")){
+     return fs.split(/｜|または/).some(g=>{g=g.trim();return g&&lockFilterOk(g,r,c,lockPi,face);});
+   }}
   // 🔤 表記ゆれの正規化：全角数字→半角、「パワ−/パワｰ」（マイナス・半角長音）→「パワー」、＜＞＝→半角
   filt=String(filt)
     .replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0))
@@ -7660,6 +7666,9 @@ function lockFilterOk(filt,r,c,lockPi,face){
   const rCost=(face==="spell"&&isTwin&&r.cost2!=null&&!isNaN(+r.cost2))?+r.cost2
              :(r&&r.cost!=null&&!isNaN(+r.cost)?+r.cost:null);
   const one=tk=>{
+    // 🏷 「名前:X」＝カード名にXを含む（AND側で使える名前条件。例：ドラゴン／名前:ボルシャック＝ボルシャックと名の付くドラゴン）
+    const mNm=tk.match(/^名前[:：](.+)$/);
+    if(mNm)return String((c&&faceNameOf(c))||(c&&c.name)||(r&&r.name)||"").includes(mNm[1]);
     // 動的コスト：「コスト<=マナ:スノーフェアリー」＝ロック元(lockPi)のそのゾーンの対象枚数以下のコスト
     const mDyn=tk.match(/^コスト(<=|>=|以下|以上)?(マナ|墓地|手札|盾|シールド|バトル|山札)[：:](.*)$/)||tk.match(/^コスト<=(マナ|墓地|手札|盾|シールド|バトル|山札)[：:]?(.*)$/);
     if(mDyn&&lockPi!=null){
@@ -7689,7 +7698,7 @@ function lockFilterOk(filt,r,c,lockPi,face){
   filt=String(filt).replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0)).replace(/＞/g,">").replace(/＜/g,"<").replace(/＝/g,"=");
   // 種族・名前のトークンは「いずれか（OR）」、コスト/パワー/タイプ/文明/多色単色/「以外」は「すべて（AND）」。
   // 例：「ボルシャック／ルピア／コスト7以下」＝（名前にボルシャック または ルピア）かつ コスト7以下
-  const isCons=tk=>/^コスト/.test(tk)||/^パワー\d+(?:以下|以上)$/.test(tk)||tk==="多色"||tk==="単色"||tk==="クリーチャー"||tk==="呪文"||tk==="ツインパクト"||tk==="ブロッカー"||tk==="進化"||tk==="クロスギア"||tk==="サイキック"||tk==="S・トリガー"||tk==="Sトリガー"||tk==="ST"||!!civMap[tk]||/以外$/.test(tk);
+  const isCons=tk=>/^コスト/.test(tk)||/^パワー\d+(?:以下|以上)$/.test(tk)||/^名前[:：]/.test(tk)||tk==="多色"||tk==="単色"||tk==="クリーチャー"||tk==="呪文"||tk==="ツインパクト"||tk==="ブロッカー"||tk==="進化"||tk==="クロスギア"||tk==="サイキック"||tk==="S・トリガー"||tk==="Sトリガー"||tk==="ST"||!!civMap[tk]||/以外$/.test(tk);
   // 「・」区切りの許容：ユーザーが「光/水・コスト5以下」のように中黒で区切っても動くようにする。
   //   ただし「ボルシャック・ドギラゴン」等のカード名を壊さないため、分割後の全ピースが制約語（コスト/パワー/文明/多色単色/タイプ/以外）の時だけ分割する。
   const splitDot=piece=>{
@@ -7717,18 +7726,20 @@ function lockFilterOk(filt,r,c,lockPi,face){
   const nameOk=!names.length||names.some(tk=>one(tk));
   return consOk&&nameOk;
 }
-function stLockerOf(pi,key,filtKey,r,c){
+function stLockerOf(pi,key,filtKey,r,c,route){
   // pi=カードを使おうとしている側。相手のバトルゾーンにロック持ちがいればそのカードを返す
+  // route="enter"＝踏み倒し・侵略等の非召喚経路（「召喚のみ禁止」のロックは対象外）
   if(!S.expert||!S.vs)return null;
   const op2=pi===0?1:0;
+  const sumOnly=rb=>!!(key==="stLockCre"&&rb.stLockCreSum&&route==="enter");
   // ハイパーモード連動版のキー（例：stLockSpell→hmLockSpell）。そのカードがHM解放中(b.hyper)のときのみ有効
   const hmKey="hm"+key.slice(2);
   const hmFiltKey=filtKey?"hm"+filtKey.slice(2):filtKey;
   for(const b of zonesOf(op2).battle){
     const rb=getReg(b);
     if(!rb||isSealed(b)||isIgnored(b,op2))continue;
-    if(rb[key]&&lockFilterOk(rb[filtKey],r,c,op2))return b;
-    if(b.hyper&&rb[hmKey]&&lockFilterOk(rb[hmFiltKey],r,c))return b;
+    if(rb[key]&&!sumOnly(rb)&&lockFilterOk(rb[filtKey],r,c,op2))return b;
+    if(b.hyper&&rb[hmKey]&&!sumOnly(rb)&&lockFilterOk(rb[hmFiltKey],r,c))return b;
     // ✨ 条件付き常在「相手は呪文を唱えられない」（マキア型：条件式を満たす間のみ）
     if(key==="stLockSpell"&&rb.cstCond&&rb.cstFx==="noSpell"&&zoneCondOk(rb.cstCond,op2,b))return b;
   }
@@ -7736,7 +7747,7 @@ function stLockerOf(pi,key,filtKey,r,c){
   for(const b of zonesOf(pi).battle){
     const rb=getReg(b);
     if(!rb||isSealed(b)||isIgnored(b,pi))continue;
-    if(rb.stLockBoth&&rb[key]&&b.id!==(c&&c.id)&&lockFilterOk(rb[filtKey],r,c,pi))return b;
+    if(rb.stLockBoth&&rb[key]&&!sumOnly(rb)&&b.id!==(c&&c.id)&&lockFilterOk(rb[filtKey],r,c,pi))return b;
   }
   return null;
 }
@@ -11173,7 +11184,20 @@ function fxUiPolish(){
           "センノー":["召喚以外"],"メタクリーチャー":["召喚以外","ロック"],"シャコガイル":["山札が0"],
           "ヤドック":["置換ロック","マナ"],"マバユキ":["山札の下","置換"],"アルカディアス":["置換","墓地"],
           "5000vt":["ターン限定ロック"],"vt":["ターン限定ロック"],"ボルメテウス":["焼却"],
-          "マンハッタン":["ターン限定","何体"],"横差し":["4枚目","Q.Q.QX"],"qqqx":["Q.Q.QX","4枚目"]
+          "マンハッタン":["ターン限定","何体"],"横差し":["4枚目","Q.Q.QX"],"qqqx":["Q.Q.QX","4枚目"],
+          "攻撃中":["攻撃している時","攻撃時","攻撃する時"],"バトル中":["バトル中"],"アタック中":["攻撃している時"],
+          "1枚につき":["数だけ","枚数だけ"],"枚につき":["数だけ","枚数だけ"],"体につき":["数だけ","枚数だけ"],"数える":["数だけ","枚数だけ"],
+          "パンプ":["パワー"],"パンプアップ":["パワー"],"パワーアップ":["パワー"],"パワー修正":["パワー"],"打点":["ブレイク数","パワー"],
+          "wブレイカー":["ブレイク数"],"w・ブレイカー":["ブレイク数"],"tブレイカー":["ブレイク数"],"t・ブレイカー":["ブレイク数"],"ダブルブレイカー":["ブレイク数"],"トリプルブレイカー":["ブレイク数"],
+          "pa":["パワーアタッカー"],"パワーアタッカー":["パワーアタッカー"],
+          "墓地肥やし":["墓地へ","墓地に置く"],"デッキ破壊":["山札"],"ライブラリアウト":["山札が0"],"lo":["山札が0"],
+          "サルベージ":["墓地から","手札に"],"墓地回収":["墓地から","手札に"],
+          "盾追加":["シールド","加える"],"シールド追加":["シールド","加える"],"盾回収":["シールド","手札"],
+          "フリーズ":["アンタップしない","タップ"],"スパーク":["タップ"],"オールタップ":["タップ"],
+          "ブロッカー付与":["ブロッカー"],"sa付与":["スピードアタッカー"],
+          "オシオキムーン":["シールドが離れた"],"gs":["G・ストライク"],"exライフ":["EXライフ"],
+          "ドラゴン":["ドラゴン"],"マナ武装":["マナ武装"],"gr":["超GR","GR召喚"],"超天":["GR召喚"],
+          "多色":["多色"],"単色":["単色"],"タップイン":["タップして"],"cip踏み倒し":["出た時","出す"]
         };
         window.__applyFxFinder=()=>{const inp=document.getElementById("fxFinder");if(!inp)return;
           const toks=inp.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -11192,19 +11216,22 @@ function fxUiPolish(){
             if(cnt)cnt.textContent="";return;
           }
           let hit=0;
-          // ① ラベルを個別に絞り込み
+          // ① ラベルを個別に絞り込み（title属性の説明文も検索対象）
           labels.forEach(l=>{
             let txt=l.textContent||"";
+            if(l.title)txt+=" "+l.title;
             l.querySelectorAll("input[placeholder]").forEach(x=>{txt+=" "+x.placeholder;});
+            l.querySelectorAll("[title]").forEach(x=>{txt+=" "+x.title;});
             const ok=matchTxt(txt);
             l.style.display=ok?"":"none";
             if(ok)hit++;
           });
-          // ② 行の表示：配下ラベルが一致 or 行テキスト（span等の項目名含む）が一致なら表示
+          // ② 行の表示：配下ラベルが一致 or 行テキスト（span等の項目名・title説明含む）が一致なら表示
           rows.forEach(r=>{
             const ls=[...r.querySelectorAll("label")].filter(l=>!inFx(l));
             let rowTxt=r.textContent||"";
             r.querySelectorAll("input[placeholder]").forEach(x=>{rowTxt+=" "+x.placeholder;});
+            r.querySelectorAll("[title]").forEach(x=>{rowTxt+=" "+x.title;});
             const rowMatch=matchTxt(rowTxt);
             if(ls.length){
               r.style.display=(ls.some(l=>l.style.display!=="none")||rowMatch)?"":"none";
@@ -11624,6 +11651,7 @@ function renderFxEditor(){
   $("fxStLockSpell").checked=!!FXEDIT.stLockSpell;
   $("fxStLockSpellF").value=FXEDIT.stLockSpellF||"";
   $("fxStLockCre").checked=!!FXEDIT.stLockCre;
+  {const e=$("fxStLockCreSum");if(e)e.checked=!!FXEDIT.stLockCreSum;}
   {const e=$("fxStLockBoth");if(e)e.checked=!!FXEDIT.stLockBoth;}
   {const e=$("fxStLockPsy");if(e)e.checked=!!FXEDIT.stLockPsy;}
   $("fxStLockCreF").value=FXEDIT.stLockCreF||"";
@@ -11915,6 +11943,18 @@ function extractEffects(text,mode){
      fx.push({t:"tutorDMPS",n:+mCT[2]||1,cond:tgt});
      textFx=textFx.replace(mCT[0],"");
    }}
+  // 🎴 「山札の上からn枚を見る。その中から、名前に《X》とある〔種族〕を好きな数バトルゾーンに出す。残りをランダムな順番で山札の下に置く」（ボルシャック英雄譚型）
+  {const mTP=textFx.match(/(?:自分の)?山札の上から(\d+)枚を(?:見る|めくる)[。、,]?[\s\S]{0,10}?その中(?:から|にある)[、,]?([^■。]{0,40}?)を?好きな数(?:、?バトルゾーンに)?出(?:す|し)[\s\S]{0,24}?残りを(?:ランダムな順番|好きな順序?|好きな順番)で山札の下に置く/);
+   if(mTP){
+     const seg=String(mTP[2]||"");
+     const _names=[...seg.matchAll(/《([^》]+)》/g)].map(mm=>mm[1]);
+     const parts=[];
+     let rest=seg.replace(/名前に|《[^》]*》|とある|である/g,"").replace(/の$/,"").trim();
+     if(rest&&rest!=="カード"&&rest!=="クリーチャー")parts.push(rest);
+     for(const nm2 of _names)parts.push("名前:"+nm2); // AND条件：種族かつ名前（例：ドラゴン／名前:ボルシャック）
+     fx.push({t:"deckTopPlay",n:+mTP[1]||6,cond:parts.join("／")});
+     textFx=textFx.replace(mTP[0],"");
+   }}
   // 👀 「山札の上からn枚公開し、その中にある〔対象〕をすべて手札に加え、残りをランダムな順番で山札の下に置く」（ブローチ型）
   {const mRT=textFx.match(/山札の上から(\d+)枚を?公開し[\s\S]{0,16}?その中にある([^■。]{0,24}?)を?すべて手札に加え[\s\S]{0,16}?残りをランダムな順番で山札の下に置く/);
    if(mRT){
@@ -11922,6 +11962,16 @@ function extractEffects(text,mode){
      String(mRT[2]||"").split(/と|または|、|,|や/).forEach(p=>{p=p.trim().replace(/の$/,"");if(p&&p!=="カード")parts.push(p);});
      fx.push({t:"revealTakeAll",n:+mRT[1]||3,cond:parts.join("／")});
      textFx=textFx.replace(mRT[0],"");
+   }}
+  // 👀 語順・言い回し違い：「山札の上からn枚を表向きにする。その中から、名前に《X》とあるカードをすべて手札に加え、残りを好きな順序で山札の下に置く」（決闘者・チャージャー型）
+  {const mRT2=textFx.match(/(?:自分の)?山札の上から(\d+)枚を?(?:公開し|表向きにす[るろ])[。、,]?[\s\S]{0,16}?その中(?:から|にある)[、,]?([^■。]{0,40}?)を?すべて手札に加え[\s\S]{0,20}?残りを(?:ランダムな順番|好きな順序?|好きな順番)で山札の下に置く/);
+   if(mRT2){
+     const _names=[...String(mRT2[2]||"").matchAll(/《([^》]+)》/g)].map(mm=>mm[1]);
+     let cond="";
+     if(_names.length)cond=_names.join("／");
+     else{const parts=[];String(mRT2[2]||"").split(/または|、|,|や/).forEach(p=>{p=p.trim().replace(/名前に|とある|である/g,"").replace(/の$/,"");if(p&&p!=="カード")parts.push(p);});cond=parts.join("／");}
+     fx.push({t:"revealTakeAll",n:+mRT2[1]||3,cond});
+     textFx=textFx.replace(mRT2[0],"");
    }}
   // 👀 「山札の上からn枚を表向きにする。その中から〔対象〕をすべて手札に加え、それ以外を墓地に置く」（コアクアンのおつかい型）
   {const mRG=textFx.match(/(?:自分の)?山札の上から(\d+)枚を(?:公開し|表向きにす[るろ])[。、,]?[\s\S]{0,10}?その中(?:から|にある)([^■。]{0,30}?)を?すべて手札に加え[\s\S]{0,10}?(?:それ以外|残り)を墓地に置く/);
@@ -11982,8 +12032,8 @@ function extractEffects(text,mode){
     }
     // 🔮 手札から条件に合う呪文を1枚、コストを支払わず唱えてもよい（シャッフ型・S・トリガー不問）
     if(/手札/.test(cl)&&/呪文/.test(cl)&&/コストを支払わ(?:ず|ないで)/.test(cl)&&/唱え/.test(cl)&&!/山札|マナゾーン|墓地|シールド/.test(cl)){
-      // 文明（光/水等）＋コスト条件を条件欄へ。「光または水」→光/水
-      let civ="";const civM=cl.match(/((?:光|水|闇|火|自然|ゼロ)(?:(?:または|又は|や|・|／|\/)(?:光|水|闇|火|自然|ゼロ))*)の?コスト/);
+      // 文明（光/水等）＋コスト条件を条件欄へ。「光または水」→光/水（「〜の呪文」「〜のコスト」両語順に対応）
+      let civ="";const civM=cl.match(/((?:光|水|闇|火|自然|ゼロ)(?:(?:または|又は|や|・|／|\/)(?:光|水|闇|火|自然|ゼロ))*)の?(?:呪文|コスト)/);
       if(civM)civ=civM[1].replace(/または|又は|や/g,"/");
       const mCo=cl.match(/コスト(\d+)(以下|以上)/);
       const parts=[];if(civ)parts.push(civ);if(mCo)parts.push(`コスト${mCo[1]}${mCo[2]}`);
@@ -12230,6 +12280,15 @@ function parseCardText(txt,mode){
      if(mPP[1]==="バトル中")out.set.powPerBattle=true;
      else if(mPP[1])out.set.powPerAtk=true;
    }}
+  // 💥 語順違い：「〔攻撃中/バトル中〕、このクリーチャーのパワーを、〔自分/相手〕の〔ゾーン〕にある〔文明/種族〕のカード1枚につき+1000する」（決闘者・チャージャー面ボルシャック型）
+  {const mPP2=!out.set.powPer&&t.match(/(バトル中|攻撃中|攻撃時|攻撃する時)?[、,]?この(?:クリーチャー|カード)のパワーを[、,]?(?:(自分|相手)の)?(マナ|墓地|手札|バトルゾーン|シールド|山札)(?:ゾーン)?(?:にある|の)([光水闇火自然]|[ァ-ヶー・ｦ-ﾟ一-龠]{2,12})?(?:の)?(?:カード|クリーチャー)?(\d+)枚につき\s*\+?\s*(\d{3,5})/);
+   if(mPP2){out.set.powPer=+mPP2[6];
+     out.set.powPerZone={"マナ":"mana","墓地":"grave","手札":"hand","バトルゾーン":"battle","シールド":"shield","山札":"deck"}[mPP2[3]]||"grave";
+     out.set.powPerWho=mPP2[2]==="相手"?"opp":"self";
+     if(mPP2[4]&&!/ゾーン/.test(mPP2[4]))out.set.powPerFilt=mPP2[4].trim();
+     if(mPP2[1]==="バトル中")out.set.powPerBattle=true;
+     else if(mPP2[1])out.set.powPerAtk=true;
+   }}
   // 💪 条件付きパワー強化（「〔条件〕あれば、（この）クリーチャーのパワーを+N（する）」）。条件はcondExprFromで汎用的に。
   {const mCP=t.match(/([^。■\n]*?(?:あれば|いれば|なら))[、,]?[^。■\n]*?(?:この)?(?:クリーチャーの)?パワーを\s*\+?\s*(\d{3,5})/);
    if(mCP&&!/相手[^。■\n]{0,12}パワーを\s*\+/.test(t)){const cond=condExprFrom(mCP[1]);if(cond){out.set.cstPow=+mCP[2];out.set.cstPowCond=cond;out.notes.push({msg:`💪 条件付きパワー+${mCP[2]}（${cond}）を設定しました`,q:"条件付きパワー"});}}}
@@ -12262,7 +12321,7 @@ function parseCardText(txt,mode){
     else if(/スター進化/.test(t))out.set.ctype="starevo";
     else if(/G・?NEO進化/.test(t))out.set.ctype="gneo";
     else if(/ルナティック進化/.test(t))out.set.ctype="lunatic";
-    else if(/進化クリーチャー/.test(t)&&/進化[：:]/.test(t))out.set.ctype="evo";
+    else if(/進化クリーチャー/.test(t)&&/進化[：:‐\-－―]/.test(t))out.set.ctype="evo";
     else if(!out.set.ctype&&/カードタイプ[\s　]*NEOクリーチャー/.test(t))out.set.ctype="neoevo";
     else if(!out.set.ctype&&!isTwinType&&(/カードタイプ[\s　]*クリーチャー/.test(t)||/タイプ[^\n]*\n[^\n]*?クリーチャー/.test(t)||/(?:^|[\s）)])クリーチャー[：:]/.test(t)))out.set.ctype="creature";
     // 表形式「種族 タイプ 〔種族〕 〔タイプ〕 文明」：改行が潰れても、文明ラベルの直前の語をタイプとして読む
@@ -12371,10 +12430,16 @@ function parseCardText(txt,mode){
     if(m){out.set.cost=+m[1];}
   }
   // タイプ（表形式）：D2フィールド／クロスギア／タマシード等
-  if(/D2フィールド/.test(t))out.set.ctype="d2";
-  else if(/(?:カードタイプ|タイプ)[^■●]{0,24}?進化クロスギア/.test(t)||/[■●]\s*進化\s*[:：]\s*クロスギア/.test(t))out.set.ctype="evocrossgear";
-  else if(/(?:カードタイプ|タイプ)[^■●]{0,24}?クロスギア/.test(t)||/[■●]\s*クロス\s*[0-9０-９①-⑩（(〔［]/.test(t))out.set.ctype="crossgear";
-  else if(/タマシード/.test(t))out.set.ctype="tamaseed";
+  // 🏷 公式サイト形式「カードの種類（改行）進化クリーチャー」ラベルからの検出（最優先）
+  {const mKT=t.match(/カードの種類[\s　]*\n?[\s　]*(進化サイキック・?クリーチャー|サイキック・?クリーチャー|進化クリーチャー|NEOクリーチャー|クリーチャー|呪文|進化クロスギア|クロスギア|D2フィールド|フィールド|タマシード|城)/);
+   if(mKT&&!out.set.ctype){
+     const kt=mKT[1].replace(/・/g,"");
+     out.set.ctype=kt==="進化サイキッククリーチャー"?"psyevo":kt==="サイキッククリーチャー"?"psychic":kt==="進化クリーチャー"?"evo":kt==="NEOクリーチャー"?"neoevo":kt==="クリーチャー"?"creature":kt==="呪文"?"spell":kt==="進化クロスギア"?"evocrossgear":kt==="クロスギア"?"crossgear":kt==="D2フィールド"?"d2":kt==="タマシード"?"tamaseed":kt==="城"?"castle":kt==="フィールド"?"d2":out.set.ctype;
+   }}
+  if(/D2フィールド/.test(t))out.set.ctype=out.set.ctype||"d2";
+  else if(!out.set.ctype&&(/(?:カードタイプ|タイプ)[^■●]{0,24}?進化クロスギア/.test(t)||/[■●]\s*進化\s*[:：]\s*クロスギア/.test(t)))out.set.ctype="evocrossgear";
+  else if(!out.set.ctype&&(/(?:カードタイプ|タイプ)[^■●]{0,24}?クロスギア/.test(t)||/[■●]\s*クロス\s*[0-9０-９①-⑩（(〔［]/.test(t)))out.set.ctype="crossgear";
+  else if(!out.set.ctype&&/タマシード/.test(t))out.set.ctype="tamaseed";
   // 文明（本文中の「文明」ラベル付近＋単独の文明語を検出）
   {
     const civMap2=[["光","light"],["水","water"],["闇","dark"],["火","fire"],["自然","nature"],["ゼロ","zero"],["無色","zero"]];
@@ -12386,11 +12451,22 @@ function parseCardText(txt,mode){
   }
   // 種族（表形式「種族 タイプ <種族> クリーチャー…」/ インライン両対応。連結種族を辞書で分割）
   {
+    // 🏷 公式サイト形式「種族（改行）アーマード・ドラゴン/エンジェル・コマンド/ハンター」（次行が値・最優先）
+    if(!out.set.races){
+      const mRL=t.match(/(?:^|\n)種族[\s　\t]*\n[\s　\t]*([^\n]+)/);
+      if(mRL){
+        const rv=mRL[1].replace(/[\s　\t]+$/,"").trim();
+        if(rv&&rv!=="-"&&rv!=="−"&&rv!=="なし"&&rv.length<=48&&!/イラストレーター|レアリティ|文明|コスト|パワー/.test(rv)){
+          const races=/[／\/]/.test(rv)?rv.split(/[／\/]/).map(s=>s.trim()).filter(Boolean):[rv];
+          if(races.length)out.set.races=races.slice(0,5).concat(["","","","",""]).slice(0,5);
+        }
+      }
+    }
     let rseg=null;
     // 種族ラベル以降を、次の停止語（コスト/パワー/カードタイプ/各カードタイプ語/■/【/文末）の手前まで取得。
     // 新表記（種族の後がコストや本文■）でも取れるようテンパード方式で判定。
-    const STOP="コスト|パワー|カードタイプ|クリーチャー|呪文|進化|NEO|フィールド|クロスギア|タマシード|サイキック|D2|オレガオーラ|■|【|$";
-    let mR=t.match(new RegExp("種族(?:\\s*タイプ)?[\\s　]*((?:(?!"+STOP+")[ァ-ヶ一-龠ーヴ\u30fc・／\\/A-Za-z0-9'’\\-－‐ｰ])+?)\\s*(?="+STOP+")"));
+    const STOP="コスト|パワー|カードタイプ|クリーチャー|呪文|進化|NEO|フィールド|クロスギア|タマシード|サイキック|D2|オレガオーラ|イラストレーター|レアリティ|特殊能力|文明|マナ|■|【|$";
+    let mR=!out.set.races&&t.match(new RegExp("種族(?:\\s*タイプ)?[\\s　]*((?:(?!"+STOP+")[ァ-ヶ一-龠ーヴ\u30fc・／\\/A-Za-z0-9'’\\-－‐ｰ])+?)\\s*(?="+STOP+")"));
     if(mR)rseg=mR[1];
     if(rseg){
       rseg=rseg.replace(/[-−―\s　]/g,"").trim();
@@ -12470,6 +12546,19 @@ function parseCardText(txt,mode){
     if(cond){out.set.altCond=cond;out.notes.push(`💡 代替コストの条件式「${cond}」を自動設定（支払い数は代替コスト欄で指定）`);}
   }
   // ── 本文中の「[ゾーン]に〜がN枚以上/以下」条件を候補として通知（該当効果の条件欄に貼れる）──
+  // 💰 「〔墓地に名前《X》…がN枚以上〕あれば、召喚コストをn少なくする」（クロス・NEX型）→ 代替コスト（コスト−n）＋条件式を自動設定
+  {const mSR=t.match(/([^■。]{4,60}?)(?:あれば|なら)[、,]?(?:このクリーチャーの)?召喚コストを(\d+)少なく/);
+   if(mSR&&out.set.altCost==null){
+     const cond=condExprFrom(mSR[1]);
+     if(cond&&out.set.cost!=null){
+       out.set.altCost=Math.max(0,(+out.set.cost)-(+mSR[2]));
+       out.set.altCond=cond;
+       out.notes.push({msg:`💰 条件付きコスト軽減：条件「${cond}」達成時に代替コスト[${out.set.altCost}]で召喚できるよう設定しました（召喚時に通常／代替を選択）`,q:"代替コスト"});
+     }else if(cond){
+       out.set.altCond=cond;
+       out.notes.push({msg:`💰 条件付きコスト軽減：条件式「${cond}」を代替コスト欄に設定しました。コスト登録後、支払[n]欄に「コスト−${mSR[2]}」の値を入力してください`,q:"代替コスト"});
+     }
+   }}
   {
     const seen=new Set();
     const re=/(?:バトルゾーン|マナゾーン|墓地|シールド|手札|山札)[^。■]*?[ァ-ヶ一-龠ーヴ\u30fc・A-Za-z0-9]{2,20}?が[^。■]*?\d+\s*(?:枚|体|つ|個)?(?:以上|以下)/g;
@@ -12657,6 +12746,8 @@ function parseCardText(txt,mode){
     const mm=tSelf.match(/[\[［]\s*(水\/闇|闇\/水|水闇|水|闇)\s*[（(]/);
     if(mm)out.set.mugenCiv=(mm[1].includes("水")&&mm[1].includes("闇"))?"wd":(mm[1]==="水"?"w":"d");
   }
+  // ⚡ チャージャー（この呪文を唱えた後、墓地のかわりにマナゾーンに置く）
+  if(/チャージャー\s*[（(]この呪文を唱えた後|墓地の?かわりにマナゾーンに置く/.test(t))out.set.charger=true;
   // マッドネス（「相手のターン中」を含む＝バイケン型／それ以外＝永遠龍型として登録）
   if(/マッドネス/.test(tSelf))out.set.madness=/相手のターン/.test(t)?"baiken":"eternal";
   else if(/相手の(?:カードの)?効果[^。■]*?手札から捨てられる時[^。■]*?バトルゾーンに出す/.test(t))out.set.madness="eternal";
@@ -12768,8 +12859,18 @@ function parseCardText(txt,mode){
     }
   }
   if(/相手は(?:クリーチャーを)?(?:バトルゾーンに)?クリーチャーを出せない/.test(t))out.set.stLockCre=true;
+  // 🚫 「相手は〔ゴッドまたはコスト4以下のクリーチャー〕を召喚できない」（クロス・NEX型）→ 召喚のみ禁止＋「または」はORグループ（｜）に変換
+  {const mSL=!out.set.stLockCre&&t.match(/相手は([^■。]{1,40}?)を召喚できない/);
+   if(mSL){
+     let f=mSL[1].replace(/のクリーチャー$/,"").replace(/クリーチャー$/,"").trim();
+     f=f.replace(/または|又は/g,"｜");
+     out.set.stLockCre=true;
+     out.set.stLockCreSum=true; // 「召喚できない」＝踏み倒しは可
+     if(f&&f!=="｜")out.set.stLockCreF=f;
+     out.notes.push({msg:`🚫 常在「相手は${f||"クリーチャー"}を召喚できない（踏み倒しは可）」を設定しました`,q:"召喚ロック"});
+   }}
   // 🚫 「パワーN以下／コストN以下のクリーチャーを召喚できず（できない）」（5000GT型）→ stLockCre＋対象条件
-  {const mPL=t.match(/(パワー\d+以下|コスト\d+以下)の(?:クリーチャーを)?(?:召喚|出す)(?:こと)?(?:でき(?:ず|ない)|できません)/);
+  {const mPL=!out.set.stLockCre&&t.match(/(パワー\d+以下|コスト\d+以下)の(?:クリーチャーを)?(?:召喚|出す)(?:こと)?(?:でき(?:ず|ない)|できません)/);
    if(mPL){out.set.stLockCre=true;if(!out.set.stLockCreF)out.set.stLockCreF=mPL[1];}}
   // 🌌 サイキック・クリーチャーを出せない（5000GT型）
   if(/サイキック(?:・クリーチャー)?を(?:バトルゾーンに)?出(?:す|せない)ことができない|サイキック(?:・クリーチャー)?を出せない/.test(t))out.set.stLockPsy=true;
@@ -13305,6 +13406,7 @@ function openFxEditor(key){
     stCrePTevo:cur?!!cur.stCrePTevo:false,
     stLockSpellF:cur&&cur.stLockSpellF||"",
     stLockCre:cur?!!cur.stLockCre:false,
+    stLockCreSum:cur?!!cur.stLockCreSum:false,
     stLockBoth:cur?!!cur.stLockBoth:false,
     stLockPsy:cur?!!cur.stLockPsy:false,
     stLockCreF:cur&&cur.stLockCreF||"",
@@ -13639,6 +13741,7 @@ $("fxSave").addEventListener("click",async ()=>{
     stCrePTevo:$("fxStCrePTevo").checked,
     stLockSpellF:$("fxStLockSpellF").value.trim(),
     stLockCre:$("fxStLockCre").checked,
+    stLockCreSum:$("fxStLockCreSum")?$("fxStLockCreSum").checked:false,
     stLockBoth:$("fxStLockBoth")?$("fxStLockBoth").checked:false,
     stLockPsy:$("fxStLockPsy")?$("fxStLockPsy").checked:false,
     stLockCreF:$("fxStLockCreF").value.trim(),
@@ -14923,7 +15026,7 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
       }
       const cap=perTurnCapHit(pTo,"creature");
       if(cap){sfx("flip");toast(`⛔ ${faceNameOf(cap.by)}：${S.players[pTo].label}はこのターン、${cap.kind==="play"?`クリーチャーと呪文を合計${cap.limit}回まで`:`クリーチャーを${cap.limit}体まで`}しか実行できない（既に${cap.used}${cap.kind==="play"?"回":"体"}）`);MOVE_BLOCKED=true;return;}
-      const lk=stLockerOf(pTo,"stLockCre","stLockCreF",rQ,f.card);
+      const lk=stLockerOf(pTo,"stLockCre","stLockCreF",rQ,f.card,"enter");
       const tl=lk?null:turnLockHit(pTo,"creature",rQ);
       const tlU=(lk||tl)?null:turnLockUnknown(pTo,"creature",rQ);
       if(lk||tl){
