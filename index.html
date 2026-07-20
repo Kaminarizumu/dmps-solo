@@ -4636,6 +4636,8 @@ const FX_TYPES=[
   ["flip","この多面カードを裏返す（次の面へ・チャクラ/ディアスZ型・確認あり）"],
   ["handShieldUp","手札から1枚選んで表向きにシールド化（サッヴァーク型・任意/新規盾or重ねるを選択）"],
   ["deckShield","🛡 自分の山札の上からn枚を裏向きでシールドゾーンに加える（シールド追加・シールド化）"],
+  ["deckShieldFill","🛡 自分の山札の上からn枚をシールド化。ただしシールド上限（10枚）を超える分は加えず山札に残す（墓地に落とさない・ミルザム型）"],
+  ["shieldRandToHand","🛡→✋ 自分のランダムなシールドをn枚、手札に加える（加えたカードのS・トリガーは使えない・ミルザム型）"],
   ["freeSummon","コストを支払わずにクリーチャーを召喚（実行時に元ゾーンとカードを選択・踏み倒し）"],
   ["deckRecruit","🔎 山札から条件に合うカードをn体バトルゾーンへ（超探索踏み倒し・5種提示・条件欄で対象を指定・ボルシャック・NEX型）→山札シャッフル"],
   ["deckTopRecruitMana","🃏 山札の上からn枚を表向きにし、その中の条件に合うクリーチャーを好きな数バトルゾーンへ・残りをマナゾーンへ（条件欄で対象を指定・ボルシャック究極進化型）"],
@@ -7447,8 +7449,35 @@ async function runFxList(pi,list,srcCard,inPump){
       if(add>0){sfx("move");renderAll();toast(`🛡 山札の上${add}枚をシールドゾーンに加えた`);}
       else if(!toGrave)toast("山札がありません");
       else renderAll();
+    }else if(f.t==="deckShieldFill"){
+      // 🛡 山札の上からn枚をシールド化。上限(10)を超える分は加えずに山札の上へ残す（墓地に落とさない・ミルザム型）
+      let add=0,left=0;
+      for(let i=0;i<n&&Z.deck.length;i++){
+        if(!shieldCapOk(Z)){left++;break;} // 上限到達：以降は山札に残す（先頭のまま）
+        const cc=Z.deck.shift();cc.tapped=false;cc.sideways=false;
+        cc.faceup=false;if(S.turn>0)cc.mark=true;
+        Z.shield.push(cc);add++;
+      }
+      if(add>0){sfx("move");toast(`🛡 山札の上${add}枚をシールド化${left?`（上限10枚に達したため残りは山札に残した）`:""}`);}
+      else toast(left?`🛡 シールドは既に上限（10枚）のため、シールド化しませんでした`:"山札がありません");
+      renderAll();
+    }else if(f.t==="shieldRandToHand"){
+      // 🛡→✋ 自分のランダムなシールドをn枚、手札に加える（そのS・トリガーは使えない）
+      let got=0,names=[];
+      for(let i=0;i<n&&Z.shield.length;i++){
+        const idx=Math.floor(Math.random()*Z.shield.length);
+        const sc=Z.shield.splice(idx,1)[0];
+        const stack=[sc,...(sc.under?sc.under.splice(0):[])];
+        stack.forEach(x=>{
+          x.faceup=true;x.tapped=false;x.sideways=false;x.mark=false;x._noStThisHand=true; // ST不可マーク（手札から使う時のトリガー扱いを禁止）
+          if(typeof toHand==="function"){toHand(Z,x);}else Z.hand.push(x);
+        });
+        got++;names.push(faceNameOf(sc));
+      }
+      if(got>0){sfx("draw");toast(`🛡→✋ ランダムなシールド${got}枚を手札に加えた（S・トリガーは使えない）：${names.join("、")}`);}
+      else toast("シールドがありません");
+      renderAll();
     }else if(f.t==="flip"){
-      const tgtC=srcCard||null;
       if(!tgtC){toast("裏返す対象がありません");continue;}
       const lk=LINKS.get(normName(tgtC.name));
       if(!lk||lk.length<2){toast(`${faceNameOf(tgtC)}：多面登録（変形リンク）がないため裏返せません`);continue;}
@@ -8992,7 +9021,7 @@ function shieldStGrantOk(op,card){
 function processBroken(op,stack,label){
   return new Promise(res=>{
     const Z=zonesOf(op);
-    let remaining=stack.slice(), sel=null, wentGrave=false;
+    let remaining=stack.slice(), sel=new Set(), wentGrave=false;
     const stDefer=[]; // ⚡ S・トリガーの効果処理はパネルを閉じた後に、選んだ順で1枚ずつ実行（配置と順番だけパネルで決める）
     const finish=()=>{
       $("breakOlay").classList.remove("open");renderAll();
@@ -9076,14 +9105,24 @@ function processBroken(op,stack,label){
         c.faceup=true;const kept=toHand(Z,c);sfx(kept?"move":"grave");
         logOnly(`${S.players[op].label}：ブレイクされた《${faceNameOf(c)}》を${kept?"手札へ":"手札上限(10枚)のため墓地へ"}`);
       }else{c.faceup=true;Z[zone].push(c);markArrive(c);sfx("move");logOnly(`${S.players[op].label}：ブレイクされた《${faceNameOf(c)}》を${ZLOG[zone]||zone}へ`);}
-      sel=null;renderAll();render();
+      renderAll();
+    };
+    // 🔁 選択中の複数カードを同じ行き先へ順に処理（ロック等で行けなかったカードは選択に残す）
+    const putMany=(zone)=>{
+      const ids=[...sel];
+      sel=new Set();
+      for(const id of ids){
+        const c=remaining.find(x=>x.id===id);
+        if(c)put(c,zone);
+      }
+      render();
     };
     logOnly(label);
     const render=()=>{
       if(!remaining.length){finish();return;}
       $("breakOlay").classList.add("open");
       $("bkTitle").textContent=label;
-      $("bkHint").textContent="カードをタップ→行き先を選択。S・トリガーは「解決中へ」または「バトルへ」。S・バック/サバキZのコストにする場合は「墓地へ」を選び、手札のカードを手動で踏み倒してください（サバキZは同時ブレイク分も捨て札にできます）。";
+      $("bkHint").textContent="カードをタップで複数選択できます（もう一度タップで解除）。行き先ボタンで選んだ全カードをまとめて処理。S・トリガーで唱える/出すカードだけは1枚ずつ選んでください。";
       const g=$("bkGrid");g.innerHTML="";
       remaining.forEach(c=>{
         const r2=getReg(c);
@@ -9146,21 +9185,27 @@ function processBroken(op,stack,label){
           el.querySelector(".thumb").style.position="relative";
           el.querySelector(".thumb").appendChild(badge);
         }
-        if(sel===c.id)el.classList.add("picked");
-        el.addEventListener("click",()=>{sel=(sel===c.id)?null:c.id;render();});
+        if(sel.has(c.id))el.classList.add("picked");
+        el.addEventListener("click",()=>{if(sel.has(c.id))sel.delete(c.id);else sel.add(c.id);render();});
         g.appendChild(el);
       });
       const bar=$("bkActions");bar.innerHTML="";
-      if(sel!=null){
+      if(sel.size>0){
         bar.style.display="";
-        const c=remaining.find(x=>x.id===sel);
+        const selCards=remaining.filter(x=>sel.has(x.id));
+        const multi=selCards.length>1;
+        // 選択枚数の見出し
+        const head=document.createElement("div");
+        head.style.cssText="font-size:11px;font-weight:900;color:var(--accent);flex-basis:100%";
+        head.textContent=multi?`🛡 ${selCards.length}枚を選択中 → 行き先を選ぶと全部まとめて処理します`:`《${faceNameOf(selCards[0])}》の行き先`;
+        bar.appendChild(head);
         const mk=(lb,zone,cls)=>{
           const b=document.createElement("button");
           b.className="btn small "+(cls||"");b.textContent=lb;
-          b.addEventListener("click",()=>put(c,zone));
+          b.addEventListener("click",()=>putMany(zone));
           bar.appendChild(b);
         };
-        mk("手札に加える","hand","primary");
+        mk(multi?`${selCards.length}枚まとめて手札に加える`:"手札に加える","hand","primary");
         // 🚫 ST封じ常在（カース・トーテム/ギガ・ボルバ型）：盾の持ち主から見て相手の場にあればST使用不可
         const stSealBy=(S.expert&&S.vs)?zonesOf(op===0?1:0).battle.find(x=>{const rx=getReg(x);return rx&&rx.stNoST&&!isSealed(x);}):null;
         if(stSealBy){
@@ -9169,11 +9214,25 @@ function processBroken(op,stack,label){
           warn.textContent=`🚫 ${faceNameOf(stSealBy)}：S・トリガーは使えない！（G・ストライク/ニンジャは可）`;
           bar.appendChild(warn);
         }else{
-          mk("S・トリガー：解決中へ","resolve");
-          mk("S・トリガー：バトルへ","battle");
+          // S・トリガーは1枚ずつ（唱える面や順番を決めるため）。複数選択時は注意書きを出す
+          if(multi){
+            const note=document.createElement("div");
+            note.style.cssText="font-size:11px;color:var(--muted);flex-basis:100%";
+            note.textContent="※ S・トリガーで唱える/出すカードは1枚ずつ選んでください（複数まとめては不可）";
+            bar.appendChild(note);
+          }else{
+            mk("S・トリガー：解決中へ","resolve");
+            mk("S・トリガー：バトルへ","battle");
+          }
         }
-        mk("墓地へ（S・バック/サバキZコスト）","grave","warn");
-        mk("マナへ","mana");
+        mk(multi?`${selCards.length}枚まとめて墓地へ`:"墓地へ（S・バック/サバキZコスト）","grave","warn");
+        mk(multi?`${selCards.length}枚まとめてマナへ`:"マナへ","mana");
+        // まとめて処理の補助：全選択/解除
+        const selAll=document.createElement("button");
+        selAll.className="btn small ghost";
+        selAll.textContent=sel.size===remaining.length?"選択をすべて解除":"残りをすべて選択";
+        selAll.addEventListener("click",()=>{if(sel.size===remaining.length)sel=new Set();else sel=new Set(remaining.map(x=>x.id));render();});
+        bar.appendChild(selAll);
       }else bar.style.display="none";
     };
     $("bkDone").onclick=()=>{
@@ -10759,7 +10818,7 @@ function fxRowEl(faceIdx,i){
   cnd.value=f.cond||"";
   cnd.onchange=()=>{f.cond=cnd.value.trim();};
   // 🛡 盾追加系の「自分のシールドが○枚以下のときだけ発動」ゲート欄（空欄/0＝無条件）
-  const SHIELD_ADD_TYPES=new Set(["deckShield","handShield","foeToShield","foeAllShield","foeHandShieldRand","shieldMakeRand"]);
+  const SHIELD_ADD_TYPES=new Set(["deckShield","deckShieldFill","handShield","foeToShield","foeAllShield","foeHandShieldRand","shieldMakeRand"]);
   const shb=document.createElement("input");
   shb.type="number";shb.min="0";shb.placeholder="盾≤";
   shb.title="自分のシールドが この枚数以下のときだけ発動する（空欄/0＝無条件）。デュエプレの「シールドが○枚以下なら」型。";
@@ -11955,7 +12014,16 @@ function extractEffects(text,mode){
      fx.push({t:"deckTopPlay",n:+mTP[1]||6,cond:parts.join("／")});
      textFx=textFx.replace(mTP[0],"");
    }}
-  // 👀 「山札の上からn枚公開し、その中にある〔対象〕をすべて手札に加え、残りをランダムな順番で山札の下に置く」（ブローチ型）
+  // 🛡 「山札の上からn枚をシールド化する。（シールドゾーンの上限を超えるなら、上限に達するまでシールド化する）」（ミルザム型）
+  {const mSF=textFx.match(/(?:自分の)?山札の上から(\d+)枚を?シールド化(?:する)?[。、,]?\s*[（(][^）)]*上限[^）)]*[）)]/);
+   if(mSF){fx.push({t:"deckShieldFill",n:+mSF[1]||1});textFx=textFx.replace(mSF[0],"");}}
+  // 🛡→✋ 「自分のランダムなシールドをn(つ/枚)手札に加える。ただし、その「S・トリガー」は使えない」（ミルザム型）
+  //    ※「離れた時」に紐づく場合は parseCardText 側の watchFx 検出で拾う。ここは出た時などCIP本文に含まれる場合のみ。
+  {const mRSH=textFx.match(/自分のランダムなシールドを(\d+)(?:つ|枚)手札に加える。?(?:ただし[、,]?その[「『]?S・?トリガー[」』]?は使えない。?)?/);
+   if(mRSH){
+     fx.push({t:"shieldRandToHand",n:+mRSH[1]||1});
+     textFx=textFx.replace(mRSH[0],"");
+   }}
   {const mRT=textFx.match(/山札の上から(\d+)枚を?公開し[\s\S]{0,16}?その中にある([^■。]{0,24}?)を?すべて手札に加え[\s\S]{0,16}?残りをランダムな順番で山札の下に置く/);
    if(mRT){
      const parts=[];
@@ -12583,6 +12651,8 @@ function parseCardText(txt,mode){
     [/S・?バック/,"sback"],[/スーパー・?S・?トリガー/,"sst"],[/エターナル・?[ΩΏω]|エターナル・?オメガ/,"etOmega"],
   ];
   for(const [re,k] of KW)if(re.test(tSelf))out.set[k]=true;
+  // 🚫 「S・トリガーは使えない」（ミルザム等・回収したカードのST禁止）は自身のS・トリガーではないので誤検出を打ち消す
+  if(out.set.st&&/S・?トリガー[」』]?は?使えない/.test(tSelf)&&!/[■●]\s*S・?トリガー(?![はを])/.test(tSelf)&&!/S・?トリガー」?を与える/.test(tSelf))delete out.set.st;
   // P革命チェンジ検出時は通常革命チェンジフラグを外す（超次元からの誘発と混同しないため）
   if(out.set.pKakumei)delete out.set.kakumei;
   // 「相手プレイヤーを攻撃できない」は cantAtkP のみ（全攻撃不可の cantAtk は外す）
@@ -12946,6 +13016,15 @@ function parseCardText(txt,mode){
   //    検出した文は出た時効果の抽出から除外して二重登録を防ぐ
   {
     const wf=[];
+    // 🛡→✋ 「（バトルゾーンを）離れた時、自分のランダムなシールドをn(つ/枚)手札に加える。ただし、そのS・トリガーは使えない」（ミルザム型）
+    {
+      const mML=tForFx.match(/(?:バトルゾーンを)?離れた時[、,]?[\s\S]{0,10}?自分のランダムなシールドを(\d+)(?:つ|枚)手札に加える/);
+      if(mML){
+        wf.push({ev:"selfLeave",t:"shieldRandToHand",n:+mML[1]||1});
+        tForFx=tForFx.replace(mML[0],"■");
+        out.notes.push({msg:`⚡「バトルゾーンを離れた時、自分のランダムなシールド${mML[1]}枚を手札に加える（S・トリガーは使えない）」を誘発として登録しました`,q:"誘発"});
+      }
+    }
     // 対象語の正規化：「ドラゴンまたは名前に《ルピア》とある」→「ドラゴン／ルピア」
     const normTgt=s=>{
       s=String(s||"").trim();if(!s)return "";
@@ -21866,6 +21945,45 @@ async function exportCardPack(keys){
   toast(`📤 カードパック書き出し完了（${all.size}枚）。別の端末の「📥 読み込み」で取り込めます`);
 }
 const blobToDataURL=b=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b);});
+/* 📤 単一デッキを、使用カードの効果登録・多面リンク・カード名・画像ごと1ファイルに書き出す（他の人に渡す用） */
+async function exportDeckShare(deckName,withImg){
+  const d=await getDeck(deckName);
+  if(!d){toast("デッキが見つかりません");return;}
+  const base=deckName.includes("/")?deckName.slice(deckName.indexOf("/")+1):deckName;
+  // このデッキに含まれる全カード名 → キー集合（多面リンクの全面も含める）
+  const keys=new Set();
+  const addName=nm=>{
+    const k=normName(nm);
+    keys.add(k);
+    const l=LINKS.get(k);
+    if(l)for(const f of l)keys.add(f);
+  };
+  for(const sec of [d.main,d.gr,d.hy,d.sp,d.ex]){for(const e of (sec||[]))addName(e.name);}
+  const data={v:5,type:"deck",exported:new Date().toISOString(),deckName:base,deck:d,cardFx:{},faceLinks:{},nameMap:{},images:{}};
+  toast(`📤 「${base}」を書き出し中…（${keys.size}種）`);
+  for(const k of keys){
+    if(FXDB.has(k))data.cardFx[k]=FXDB.get(k);
+    if(LINKS.has(k))data.faceLinks[k]=LINKS.get(k);
+    if(dispName.has(k))data.nameMap[k]=dispName.get(k);
+    if(withImg){
+      const b=db?await idbGet("images",k):memImages.get(k);
+      if(b)data.images[k]=await blobToDataURL(b);
+    }
+  }
+  // 表紙画像のキーも（デッキ内カードでなくても）含める
+  if(withImg&&d.cover&&!data.images[d.cover]){
+    const b=db?await idbGet("images",d.cover):memImages.get(d.cover);
+    if(b)data.images[d.cover]=await blobToDataURL(b);
+  }
+  const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`dmrv-deck-${base.replace(/[\\/:*?"<>|]/g,"_")}-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  const imgN=Object.keys(data.images).length;
+  toast(`📤 「${base}」を書き出しました（カード${keys.size}種${imgN?`・画像${imgN}枚`:"・画像なし"}）。相手は「📥 読み込み」で取り込めます`);
+}
 $("btnExport").addEventListener("click",async ()=>{
   const withImg=await ask("カード画像もファイルに含めますか？\nOK＝含める（ファイル大）／キャンセル＝設定のみ（軽量）");
   const data={
@@ -21897,6 +22015,36 @@ $("importInput").addEventListener("change",async e=>{
   if(!f)return;
   try{
     const data=JSON.parse(await f.text());
+    if(data&&data.type==="deck"&&data.deck){
+      const imgN=Object.keys(data.images||{}).length;
+      let nm=data.deckName||"共有デッキ";
+      // 名前衝突時は別名で保存するか確認
+      const existing=await deckNames();
+      if(existing.includes(nm)){
+        const j=await askChoice(`デッキ「${nm}」は既にあります。どうしますか？`,[`別名で追加（${nm} (共有)）`,"上書きする","やめる"]);
+        if(j===null||j===2)return;
+        if(j===0)nm=`${nm} (共有)`;
+      }
+      if(!await ask(`共有デッキ「${nm}」を読み込みます（カード効果${Object.keys(data.cardFx||{}).length}種${imgN?`・画像${imgN}枚`:"・画像なし"}）。\n既存のカード登録に追加・上書きされます（他のデッキやカードは消えません）。よろしいですか？`))return;
+      // カード効果・多面リンク・カード名をマージ（既存は上書き）
+      if(data.cardFx){for(const [k,v] of Object.entries(data.cardFx))FXDB.set(k,v);await persistFx();}
+      if(data.faceLinks){for(const [k,v] of Object.entries(data.faceLinks))LINKS.set(k,v);await persistLinks();}
+      if(data.nameMap){for(const [k,v] of Object.entries(data.nameMap))dispName.set(k,v);await persistNames();}
+      if(imgN){
+        toast("画像を復元中…");
+        for(const [k,durl] of Object.entries(data.images)){
+          const b=await (await fetch(durl)).blob();
+          if(db)await idbPut("images",k,b);else memImages.set(k,b);
+        }
+      }
+      const dk=data.deck;
+      await saveDeck(nm,dk.main||[],dk.gr||[],dk.hy||[],dk.sp||[],dk.ex||[],dk.cover);
+      await loadAllImages();
+      await refreshDeckSelects();
+      renderAll();sfx("ok");
+      toast(`📥 共有デッキ「${nm}」を読み込みました。デッキ一覧から使えます`);
+      return;
+    }
     if(data&&data.type==="cards"){
       const n=Object.keys(data.images||{}).length;
       if(!await ask(`カードパック（画像${n}枚）を読み込みます。\n既存データに追加され、同名カードは上書きされます。よろしいですか？`))return;
@@ -22098,6 +22246,12 @@ async function renderDeckList(){
       await refreshDeckSelects();
       toast(`複製しました：${nn}`);
       renderDeckList();
+    },"",true));
+    row.appendChild(actBtn("📤 渡す",async ()=>{
+      const j=await askChoice(`「${dispN}」を1ファイルに書き出して他の人に渡します。\nカード画像も含めますか？`,
+        ["画像も含める（そのまま遊べる・ファイル大）","効果登録のみ（軽量・相手は画像を各自用意）","やめる"]);
+      if(j===null||j===2)return;
+      await exportDeckShare(n,j===0);
     },"",true));
     row.appendChild(actBtn("削除",async ()=>{
       if(!await ask(`デッキ「${n}」を削除しますか？`))return;
