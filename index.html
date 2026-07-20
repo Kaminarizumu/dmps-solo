@@ -923,7 +923,7 @@ body.shake{animation:bodyShake .4s ease-out}
   </div>
 </div>
 
-<div class="olay" id="viewerOlay">
+<div class="olay" id="viewerOlay" style="z-index:300">
   <div class="panelbox" id="viewerBox">
     <div class="row" style="margin:0 0 4px 0;justify-content:space-between;align-items:center">
       <h2 id="vTitle" style="margin:0">-</h2>
@@ -3501,13 +3501,14 @@ function runWatchFx(pi,type,trigCard){
       if(type==="oppSummonTapped"&&!c.tapped)continue;
       const fx=[];
       const _onceKeys=[];
+      let _onceSkipped=0;
       r.watchFx.forEach((w,wi)=>{
         if(w.ev!==type)return;
         // 1️⃣ 各ターン1回のみ（同一ターン内はスキップ）
         const onceKey=`${c.id}:${type}:${wi}`;
         if(w.once){
           S._watchOnce=S._watchOnce||{};
-          if(S._watchOnce[onceKey]===`${S.turn}:${S.who}`)return;
+          if(S._watchOnce[onceKey]===`${S.turn}:${S.who}`){_onceSkipped++;return;}
           // 🕐 「初めて〔対象〕が出た時」：このターン、既に条件に合うカードが出ていたら（＝今回のが初回でなければ）不発。
           //    キューティー・ルピア型＝先にドラゴンが出た後で自分が出て、その後のドラゴンには反応しない。
           if(type==="allyEnter"&&trigCard&&S._turnArrived&&S._turnArrived.key===`${S.turn}:${S.who}`){
@@ -3558,6 +3559,7 @@ function runWatchFx(pi,type,trigCard){
         if(w.once)_onceKeys.push(onceKey); // 実行後にまとめて記録（1手戻すと未使用に戻せるよう、消費はfx完了後）
         fx.push(w2);
       });
+      if(fx.length&&_onceSkipped)toast(`1️⃣ ${faceNameOf(c)}：各ターン1回の効果${_onceSkipped}件はこのターン使用済みのためスキップ（残りの効果のみ実行）`);
       if(fx.length){
         const _oks=_onceKeys.slice();
         // ⏱ APNAP：CIPポンプ稼働中の誘発は保留キューへ（ターンプレイヤーの誘発はCIP前・非ターン側は全CIP後に処理）。
@@ -4038,7 +4040,7 @@ const EFFECTS=[
      }
      for(const pi of pis){
        const Z=S.players[pi].zones;
-       for(let i=0;i<5&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;Z.hand.push(c);markArrive(c);}
+       for(let i=0;i<5&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;if(toHand(Z,c))markArrive(c);}
      }
      closeSheet();renderAll();sfx("ok");
      toast("Vivy-ラプチャー解決：手札・墓地→山札→各5ドロー");
@@ -5676,7 +5678,7 @@ async function runFxList(pi,list,srcCard,inPump){
       const doIt=await ask(`❓ 任意効果${srcCard?`（${faceNameOf(srcCard)}）`:""}\n「${lbl}${f.cond?`／条件:${f.cond}`:""}」を行いますか？`);
       if(!doIt){toast(`（任意効果をスキップ）`);continue;}
     }
-    if(f.cond&&!FILT_COND.has(f.t)){
+    if(f.cond&&!FILT_COND.has(f.t)&&!(typeof f.t==="string"&&f.t.startsWith("sp:"))){
       const _condStr=String(f.cond).trim();
       const _parseable=/(?:<=|>=|<|>|＝|=|以上|以下)/.test(_condStr)||/^(?:自分|相手)?(?:の)?(?:マナ|墓地|手札|盾|シールド|バトル|山札|革命|超次元|GR|デッキ)/.test(_condStr);
       if(!_parseable){
@@ -5699,13 +5701,13 @@ async function runFxList(pi,list,srcCard,inPump){
       // 🃏 実行時に枚数を入力してドロー（エレメントの枚数分など・0でスキップ）
       const dn=await askNumber("何枚引きますか？（エレメントのカード枚数など・0でスキップ）",1,20);
       if(dn===null||dn<=0){toast("（ドローをスキップ）");renderAll();continue;}
-      let dc=0;for(let i=0;i<dn&&Z.deck.length;i++){const c2=Z.deck.shift();c2.faceup=true;c2.sideways=false;Z.hand.push(c2);markArrive(c2);dc++;}
+      let dc=0;for(let i=0;i<dn&&Z.deck.length;i++){const c2=Z.deck.shift();c2.faceup=true;c2.sideways=false;if(toHand(Z,c2))markArrive(c2);dc++;} // ✋ 手札上限超過は墓地へ
       bumpEv("draws",pi,dc);
       sfx("draw");emitEvent(pi,"draw");
       toast(`🃏 ${dc}枚引いた`);renderAll();continue;
     }
     if(f.t==="draw"){
-      let dc=0;for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;Z.hand.push(c);markArrive(c);dc++;}
+      let dc=0;for(let i=0;i<n&&Z.deck.length;i++){const c=Z.deck.shift();c.faceup=true;c.sideways=false;if(toHand(Z,c))markArrive(c);dc++;} // ✋ デュエプレ：手札上限超過は墓地へ（toHand内で処理）
       bumpEv("draws",pi,dc);
       sfx("draw");emitEvent(pi,"draw");
     }else if(f.t==="charge"){
@@ -5824,6 +5826,7 @@ async function runFxList(pi,list,srcCard,inPump){
         const c=ZT.deck.shift();c.faceup=true;
         if(graveShuffleRepApply(c,tp)){reshuffled++;continue;} // プリンセス：墓地行きを置換→カウントせず継続
         ZT.grave.push(c);
+        queueToGrave(tp,c); // ⚡ 山札→墓地：解決完了後に「墓地に置かれた時」を発火（ゾルザーク型・割り込まない）
         const rc=getReg(c);
         if(rc&&isCreatureReg(rc))creM++;
       }
@@ -5833,7 +5836,7 @@ async function runFxList(pi,list,srcCard,inPump){
       renderAll();
     }else if(f.t==="millOpp"){
       const nmv3=[];
-      for(let i=0;i<n&&OZ.deck.length;i++){const c=OZ.deck.shift();c.faceup=true;nmv3.push(faceNameOf(c));if(!graveShuffleRepApply(c,op))OZ.grave.push(c);}
+      for(let i=0;i<n&&OZ.deck.length;i++){const c=OZ.deck.shift();c.faceup=true;nmv3.push(faceNameOf(c));if(!graveShuffleRepApply(c,op)){OZ.grave.push(c);queueToGrave(op,c);}} // ⚡ toGrave誘発（解決後発火）
       sfx("grave");
       if(nmv3.length)toast(`🗑 相手の山札${nmv3.length}枚を墓地へ：${nmv3.join("、")}`);
       if(S.vs&&!OZ.deck.length)declareWin(pi,`山札破壊：${S.players[op].label} の山札が0枚`);
@@ -6322,10 +6325,16 @@ async function runFxList(pi,list,srcCard,inPump){
         const idx=OZ[zn].findIndex(x=>x.id===tgt.id);
         if(idx<0)continue;
         const removed=OZ[zn].splice(idx,1)[0];
+        const _ur=(removed.under&&removed.under.length)?removed.under.splice(0):[];
         removed.faceup=true;removed.tapped=false;removed.sideways=false;removed.rot=0;removed.buff=null;removed.seals=[];removed.mark=false;removed.seen=false;
         OZ.hand.push(removed);
+        // 下のカード：シールドから回収→城などは墓地へ（シールド離脱の既存規則）／その他ゾーン→一緒に手札へ（バウンス系と同じ規則）
+        if(_ur.length){
+          if(zn==="shield"){_ur.forEach(u=>{u.faceup=true;u.tapped=false;OZ.grave.push(u);});}
+          else{_ur.forEach(u=>{u.faceup=true;u.tapped=false;u.sideways=false;u.rot=0;u.buff=null;u.seals=[];u.mark=false;u.neoEvo=false;u.under=u.under||[];u.gear=u.gear||[];OZ.hand.push(u);});}
+        }
         did++;
-        toast(`↩ ${faceNameOf(removed)} を${S.players[owp].label}の手札に戻した（${ZLOG[zn]||zn}）`);
+        toast(`↩ ${faceNameOf(removed)} を${S.players[owp].label}の手札に戻した（${ZLOG[zn]||zn}${_ur.length?`／下のカード${_ur.length}枚は${zn==="shield"?"墓地へ":"一緒に手札へ"}`:""}）`);
         renderAll();
       }
       if(zn==="deck"&&did)shuffle(OZ.deck);
@@ -7839,7 +7848,7 @@ function afterHandDiscard(owner,c){
         const yes=await ask(`😈 マッドネス・バイケン型（${faceNameOf(c)}）\n相手のターン中に手札から捨てられました。かわりにバトルゾーンに出しますか？（置換ロック貫通）`);
         if(yes){snap();goBattle(true);}
       })();
-    }else if(rM.madness==="eternal"){
+    }else if(rM.madness==="eternal"||rM.madness==="on"){ // "on"＝旧テキスト取り込みの汎用値（永遠龍型として扱う・後方互換）
       (async()=>{
         const yes=await ask(`😈 マッドネス・永遠龍型（${faceNameOf(c)}）\n【相手のカードの効果による手札破壊】の場合、かわりに出せます（任意）。出しますか？`);
         if(yes){snap();goBattle(false);}
@@ -10471,6 +10480,16 @@ async function execAttack(pi,id,tg){
       }
     }
     emitEvent(pi,"atkP");
+    // ⏸ 「相手がプレイヤーを攻撃した時」誘発（サイバーダイス・ベガス型等）の解決が終わるまでブレイクを待つ。
+    //    誘発（テック団等）で攻撃クリーチャーが場を離れたらブレイクは行われない。
+    if(S.expert){
+      await WATCH_CHAIN;
+      await waitFxIdle();
+      if(!Z.battle.find(x=>x.id===id)){
+        toast("攻撃クリーチャーが場を離れたため、ブレイクは行われませんでした");
+        clearPendingAtk();renderAll();return;
+      }
+    }
     await breakShields(op,n,c);
     if(S.expert&&brokeN>0&&Z.battle.find(x=>x.id===id)){
       const rBB=getReg(c);
@@ -11691,7 +11710,7 @@ function renderFxEditor(){
   $("fxRepInF").value=FXEDIT.repInF||"";
   $("fxRepInNC").checked=!!FXEDIT.repInNC;
   {const e=$("fxRepInOppTurn");if(e)e.checked=!!FXEDIT.repInOppTurn;}
-  $("fxMadness").value=FXEDIT.madness||"";
+  $("fxMadness").value=FXEDIT.madness==="on"?"eternal":(FXEDIT.madness||"");
   $("fxIgnore").value=FXEDIT.ignore||"";
   $("fxCivil").value=String(FXEDIT.civil||0);
   $("fxCivilCiv").value=FXEDIT.civilCiv||"";
@@ -12638,10 +12657,11 @@ function parseCardText(txt,mode){
     const mm=tSelf.match(/[\[［]\s*(水\/闇|闇\/水|水闇|水|闇)\s*[（(]/);
     if(mm)out.set.mugenCiv=(mm[1].includes("水")&&mm[1].includes("闇"))?"wd":(mm[1]==="水"?"w":"d");
   }
-  // マッドネス
-  if(/マッドネス/.test(tSelf))out.set.madness="on";
+  // マッドネス（「相手のターン中」を含む＝バイケン型／それ以外＝永遠龍型として登録）
+  if(/マッドネス/.test(tSelf))out.set.madness=/相手のターン/.test(t)?"baiken":"eternal";
   else if(/相手の(?:カードの)?効果[^。■]*?手札から捨てられる時[^。■]*?バトルゾーンに出す/.test(t))out.set.madness="eternal";
-  else if(/手札から捨てられ[るた]時[^。■]*?(?:かわりに)?バトルゾーンに出す/.test(t))out.set.madness="on";
+  else if(/相手のターン中?[^。■]*?手札から捨てられ[るた]時[^。■]*?(?:かわりに)?バトルゾーンに出[すし]/.test(t))out.set.madness="baiken";
+  else if(/手札から捨てられ[るた]時[^。■]*?(?:かわりに)?バトルゾーンに出す/.test(t))out.set.madness="eternal";
   // 侵略の条件（種族・コスト）
   m=t.match(/侵略[：: ]?〔?([^〕（(0-9]{1,12}?)(?:コスト)?(\d+)?[以上]*〕?/);
   if(/侵略/.test(t)){
@@ -16791,10 +16811,14 @@ async function checkMugetsu(atTurnEnd){
     const graveMad=Z.grave.filter(isMad).length;
     const total=battleMad+graveMad;
     let asked=false;
-    for(const h of Z.hand){
+    // 🌑 門カードの候補：手札＋（虚無月の門のみ）墓地からも召喚できる
+    const gateCands=[...Z.hand.map(h=>({h,zn:"hand"})),...Z.grave.map(h=>({h,zn:"grave"}))];
+    for(const {h,zn} of gateCands){
       const r=getReg(h);
       if(!r||!r.mugetsu||r.mugetsu==="zetsu")continue; // 絶はターン終了ゲートで処理
       const type=r.mugetsu;
+      if(zn==="grave"&&type!=="kyomu")continue;        // 墓地から開けるのは虚無月の門のみ
+      if(type==="kyomu"&&!hasSpl)continue;             // 虚無月の門は「水の魔導具呪文の解決」でのみ開く（クリーチャー登場では開かない）
       const met=type==="normal"?(battleMad>=2&&graveMad>=2):(total>=4);
       const tkey=pi+":"+h.id;
       if(!met)continue;
@@ -16804,9 +16828,10 @@ async function checkMugetsu(atTurnEnd){
       asked=true;
       try{
         const label=type==="kyomu"?"虚無月の門":"無月の門";
+        const trigTxt=type==="kyomu"?"水の魔導具呪文の解決":(hasCre?"魔導具クリーチャーが出た":"水の魔導具呪文の解決");
         const condTxt=type==="normal"?`場${battleMad}・墓${graveMad}（各2以上）`:`場+墓 計${total}（4以上）`;
-        const yes=await ask(`🌑 ${label}：魔導具クリーチャーが出た → 条件成立！ 魔導具 ${condTxt}\n《${faceNameOf(h)}》を手札からコストを支払わずに召喚しますか？`);
-        if(yes)await doMugetsuSummon(pi,"hand",h.id);
+        const yes=await ask(`🌑 ${label}：${trigTxt} → 条件成立！ 魔導具 ${condTxt}\n《${faceNameOf(h)}》を${zn==="grave"?"墓地":"手札"}からコストを支払わずに召喚しますか？`);
+        if(yes)await doMugetsuSummon(pi,zn,h.id);
       }catch(e){}
       finally{MUGETSU_BUSY=false;}
       return; // 1回につき1体（召喚した魔導具が新たに登場フラグを立て、次の描画で残りの門を続けて判定）
