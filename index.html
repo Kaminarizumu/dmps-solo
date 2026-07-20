@@ -969,7 +969,13 @@ body.shake{animation:bodyShake .4s ease-out}
     </div>
     <div class="row" style="align-items:center;gap:8px">
       <button class="btn small" id="dlNewFolder">📁 新規フォルダ</button>
+      <button class="btn small" id="dlPackMode">📤 まとめて渡す</button>
       <span class="hint" style="margin:0">デッキ名を「フォルダ名/デッキ名」にしてもフォルダ分けされます</span>
+    </div>
+    <div class="row" id="dlPackBar" style="display:none;align-items:center;gap:8px;background:#0f1524;border:1px solid var(--line);border-radius:10px;padding:8px">
+      <span id="dlPackCount" style="font-size:12px;font-weight:800;color:var(--accent)">0個 選択中</span>
+      <button class="btn small primary" id="dlPackExport">📤 選んだデッキを書き出す</button>
+      <button class="btn small ghost" id="dlPackCancel">キャンセル</button>
     </div>
     <div id="dlBody"></div>
     <div class="row" style="justify-content:flex-end"><button class="btn small" id="dlClose">閉じる</button></div>
@@ -21945,12 +21951,18 @@ async function exportCardPack(keys){
   toast(`📤 カードパック書き出し完了（${all.size}枚）。別の端末の「📥 読み込み」で取り込めます`);
 }
 const blobToDataURL=b=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b);});
-/* 📤 単一デッキを、使用カードの効果登録・多面リンク・カード名・画像ごと1ファイルに書き出す（他の人に渡す用） */
-async function exportDeckShare(deckName,withImg){
-  const d=await getDeck(deckName);
-  if(!d){toast("デッキが見つかりません");return;}
-  const base=deckName.includes("/")?deckName.slice(deckName.indexOf("/")+1):deckName;
-  // このデッキに含まれる全カード名 → キー集合（多面リンクの全面も含める）
+/* 📤 デッキを、使用カードの効果登録・多面リンク・カード名・画像ごと1ファイルに書き出す（他の人に渡す用）
+   deckNames は文字列（単一）または配列（複数まとめて）。複数の場合は type:"deckPack" で書き出す。 */
+async function exportDeckShare(deckNames,withImg){
+  const nameList=Array.isArray(deckNames)?deckNames:[deckNames];
+  const decks=[];
+  for(const dn of nameList){
+    const d=await getDeck(dn);
+    if(d)decks.push({name:dn,deck:d});
+  }
+  if(!decks.length){toast("デッキが見つかりません");return;}
+  const multi=decks.length>1;
+  // 全デッキに含まれる全カード名 → キー集合（多面リンクの全面も含める）
   const keys=new Set();
   const addName=nm=>{
     const k=normName(nm);
@@ -21958,31 +21970,42 @@ async function exportDeckShare(deckName,withImg){
     const l=LINKS.get(k);
     if(l)for(const f of l)keys.add(f);
   };
-  for(const sec of [d.main,d.gr,d.hy,d.sp,d.ex]){for(const e of (sec||[]))addName(e.name);}
-  const data={v:5,type:"deck",exported:new Date().toISOString(),deckName:base,deck:d,cardFx:{},faceLinks:{},nameMap:{},images:{}};
-  toast(`📤 「${base}」を書き出し中…（${keys.size}種）`);
+  for(const {deck:d} of decks){
+    for(const sec of [d.main,d.gr,d.hy,d.sp,d.ex]){for(const e of (sec||[]))addName(e.name);}
+    if(d.cover)keys.add(d.cover);
+  }
+  const shortName=n=>n.includes("/")?n.slice(n.indexOf("/")+1):n;
+  toast(`📤 ${multi?`${decks.length}個のデッキ`:`「${shortName(decks[0].name)}」`}を書き出し中…（カード${keys.size}種）`);
+  const cardFx={},faceLinks={},nameMap={},images={};
   for(const k of keys){
-    if(FXDB.has(k))data.cardFx[k]=FXDB.get(k);
-    if(LINKS.has(k))data.faceLinks[k]=LINKS.get(k);
-    if(dispName.has(k))data.nameMap[k]=dispName.get(k);
+    if(FXDB.has(k))cardFx[k]=FXDB.get(k);
+    if(LINKS.has(k))faceLinks[k]=LINKS.get(k);
+    if(dispName.has(k))nameMap[k]=dispName.get(k);
     if(withImg){
       const b=db?await idbGet("images",k):memImages.get(k);
-      if(b)data.images[k]=await blobToDataURL(b);
+      if(b)images[k]=await blobToDataURL(b);
     }
   }
-  // 表紙画像のキーも（デッキ内カードでなくても）含める
-  if(withImg&&d.cover&&!data.images[d.cover]){
-    const b=db?await idbGet("images",d.cover):memImages.get(d.cover);
-    if(b)data.images[d.cover]=await blobToDataURL(b);
+  let data,fname;
+  if(multi){
+    data={v:5,type:"deckPack",exported:new Date().toISOString(),
+      decks:decks.map(x=>({name:shortName(x.name),deck:x.deck})),
+      cardFx,faceLinks,nameMap,images};
+    fname=`dmrv-decks-${decks.length}個-${new Date().toISOString().slice(0,10)}.json`;
+  }else{
+    data={v:5,type:"deck",exported:new Date().toISOString(),
+      deckName:shortName(decks[0].name),deck:decks[0].deck,
+      cardFx,faceLinks,nameMap,images};
+    fname=`dmrv-deck-${shortName(decks[0].name).replace(/[\\/:*?"<>|]/g,"_")}-${new Date().toISOString().slice(0,10)}.json`;
   }
   const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
-  a.download=`dmrv-deck-${base.replace(/[\\/:*?"<>|]/g,"_")}-${new Date().toISOString().slice(0,10)}.json`;
+  a.download=fname;
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),5000);
-  const imgN=Object.keys(data.images).length;
-  toast(`📤 「${base}」を書き出しました（カード${keys.size}種${imgN?`・画像${imgN}枚`:"・画像なし"}）。相手は「📥 読み込み」で取り込めます`);
+  const imgN=Object.keys(images).length;
+  toast(`📤 ${multi?`${decks.length}個のデッキ`:`「${shortName(decks[0].name)}」`}を書き出しました（カード${keys.size}種${imgN?`・画像${imgN}枚`:"・画像なし"}）。相手は「📥 読み込み」で取り込めます`);
 }
 $("btnExport").addEventListener("click",async ()=>{
   const withImg=await ask("カード画像もファイルに含めますか？\nOK＝含める（ファイル大）／キャンセル＝設定のみ（軽量）");
@@ -22045,6 +22068,43 @@ $("importInput").addEventListener("change",async e=>{
       toast(`📥 共有デッキ「${nm}」を読み込みました。デッキ一覧から使えます`);
       return;
     }
+    if(data&&data.type==="deckPack"&&Array.isArray(data.decks)){
+      const imgN=Object.keys(data.images||{}).length;
+      const total=data.decks.length;
+      if(!await ask(`共有デッキパック（${total}個のデッキ・カード効果${Object.keys(data.cardFx||{}).length}種${imgN?`・画像${imgN}枚`:"・画像なし"}）を読み込みます。\n既存のカード登録に追加・上書きされます（他のデッキやカードは消えません）。よろしいですか？`))return;
+      // カード効果・多面リンク・カード名・画像をマージ（既存は上書き）
+      if(data.cardFx){for(const [k,v] of Object.entries(data.cardFx))FXDB.set(k,v);await persistFx();}
+      if(data.faceLinks){for(const [k,v] of Object.entries(data.faceLinks))LINKS.set(k,v);await persistLinks();}
+      if(data.nameMap){for(const [k,v] of Object.entries(data.nameMap))dispName.set(k,v);await persistNames();}
+      if(imgN){
+        toast("画像を復元中…");
+        for(const [k,durl] of Object.entries(data.images)){
+          const b=await (await fetch(durl)).blob();
+          if(db)await idbPut("images",k,b);else memImages.set(k,b);
+        }
+      }
+      // 各デッキを保存。名前衝突は自動で別名（(共有)）にして全部残す
+      const existing=new Set(await deckNames());
+      let saved=0;
+      for(const entry of data.decks){
+        if(!entry||!entry.deck)continue;
+        let nm=entry.name||"共有デッキ";
+        if(existing.has(nm)){
+          let alt=`${nm} (共有)`,i=2;
+          while(existing.has(alt)){alt=`${nm} (共有${i++})`;}
+          nm=alt;
+        }
+        existing.add(nm);
+        const dk=entry.deck;
+        await saveDeck(nm,dk.main||[],dk.gr||[],dk.hy||[],dk.sp||[],dk.ex||[],dk.cover);
+        saved++;
+      }
+      await loadAllImages();
+      await refreshDeckSelects();
+      renderAll();sfx("ok");
+      toast(`📥 共有デッキパックを読み込みました（${saved}個のデッキを追加）。デッキ一覧から使えます`);
+      return;
+    }
     if(data&&data.type==="cards"){
       const n=Object.keys(data.images||{}).length;
       if(!await ask(`カードパック（画像${n}枚）を読み込みます。\n既存データに追加され、同名カードは上書きされます。よろしいですか？`))return;
@@ -22091,6 +22151,9 @@ $("importInput").addEventListener("change",async e=>{
 });
 
 /* ================= デッキ一覧 ================= */
+/* 📤 まとめて渡す：選択モード（true時はデッキ行にチェックボックスを表示）と選択集合 */
+let DL_PACK_MODE=false;
+const DL_PACK_SEL=new Set();
 async function renderDeckList(){
   const body=$("dlBody");body.innerHTML="";
   const q=(($("dlSearch")&&$("dlSearch").value)||"").trim();
@@ -22157,6 +22220,28 @@ async function renderDeckList(){
     const label=`${dispN}（${listTotal(d.main)}枚${listTotal(d.gr||[])?` +GR${listTotal(d.gr)}`:""}${listTotal(d.hy||[])?` +超次元${listTotal(d.hy)}`:""}${listTotal(d.sp||[])?` +特殊${listTotal(d.sp)}`:""}）`;
     const nmTxt=document.createElement("span");
     nmTxt.textContent="▸ "+label;
+    // 📤 まとめて渡すモード：チェックボックスを表示し、行タップで選択トグル（展開はしない）
+    if(DL_PACK_MODE){
+      const cb=document.createElement("input");
+      cb.type="checkbox";cb.checked=DL_PACK_SEL.has(n);
+      cb.style.cssText="width:18px;height:18px;margin-right:8px;vertical-align:middle;accent-color:var(--accent)";
+      cb.addEventListener("click",e=>{
+        e.stopPropagation();
+        if(cb.checked)DL_PACK_SEL.add(n);else DL_PACK_SEL.delete(n);
+        const cnt=$("dlPackCount");if(cnt)cnt.textContent=`${DL_PACK_SEL.size}個 選択中`;
+      });
+      nm.appendChild(cb);
+      nm.appendChild(nmTxt);
+      nm.style.cursor="pointer";
+      nm.addEventListener("click",()=>{
+        cb.checked=!cb.checked;
+        if(cb.checked)DL_PACK_SEL.add(n);else DL_PACK_SEL.delete(n);
+        const cnt=$("dlPackCount");if(cnt)cnt.textContent=`${DL_PACK_SEL.size}個 選択中`;
+      });
+      item.appendChild(nm);
+      container.appendChild(item);
+      continue;
+    }
     nm.appendChild(nmTxt);
     nm.addEventListener("click",()=>{
       const willOpen=!item.classList.contains("open");
@@ -22558,9 +22643,29 @@ $("btnHelp").addEventListener("click",()=>{
     ol.classList.add("open");
   }
 });
-$("btnDeckList").addEventListener("click",async ()=>{await renderDeckList();$("deckListOlay").classList.add("open");});
+$("btnDeckList").addEventListener("click",async ()=>{DL_PACK_MODE=false;DL_PACK_SEL.clear();$("dlPackBar").style.display="none";await renderDeckList();$("deckListOlay").classList.add("open");});
 $("dlSearch").addEventListener("input",()=>renderDeckList());
 $("dlClose").addEventListener("click",()=>$("deckListOlay").classList.remove("open"));
+// 📤 まとめて渡すモードの切り替え
+function setDlPackMode(on){
+  DL_PACK_MODE=on;
+  if(!on)DL_PACK_SEL.clear();
+  $("dlPackBar").style.display=on?"":"none";
+  $("dlPackMode").style.display=on?"none":"";
+  const cnt=$("dlPackCount");if(cnt)cnt.textContent=`${DL_PACK_SEL.size}個 選択中`;
+  renderDeckList();
+}
+$("dlPackMode").addEventListener("click",()=>{setDlPackMode(true);toast("📤 渡したいデッキにチェックを入れて「書き出す」を押してください");});
+$("dlPackCancel").addEventListener("click",()=>setDlPackMode(false));
+$("dlPackExport").addEventListener("click",async ()=>{
+  if(!DL_PACK_SEL.size){toast("デッキが選ばれていません");return;}
+  const list=[...DL_PACK_SEL];
+  const j=await askChoice(`${list.length}個のデッキを1ファイルにまとめて書き出します。\nカード画像も含めますか？`,
+    ["画像も含める（そのまま遊べる・ファイル大）","効果登録のみ（軽量・相手は画像を各自用意）","やめる"]);
+  if(j===null||j===2)return;
+  await exportDeckShare(list,j===0);
+  setDlPackMode(false);
+});
 
 /* ================= deck builder ================= */
 const B={mode:"main",counts:{main:new Map(),gr:new Map(),hy:new Map(),ex:new Map()}};
