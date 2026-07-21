@@ -2245,6 +2245,24 @@ function askShieldForcePlus(pTo,c,reg){
     })();
   }
 }
+/* ⚓ バトルゾーンを離れられないか判定（離脱置換の共通チェック・fx一括処理用）
+   noLeaveバフ／条件付き常在noLeave／シールド・フォースnoLeave／COMPLEX／stayPow（パワー0超でとどまる）を網羅 */
+function cantLeaveBattle(pi,c,quiet){
+  if(!S.expert)return false;
+  const r=getReg(c);
+  const IGN=isIgnored(c,pi);
+  if(c.buff&&c.buff.noLeave){if(!quiet)toast(`⚓ ${faceNameOf(c)} はこのターン離れない！`);return true;}
+  if(!IGN&&r&&r.cstCond&&r.cstFx==="noLeave"&&zoneCondOk(r.cstCond,pi,c)){if(!quiet)toast(`✨ 条件常在（${r.cstCond}）：${faceNameOf(c)} は離れない！`);return true;}
+  if(!IGN&&c.sfActive&&r&&r.sforceFx==="noLeave"){if(!quiet)toast(`⚓✨ シールド・フォース有効中：${faceNameOf(c)} は離れない！`);return true;}
+  if(!IGN&&r&&r.gimmick==="complex"&&(c.under?c.under.length:0)<(r.complexArc?7:8)){if(!quiet)toast(`⬛ ${faceNameOf(c)} は離れない！（下が${r.complexArc?6:7}枚以下）`);return true;}
+  const _stayBuff=!!(c.buff&&c.buff.stayIfPow);
+  const _stayReg=!!(!IGN&&r&&r.cstFx==="stayPow"&&(!r.cstCond||zoneCondOk(r.cstCond,pi,c)));
+  if(_stayBuff||_stayReg){
+    const pw=(typeof powNow==="function")?powNow(c):null;
+    if(pw==null||pw>0){if(!quiet)toast(`⚓ ${faceNameOf(c)} はパワーが0より大きいため、離れるかわりにバトルゾーンにとどまる！`);return true;}
+  }
+  return false;
+}
 function markArrive(c){
   c.dealIdx=null;c._pfAsked=false;arrived.add(c.id);setTimeout(()=>arrived.delete(c.id),1000);
   c._oriNew=true; // 🌀 オリオティス判定用：次のsummonイベントで消費される永続フラグ（1秒TTLのarrivedだと2体同時出しで取りこぼす）
@@ -6534,6 +6552,7 @@ async function runFxList(pi,list,srcCard,inPump){
       const targets=Z.battle.filter(x=>{const rx=getReg(x);return rx&&isCreatureReg(rx)&&x.id!==(srcCard&&srcCard.id)&&(!filt||lockFilterOk(filt,rx,x));});
       let ret=0;
       for(const c2 of targets){
+        if(cantLeaveBattle(pi,c2))continue; // ⚓ 離脱置換（SFの離れない・とどまる等）はスキップ
         const bi=Z.battle.findIndex(x=>x.id===c2.id);
         if(bi<0)continue;
         const cc=Z.battle.splice(bi,1)[0];
@@ -7431,6 +7450,7 @@ async function runFxList(pi,list,srcCard,inPump){
       else{
         let moved=0;
         for(const tgt of targets.slice()){
+          if(cantLeaveBattle(op,tgt))continue; // ⚓ 離脱置換（SFの離れない・とどまる等）はスキップ
           if(await offerTrueEscape(op,tgt)){renderAll();continue;} // 🛡 真・エスケープで離場キャンセル可
           const idx=OZt.battle.findIndex(x=>x.id===tgt.id);
           if(idx<0)continue;
@@ -9138,19 +9158,25 @@ function processBroken(op,stack,label){
       // ⚡ パネルで決めた順に、S・トリガーの効果を1枚ずつ処理（全部終わってから攻撃等の続きへ）
       if(stDefer.length){
         (async()=>{
-          if(stDefer.length>1)toast(`⚡ S・トリガー${stDefer.length}枚を、選んだ順に1枚ずつ解決します`);
-          for(const d of stDefer){
+          // ⚡ デュエプレの解決順：呪文が先（プレイヤーが選んだ順）→ クリーチャーの出た時（CIP）は全呪文の後（選んだ順）
+          const ordered=[...stDefer.filter(d=>d.zone==="resolve"),...stDefer.filter(d=>d.zone!=="resolve")];
+          if(ordered.length>1){
+            const nSp=ordered.filter(d=>d.zone==="resolve").length;
+            const nCr=ordered.length-nSp;
+            toast(`⚡ S・トリガー${ordered.length}枚を解決します${nSp&&nCr?`（呪文${nSp}枚→クリーチャーの出た時${nCr}件の順）`:"（選んだ順）"}`);
+          }
+          for(const d of ordered){
             const cc=d.c;
             if(d.zone==="resolve"){
               const still=Z.resolve.find(x=>x.id===cc.id);
               if(!still)continue; // 手動で動かされていたらスキップ
-              toast(`⚡ 解決（${stDefer.indexOf(d)+1}/${stDefer.length}）：${faceNameOf(cc)}`);
+              toast(`⚡ 解決（${ordered.indexOf(d)+1}/${ordered.length}）：${faceNameOf(cc)}`);
               emitEvent(op,"spell",cc);enqueueFx(op,cc);
             }else{
               const onB=Z.battle.find(x=>x.id===cc.id);
               const asB=!onB&&Z.battle.some(x=>x.under&&x.under.some(u=>u.id===cc.id));
               if(!onB&&!asB)continue; // 既に離れていたらスキップ（進化元に潜った場合は誘発済みのため解決）
-              toast(`⚡ 出た時効果（${stDefer.indexOf(d)+1}/${stDefer.length}）：${faceNameOf(cc)}`);
+              toast(`⚡ 出た時効果（${ordered.indexOf(d)+1}/${ordered.length}）：${faceNameOf(cc)}`);
               emitEvent(op,"summon");enqueueFx(op,cc);
             }
             await waitFxIdle();
@@ -9228,7 +9254,7 @@ function processBroken(op,stack,label){
       if(!remaining.length){finish();return;}
       $("breakOlay").classList.add("open");
       $("bkTitle").textContent=label;
-      $("bkHint").textContent="カードをタップで複数選択できます（もう一度タップで解除）。行き先ボタンで選んだ全カードをまとめて処理。S・トリガーで唱える/出すカードだけは1枚ずつ選んでください。";
+      $("bkHint").textContent="カードをタップで複数選択できます（もう一度タップで解除）。行き先ボタンで選んだ全カードをまとめて処理。S・トリガーで唱える/出すカードだけは1枚ずつ選んでください。解決はデュエプレの順（呪文が先→クリーチャーの出た時が後。呪文同士は選んだ順）で行われます。";
       const g=$("bkGrid");g.innerHTML="";
       remaining.forEach(c=>{
         const r2=getReg(c);
