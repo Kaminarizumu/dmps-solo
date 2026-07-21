@@ -6788,12 +6788,14 @@ async function runFxList(pi,list,srcCard,inPump){
       else toast(`🔄 アンタップ対象なし${filt?`（${filt}）`:""}`);
       renderAll();
     }else if(f.t==="handStFree"){
-      // ⚡ 手札のS・トリガー持ちを1枚、コストを支払わずに実行（クリーチャー＝召喚／呪文＝詠唱）。f.cond＝追加の対象条件（任意）
+      // ⚡ 手札のS・トリガー持ちを1枚、コストを支払わずに実行（クリーチャー＝召喚／呪文＝詠唱）。f.cond＝追加の対象条件（任意・「呪文」でST呪文限定＝マギア・デルフィン型）
       const filt=String(f.cond||"").trim();
+      const spellOnly=/(^|／|\/)呪文($|／|\/)/.test(filt);
       const cands=Z.hand.filter(x=>{const rx=getReg(x);return rx&&rx.st&&(!filt||lockFilterOk(filt,rx,x));});
-      if(!cands.length){toast(`手札にS・トリガー持ちがありません${filt?`（${filt}）`:""}`);}
+      const lbl=spellOnly?"S・トリガー付きの呪文":"S・トリガー持ち";
+      if(!cands.length){toast(`手札に${lbl}がありません${filt&&!spellOnly?`（${filt}）`:""}`);}
       else{
-        const j=await askChoice("⚡ 手札のS・トリガー持ちを1枚、コストを支払わずに実行",[...cands.map(x=>faceNameOf(x)),"実行しない"]);
+        const j=await askChoice(`⚡ 手札から${lbl}を1枚、コストを支払わずに実行`,[...cands.map(x=>faceNameOf(x)),"実行しない"]);
         if(j!==null&&j<cands.length){
           const sel=cands[j];
           const hi=Z.hand.findIndex(x=>x.id===sel.id);
@@ -13212,6 +13214,15 @@ function parseCardText(txt,mode){
   //    検出した文は出た時効果の抽出から除外して二重登録を防ぐ
   {
     const wf=[];
+    // ⚔🔮 「（このクリーチャーが）攻撃する時、手札からS・トリガー（付きの）呪文を1枚、コストを支払わずに唱えてもよい」（マギア・デルフィン型）
+    {
+      const mAS=tForFx.match(/攻撃する時[、,]?[\s\S]{0,24}?手札(?:から|にある)[\s\S]{0,16}?(?:「?S・?トリガー」?(?:付きの?|を持つ)?)[\s\S]{0,8}?呪文を[\s\S]{0,18}?(?:コストを支払わ(?:ず|ないで)|タダで|踏み倒)/);
+      if(mAS){
+        wf.push({ev:"selfAtk",t:"handStFree",n:1,cond:"呪文"});
+        tForFx=tForFx.replace(mAS[0],"■");
+        out.notes.push({msg:"⚔🔮 攻撃時誘発「手札からS・トリガー付きの呪文を1枚、コストを支払わず唱える」を登録しました（対象は呪文限定）",q:"攻撃時"});
+      }
+    }
     // ⚡❄ 「バトルゾーンに出た時、または自分が名前に《X》とある呪文を唱えた時、〔効果〕」（初不型）
     //    → CIP（出た時）と「自分が呪文を唱えた時（条件=名前X）」の両方に同じ効果を登録
     {
