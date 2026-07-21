@@ -539,7 +539,11 @@ body.shake{animation:bodyShake .4s ease-out}
 .dl-grid{display:none;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:6px;margin-top:8px}
 .dl-item.open .dl-grid{display:grid}
 
-.fxrow{display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:nowrap}
+.fxrow{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin-top:8px;padding:8px;background:#0e1420;border:1px solid var(--line);border-radius:10px}
+.fxrow .fxr-top{display:flex;gap:6px;align-items:center;width:100%;flex-wrap:nowrap}
+.fxrow .fxr-bot{display:flex;gap:10px;align-items:center;width:100%;flex-wrap:wrap}
+.fxrow .fxr-bot .fxr-cond{flex:1 1 100%;min-width:0}
+.fxrow .fxr-bot label{white-space:nowrap}
 .fxrow select{flex:1;min-width:0;font-size:13px;padding:9px 6px}
 .fxrow input{width:62px;flex:0 0 auto;padding:9px 4px;text-align:center}
 .fxrow .del{flex:0 0 auto;padding:8px 10px}
@@ -565,6 +569,8 @@ body.shake{animation:bodyShake .4s ease-out}
 /* v6 additions */
 .panelbox .fxrow select{width:auto;flex:1 1 auto;min-width:0;font-size:14px;padding:10px 8px}
 .panelbox .fxrow input{width:64px;flex:0 0 64px;padding:10px 4px;text-align:center}
+.panelbox .fxrow .fxr-cond input{width:100%;flex:1 1 auto;text-align:left;padding:10px 8px}
+.fxrow .fxr-cond input{width:100%;flex:1 1 auto;text-align:left}
 .card.marked{outline:2px solid #ff9f43;outline-offset:-2px}
 .vcard{touch-action:pan-y}
 #fxBanner{position:fixed;top:calc(50px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:450;background:linear-gradient(180deg,#d9a8ff,var(--resolve));color:#1a0a2a;border-radius:12px;padding:8px 12px;display:none;align-items:center;gap:8px;font-weight:800;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.5);max-width:94vw;flex-wrap:wrap}
@@ -10924,7 +10930,14 @@ function fxRowEl(faceIdx,i){
   dn.title="1つ下へ（実行順が変わります）";dn.style.cssText="padding:2px 7px";
   dn.disabled=i===arr0.length-1;
   dn.onclick=()=>{[arr0[i],arr0[i+1]]=[arr0[i+1],arr0[i]];renderFxEditor();};
-  row.appendChild(sel);row.appendChild(fb);row.appendChild(num);row.appendChild(shb);row.appendChild(sumL);row.appendChild(sstL);row.appendChild(optL);row.appendChild(up);row.appendChild(dn);row.appendChild(del);row.appendChild(cnd);
+  const top=document.createElement("div");top.className="fxr-top";
+  const bot=document.createElement("div");bot.className="fxr-bot";
+  top.appendChild(sel);top.appendChild(fb);top.appendChild(num);top.appendChild(shb);top.appendChild(up);top.appendChild(dn);top.appendChild(del);
+  bot.appendChild(sumL);bot.appendChild(sstL);bot.appendChild(optL);
+  cnd.classList.add("fxr-cond-input");
+  const condWrap=document.createElement("div");condWrap.className="fxr-cond";condWrap.appendChild(cnd);
+  bot.appendChild(condWrap);
+  row.appendChild(top);row.appendChild(bot);
   return row;
 }
 const CIVS=[["fxCivL","light","光"],["fxCivW","water","水"],["fxCivD","dark","闇"],["fxCivF","fire","火"],["fxCivN","nature","自然"],["fxCivZ","zero","ゼロ"]];
@@ -11028,7 +11041,13 @@ function fxTrigRowEl(i){
   dn.title="1つ下へ（同じタイミング内の実行順が変わります）";dn.style.cssText="padding:2px 7px";
   dn.disabled=i===wArr.length-1;
   dn.onclick=()=>{[wArr[i],wArr[i+1]]=[wArr[i+1],wArr[i]];renderFxEditor();};
-  row.appendChild(ev);row.appendChild(evb);row.appendChild(sel);row.appendChild(fb);row.appendChild(num);row.appendChild(hld);row.appendChild(onceL);row.appendChild(up);row.appendChild(dn);row.appendChild(del);row.appendChild(cnd);
+  const top=document.createElement("div");top.className="fxr-top";
+  const bot=document.createElement("div");bot.className="fxr-bot";
+  top.appendChild(ev);top.appendChild(evb);top.appendChild(sel);top.appendChild(fb);top.appendChild(num);top.appendChild(up);top.appendChild(dn);top.appendChild(del);
+  bot.appendChild(hld);bot.appendChild(onceL);
+  const condWrap=document.createElement("div");condWrap.className="fxr-cond";condWrap.appendChild(cnd);
+  bot.appendChild(condWrap);
+  row.appendChild(top);row.appendChild(bot);
   return row;
 }
 function fxUiPolish(){
