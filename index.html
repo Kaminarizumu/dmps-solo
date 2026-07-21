@@ -3169,6 +3169,19 @@ function nextTurn(){
 }
 /* ⏳ ターン終了時誘発を直列処理。完了するまでターンは切り替わらない */
 async function runTurnEndTriggers(cur2){
+    // 🌙 呪文などが仕込んだ「このターン終了時」の1回限りタスクを先に消化（ジャスティスの誓い型）
+    if(S.turnEndTasks&&S.turnEndTasks.length){
+      const tasks=S.turnEndTasks.splice(0);
+      for(const tk of tasks){
+        if(tk.t==="untapAllMine"){
+          const Zt=zonesOf(tk.pi);
+          let n=0;
+          Zt.battle.forEach(c=>{if(c.tapped){c.tapped=false;n++;}});
+          toast(`🌙 ターン終了時（${tk.by||"効果"}）：${S.players[tk.pi].label}のクリーチャー${n}体をアンタップ`);
+          renderAll();
+        }
+      }
+    }
     const ten=[];
     for(const pi2 of (S.vs?[0,1]:[0])){
       zonesOf(pi2).battle.forEach(c=>{
@@ -4619,6 +4632,7 @@ const FX_TYPES=[
   ["tapAllOp","相手のクリーチャーをすべてタップ（スパーク型）"],
   ["tapOpN","相手のクリーチャーをn体まで選んでタップ（「〜体までタップ」型）"],
   ["foeFreezeAll","❄ 相手のクリーチャーすべては、次の相手のターンのはじめにアンタップしない（ボルパンサー型・タップはしない）"],
+  ["turnEndUntapAll","🌙 このターン終了時、自分のクリーチャーをすべてアンタップする（ジャスティスの誓い型・唱えた/出したターンのみ）"],
   ["drawPerOppTapped","🃏 相手のタップしているクリーチャー1体につきカードを1枚引く（手札上限10枚まで・フラッシュ・スパーク型）"],
   ["pickCostSpellHand","🔢 数字を1つ選び、そのコストの呪文を山札から超探索して1枚公開し手札へ→シャッフル（ロジック・スパーク型）"],
   ["turnLock","⛔ ターン限定ロックを設定（実行時に対象/種別/条件/期間を指定・5000VT後半効果型）"],
@@ -4729,7 +4743,7 @@ const FX_TYPES=[
   ["millUntilCre","山札の上から、クリーチャーがn体墓地に置かれるまで置く（ヴォルグ・サンダー型・対象プレイヤー選択）"],
 ];
 const FX_LABEL=new Proxy(Object.fromEntries(FX_TYPES),{get:(t,k)=>(k in t)?t[k]:(typeof k==="string"&&k.startsWith("sp:")?"特殊："+k.slice(3):k)});
-const FX_NO_N=new Set(["peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo","untapFilt","handStFree","selfBounceAll","grantStayBlk","foeBounceAll","handCastSpell","foeNoSpell","runMode","foeFreezeAll","drawPerOppTapped","pickCostSpellHand","graveToManaAllTap","drawAsk"]);
+const FX_NO_N=new Set(["turnEndUntapAll","peek","battleAsk","hold","oriotis1","drawTapped","graveView","graveViewMy","flip","handShieldUp","tapAllOp","turnLock","freeSummon","freeCast","atkNoLeaveSelf","diaBliz","foeAtkLockP","tempBlockerAll","selfToZone","flipTopMana","breakMineAny","graveToDeckAll","foeAllShield","deckEvo","untapFilt","handStFree","selfBounceAll","grantStayBlk","foeBounceAll","handCastSpell","foeNoSpell","runMode","foeFreezeAll","drawPerOppTapped","pickCostSpellHand","graveToManaAllTap","drawAsk"]);
 const fxNoN=t=>FX_NO_N.has(t)||(typeof t==="string"&&t.startsWith("sp:"));
 function fxSummary(list){
   if(!list||!list.length)return "（効果なし）";
@@ -5948,6 +5962,11 @@ async function runFxList(pi,list,srcCard,inPump){
       for(const b of OZt.battle){if(!b.tapped){b.tapped=true;tn++;}}
       sfx("move");renderAll();
       toast(`⚡ スパーク！ 相手のクリーチャーをすべてタップ（${tn}体）`);
+    }else if(f.t==="turnEndUntapAll"){
+      // 🌙 このターン終了時、自分のクリーチャーをすべてアンタップ（ジャスティスの誓い型・1回限りの遅延タスク）
+      S.turnEndTasks=S.turnEndTasks||[];
+      S.turnEndTasks.push({pi,t:"untapAllMine",by:srcCard?faceNameOf(srcCard):"効果"});
+      toast(`🌙 このターン終了時、自分のクリーチャーをすべてアンタップします（予約）`);
     }else if(f.t==="foeFreezeAll"){
       // ❄ 相手のクリーチャーすべては次の相手のターンのはじめにアンタップしない（タップ状態は変えない・ボルパンサー型）
       const OZf=zonesOf(op);
@@ -12342,7 +12361,8 @@ function extractEffects(text,mode){
     }
     // 全タップ（スパーク）
     // ❄ 「相手のクリーチャーは（すべて）次の相手のターン開始時まで（はじめに）アンタップしない」（初不/ボルパンサー型・タップはしない）
-    if(/相手のクリーチャー(?:すべて)?は[^■。]{0,20}?アンタップ(?:しない|できない)/.test(cl))fx.push({t:"foeFreezeAll",n:1});
+    if(/このターン(?:の)?終了時[、,]?自分のクリーチャーを(?:すべて|全て)アンタップ/.test(cl))fx.push({t:"turnEndUntapAll",n:1});
+    else if(/相手のクリーチャー(?:すべて)?は[^■。]{0,20}?アンタップ(?:しない|できない)/.test(cl))fx.push({t:"foeFreezeAll",n:1});
     else if(/相手の.*クリーチャーを.*(?:すべて|全て).*タップ/.test(cl))fx.push({t:"tapAllOp",n:1});
     else if(/相手の.*クリーチャーを.*タップ/.test(cl))fx.push({t:"tapOpN",n:numOf(cl,/(\d+)体/)});
     // GR召喚
