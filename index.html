@@ -1151,6 +1151,7 @@ body.shake{animation:bodyShake .4s ease-out}
         <button type="button" class="btn small ghost" data-qk="tb">T・ブレイカー</button>
         <button type="button" class="btn small ghost" data-qk="qb">Q・ブレイカー</button>
         <button type="button" class="btn small ghost" data-qk="st">S・トリガー</button>
+        <button type="button" class="btn small ghost" data-qk="sst" title="スーパー・S・トリガー：ONにするとS・トリガーも同時にONになります">🌟SST</button>
         <button type="button" class="btn small ghost" data-qk="mach">マッハF</button>
         <button type="button" class="btn small ghost" data-qk="gs">G・ストライク</button>
         <button type="button" class="btn small ghost" data-qk="charger">チャージャー</button>
@@ -5690,6 +5691,11 @@ async function runFxList(pi,list,srcCard,inPump){
         srcCard._wasSummon=await ask(`《${faceNameOf(srcCard)}》は【召喚】によって出ましたか？\n（「召喚時のみ」の効果があります。踏み倒し・進化などで出した場合は「いいえ」）`);
       }
       if(!srcCard._wasSummon){toast(`（召喚以外で出たため「召喚時のみ」の効果はスキップ）`);continue;}
+    }
+    // 🌟 [S]効果（スーパー・S・トリガーのボーナス）：自分の盾が1枚以上ある＝SSTボーナス無効の時は自動スキップ
+    if(f.sstOnly&&Z.shield.length>0){
+      toast(`🌟 [S]効果はスキップ（スーパー・S・トリガーのボーナスは自分のシールドが0枚でトリガーした時のみ）`);
+      continue;
     }
     // ❓ 任意効果（〜してもよい）：実行前に確認。いいえでこの効果だけスキップ
     if(f.opt){
@@ -10885,6 +10891,15 @@ function fxRowEl(faceIdx,i){
   scb.onchange=()=>{f.sumOnly=scb.checked;};
   sumL.appendChild(scb);
   sumL.appendChild(document.createTextNode("召喚時のみ"));
+  // 🌟 [S]効果（スーパー・S・トリガーのボーナス）：自分の盾が1枚以上ある時は自動スキップ
+  const sstL=document.createElement("label");
+  sstL.style.cssText="display:inline-flex;gap:3px;align-items:center;font-size:11px;white-space:nowrap";
+  sstL.title="この効果は[S]（スーパー・S・トリガーのボーナス）：自分のシールドが0枚の時だけ実行され、1枚以上ある時は自動でスキップされます";
+  const sstCb=document.createElement("input");
+  sstCb.type="checkbox";sstCb.checked=!!f.sstOnly;
+  sstCb.onchange=()=>{f.sstOnly=sstCb.checked;};
+  sstL.appendChild(sstCb);
+  sstL.appendChild(document.createTextNode("🌟[S]"));
   // ❓ 任意効果：実行前に「行いますか？」を確認（「〜してもよい」型）
   const optL=document.createElement("label");
   optL.style.cssText="display:inline-flex;gap:3px;align-items:center;font-size:11px;white-space:nowrap";
@@ -10909,7 +10924,7 @@ function fxRowEl(faceIdx,i){
   dn.title="1つ下へ（実行順が変わります）";dn.style.cssText="padding:2px 7px";
   dn.disabled=i===arr0.length-1;
   dn.onclick=()=>{[arr0[i],arr0[i+1]]=[arr0[i+1],arr0[i]];renderFxEditor();};
-  row.appendChild(sel);row.appendChild(fb);row.appendChild(num);row.appendChild(shb);row.appendChild(sumL);row.appendChild(optL);row.appendChild(up);row.appendChild(dn);row.appendChild(del);row.appendChild(cnd);
+  row.appendChild(sel);row.appendChild(fb);row.appendChild(num);row.appendChild(shb);row.appendChild(sumL);row.appendChild(sstL);row.appendChild(optL);row.appendChild(up);row.appendChild(dn);row.appendChild(del);row.appendChild(cnd);
   return row;
 }
 const CIVS=[["fxCivL","light","光"],["fxCivW","water","水"],["fxCivD","dark","闇"],["fxCivF","fire","火"],["fxCivN","nature","自然"],["fxCivZ","zero","ゼロ"]];
@@ -11610,6 +11625,16 @@ function fxQuickInit(){
       else if(k==="blocker")tgl("fxBlocker");
       else if(k==="slayer")tgl("fxSlayer");
       else if(k==="st")tgl("fxST");
+      else if(k==="sst"){
+        // 🌟 スーパー・S・トリガー：SSTはS・トリガーを内包するため、ONにする時はSTも同時にON（OFFにする時はSSTのみ解除）
+        const eS=$("fxSST"),eT=$("fxST");
+        if(eS){
+          eS.checked=!eS.checked;
+          eS.dispatchEvent(new Event("change"));
+          if(eS.checked&&eT&&!eT.checked){eT.checked=true;eT.dispatchEvent(new Event("change"));}
+          toast(`🌟SST：${eS.checked?"ON（S・トリガーも同時にON）":"OFF（S・トリガーはONのまま）"}`);
+        }
+      }
       else if(k==="mach")tgl("fxMachF");
       else if(k==="gs")tgl("fxGS");
       else if(k==="charger")tgl("fxCharger");
@@ -12118,8 +12143,10 @@ function extractEffects(text,mode){
   // 「使用可能マナは増えない」＝置いたマナはそのターン使えない＝タップして置く扱い
   const _noUsableMana=/使用可能(?:な)?マナ(?:は|が)?[^。]{0,6}(?:増えない|多くならない)/.test(text);
   const numOf=(s,re)=>{const m=s.match(re);return m?+m[1]:1;};
+  let _inSST=false; // 🌟 [S]で始まる節の効果はSSTボーナス（盾0でトリガーした時のみ）として印を付ける
   for(const cl of clauses){
     const _before=fx.length;
+    if(/^[\[［]S[\]］]/.test(cl))_inSST=true;
     // 「〜してもよい。そうしなかった場合〜」の分岐（選択しなかった時のオマケ）は選択依存なので自動化しない
     if(/^(?:そうしなかった場合|しなかった場合|選ばなかった場合)/.test(cl))continue;
     // ⬇ 相手1体を選び、〔ゾーン〕の〔対象〕1体につき−N（オブザ08号型・可変マイナス）
@@ -12338,6 +12365,8 @@ function extractEffects(text,mode){
     // 「〔条件〕あれば/いれば/なら、〔効果〕」→ この句で追加した効果に条件（zoneCondOk式）を付与
     {const cm=cl.match(/^(.+?(?:あれば|いれば|なら))[、,]/);
      if(cm){const cond=condExprFrom(cm[1]);if(cond)for(let i=_before;i<fx.length;i++)if(!fx[i].cond)fx[i].cond=cond;}}
+    // 🌟 [S]節（SSTボーナス）の効果には sstOnly を付与 → 実行時に盾が1枚以上なら自動スキップ
+    if(_inSST)for(let i=_before;i<fx.length;i++)fx[i].sstOnly=true;
   }
   // 重複除去
   const seen=new Set();
@@ -12765,7 +12794,7 @@ function parseCardText(txt,mode){
    }}
   // 💡 未対応メカニズムの案内（手動運用）
   if(/\[S\]/.test(t))
-    out.notes.push("💡 [S]効果はスーパー・S・トリガーのボーナス（自分の盾0枚でトリガーした時のみ）です。盤面に🌟SSTバッジが出ている時だけ手動で処理してください");
+    out.notes.push("🌟 [S]効果（SSTボーナス）は自動登録されます：自分のシールドが0枚の時だけ実行され、1枚以上ある時は自動でスキップされます（効果行の「🌟[S]」チェックで確認できます）");
   if(/クロスギア\d*枚?を(?:バトルゾーンに出|クロス)/.test(t))
     out.notes.push("💡 クロスギアを出す／クロスする操作は手動です（ギアのカードメニュー→『⚙ クロスする』）");
   if(/ゲーム外から[^■。]{0,20}?シールド化/.test(t))
@@ -14020,7 +14049,7 @@ $("fxSave").addEventListener("click",async ()=>{
     cost2:$("fxCost2").value===""?null:+$("fxCost2").value,
     ctype:$("fxCType").value,
     civs:CIVS.filter(([id])=>$(id).checked).map(([,key])=>key),
-    st:$("fxST").checked,
+    st:$("fxST").checked||$("fxSST").checked, // 🌟 SSTはS・トリガーを内包：SSTがONならSTも自動でON（同時登録）
     sback:$("fxSBack").checked,
     sabaki:$("fxSabaki").checked,
     monsho:$("fxMonsho").checked,
@@ -22706,6 +22735,7 @@ $("btnHelp").addEventListener("click",()=>{
       ・「覚醒/龍解/禁断解放」→ 多面登録し、発動効果をその面の出た時効果に。対戦中「変形」で発動<br><br>
       <u>ロック・メタ</u><br>
       ・「相手は呪文を唱えられない」→「常在の呪文ロック」チェック（対象は <code>コスト5以下</code> 等）<br>
+      ・🆕 スーパー・S・トリガー：「S・トリガー」＋「スーパー・S・トリガー」の両方にチェック（⭐取り込みなら自動）。[S]効果は自動処理に登録され、効果行の<b>「🌟[S]」チェック</b>が付きます。実行時に自分のシールドが1枚以上あると自動でスキップ、0枚（SSTボーナス有効）の時だけ発動します。ブレイクパネルでは盾0の時に🌟SSTボーナス有効バッジが表示されます<br>
       ・🆕「相手は〔ゴッドまたはコスト4以下〕を召喚できない」→「常在ロック」の<b>「相手はクリーチャーを出せない」＋「召喚のみ禁止（踏み倒しは可）」</b>にチェック、対象条件に <code>ゴッド｜コスト4以下</code>（⭐取り込みなら自動）。「召喚できない」は踏み倒し・侵略・進化を止めません<br>
       ・「（攻撃中/このターン）相手は呪文を唱えられない」→ 常在にはしない（攻撃時に手動）<br>
       ・「相手は召喚以外でクリーチャーを出せない」→「相手は召喚以外〜」チェック<br><br>
