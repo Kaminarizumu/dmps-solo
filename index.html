@@ -2791,7 +2791,7 @@ async function refreshDeckSelects(){
 /* ================= game ================= */
 function buildPool(list){const a=[];list.forEach(c=>{for(let i=0;i<c.count;i++)a.push(makeCard(c.name));});return a;}
 function shuffleDeck(Z){
-  Z.deck.forEach(c=>c.sideways=false);
+  Z.deck.forEach(c=>{c.sideways=false;c.qqqxSide=false;c.qqxSide=false;}); // 🔀 シャッフルで横差し（Q.Q.QX等）は解除＝通常のカードに戻る（引いても特殊敗北しない）
   shuffle(Z.deck);
   try{
     document.querySelectorAll(".pile").forEach(pl=>{
@@ -5447,6 +5447,10 @@ async function destroyCreature(pi,c){
     }
   }
   Z.battle.splice(i,1);
+  // ☄ 破壊は「バトルゾーンを離れる」に含まれる：selfLeave（離れた時）誘発をここで一度だけ発火（ミルザム型・ヴィーナス型メテオバーン）
+  //    ※下敷き枚数を退避してから発火（この後グレイブ等へ散るため）
+  c._leaveUnder=(c.under&&c.under.length)||0;
+  if(S.expert)runWatchFx(pi,"selfLeave",c);
   qqqxLeaveShuffle(pi,c);
   if(c.gear&&c.gear.length){
     const gs=c.gear.splice(0);
@@ -7863,7 +7867,12 @@ function lockFilterOk(filt,r,c,lockPi,face){
     if(tk==="クロスギア")return !!(r&&(r.ctype==="crossgear"||r.ctype==="evocrossgear"));
      if(tk==="サイキック")return !!((r&&(r.ctype==="psychic"||r.ctype==="psyevo"))||(c&&c.isPsy));
      if(tk==="S・トリガー"||tk==="Sトリガー"||tk==="ST")return !!(r&&r.st);
-    if(tk==="クリーチャー")return !!(r&&r.ctype!=="spell");
+    if(tk==="クリーチャー"){
+      // 🃏 ツインパクトはどちらかの面がクリーチャーなら「クリーチャー」に合致（多面リンクで呪文面を向いていても回収対象・パラスラプト型）
+      if(r&&(r.twin||r.ctype==="twinpact"))return true;
+      if(c&&c.name){const lk=LINKS.get(normName(c.name));if(lk&&lk.length>1&&lk.some(k=>{const rf=FXDB.get(k);return rf&&rf.ctype!=="spell";}))return true;}
+      return !!(r&&r.ctype!=="spell");
+    }
     if(tk==="呪文")return !!(r&&(r.ctype==="spell"||r.twin||r.ctype==="twinpact")); // ツインパクトは呪文としても扱う
     if(tk==="ツインパクト")return !!(r&&(r.twin||r.ctype==="twinpact"));
     if(civMap[tk])return !!(r&&r.civs&&r.civs.includes(civMap[tk]));
@@ -12294,12 +12303,30 @@ function extractEffects(text,mode){
       const parts=[];if(civ)parts.push(civ);if(mCo)parts.push(`コスト${mCo[1]}${mCo[2]}`);
       fx.push({t:"handCastSpell",n:1,cond:parts.join("・")});
     }
+    // ⚰→🔷 「（自分の）墓地にある〔対象〕をすべてタップしてマナゾーンに置く。ただし〜使えるマナは増えない」（パラスラプト型・タップイン）
+    if(/(?:自分の)?墓地(?:にある|から)[^。■]*?(?:すべて|全て)?[^。■]*?タップして?マナ(?:ゾーン)?に置く/.test(cl)&&!/相手/.test(cl)){
+      const mGT=cl.match(/(?:自分の)?墓地(?:にある|から)([^。■]*?)を(?:すべて|全て)?タップして?マナ/);
+      let filt="";
+      const names=[...cl.matchAll(/《([^》]+)》/g)].map(m=>m[1]);
+      if(names.length)filt=names.join("／");
+      else if(mGT){
+        // 「自然のクリーチャー」→「自然／クリーチャー」、種族名なども対象条件へ
+        let seg=String(mGT[1]||"").replace(/にある|カード$/g,"").trim();
+        const parts=[];
+        const civM=seg.match(/(光|水|闇|火|自然|多色|単色|無色)/g);if(civM)parts.push(...civM);
+        if(/クリーチャー/.test(seg))parts.push("クリーチャー");else if(/呪文/.test(seg))parts.push("呪文");
+        const race=seg.replace(/(光|水|闇|火|自然|多色|単色|無色|の|クリーチャー|呪文|すべて|全て)/g,"").trim();
+        if(race&&race.length>=2)parts.push(race);
+        filt=[...new Set(parts)].join("／");
+      }
+      fx.push({t:"graveToManaAllTap",n:1,cond:filt});
+    }
     // マナ加速（山札上→マナ）
     if(/山札の上から.*?マナ(?:ゾーン)?に置く/.test(cl)||/マナ加速/.test(cl)){
       const n=numOf(cl,/上から(\d+)枚/); fx.push({t:(/タップして/.test(cl)||_noUsableMana)?"chargeTap":"charge",n});
     }
     // ↔ ゾーン間移動（〔元〕から〔マナ/墓地〕に置く）。元→先と対象を読み取る。手札/シールドへは専用検出に任せる
-    else if(/(?:自分の)?(墓地|手札|マナ(?:ゾーン)?|シールド|山札)から[^。■]*?(マナ(?:ゾーン)?|墓地)に置く/.test(cl)&&!/相手/.test(cl)){
+    else if(/(?:自分の)?(墓地|手札|マナ(?:ゾーン)?|シールド|山札)から[^。■]*?(マナ(?:ゾーン)?|墓地)に置く/.test(cl)&&!/相手/.test(cl)&&!/タップして?マナ/.test(cl)){
       const mm=cl.match(/(?:自分の)?(墓地|手札|マナ(?:ゾーン)?|シールド|山札)から[^。■]*?(マナ(?:ゾーン)?|墓地)に置く/);
       const norm=z=>z.replace(/ゾーン/,"");
       const fromJa=norm(mm[1]),toJa=norm(mm[2]);
@@ -15522,8 +15549,9 @@ function moveCardX(pFrom,fromZone,id,pTo,toZone,skipRep){
       }
     }
     // ☄ 離場時：下敷き枚数を退避（この後グレイブ等へ散るため）＋ selfLeave 誘発を発火（ヴィーナス型メテオバーン）
+    //    ※「破壊扱いにしない」で墓地へ移す場合（ドラッグで『いいえ』を選択）は離れた時扱いにしない
     c._leaveUnder=(c.under&&c.under.length)||0;
-    if(S.expert)runWatchFx(pFrom,"selfLeave",c);
+    if(S.expert&&!c._skipDestroy)runWatchFx(pFrom,"selfLeave",c);
   }
   if(fromZone==="battle"&&toZone!=="battle"){
     const ZF=zonesOf(pFrom);
@@ -18618,7 +18646,7 @@ function attachPointer(el,ctx){
           if(S.expert&&ctx.zone==="battle"&&tgt.zone==="grave"&&!(S.multi&&S.msel.some(x=>x.id===ctx.id))){
             const fD=findCard(ctx.p,ctx.zone,ctx.id);
             const rD=fD&&getReg(fD.card);
-            const hasDeathFx=rD&&((rD.watchFx&&rD.watchFx.some(wx=>wx.ev==="pig"||wx.ev==="toGrave"))||rD.etOmega||rD.escapePS||rD.repLeave);
+            const hasDeathFx=rD&&((rD.watchFx&&rD.watchFx.some(wx=>wx.ev==="pig"||wx.ev==="toGrave"||wx.ev==="selfLeave"))||rD.etOmega||rD.escapePS||rD.repLeave);
             const hasLeaveWatchers=S.expert&&[0,1].some(pp=>zonesOf(pp).battle.some(x=>{const rx=getReg(x);return rx&&rx.watchFx&&rx.watchFx.some(wx=>wx.ev==="myLeave"||wx.ev==="allyLeave"||wx.ev==="oppLeave"||wx.ev==="anyLeave");}));
             if(fD&&isSealed(fD.card)){toast(`🔒 ${fD.card.name} は封印されている！（離れません）`);}
             else if(hasDeathFx||hasLeaveWatchers){
