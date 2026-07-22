@@ -540,7 +540,10 @@ body.shake{animation:bodyShake .4s ease-out}
 .dl-item.open .dl-grid{display:grid}
 
 .fxrow{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin-top:8px;padding:8px;background:#0e1420;border:1px solid var(--line);border-radius:10px}
-.fxrow .fxr-top{display:flex;gap:6px;align-items:center;width:100%;flex-wrap:nowrap}
+.fxrow .fxr-top{display:flex;gap:6px;align-items:center;width:100%;flex-wrap:wrap}
+.fxrow .fxr-top select{min-width:0;flex:1 1 120px}
+.fxrow .fxr-top .btn{flex:0 0 auto}
+.fxrow .fxr-top>input{flex:0 0 56px}
 .fxrow .fxr-bot{display:flex;gap:10px;align-items:center;width:100%;flex-wrap:wrap}
 .fxrow .fxr-bot .fxr-cond{flex:1 1 100%;min-width:0}
 .fxrow .fxr-bot label{white-space:nowrap}
@@ -1611,6 +1614,7 @@ body.shake{animation:bodyShake .4s ease-out}
         </div>
         <label><input type="checkbox" id="fxStUnblock"> 自分のクリーチャー全てブロックされない（攻撃時アナウンス）</label>
         <label><input type="checkbox" id="fxStOriotis"> オリオティス（相手のマナ枚数よりコストが大きい相手クリーチャーが出たら山札の下へ）</label>
+        <label style="margin-left:18px" title="山札の下でなく破壊する（マグナム・ルピア型）。上のオリオティスと併用してください"><input type="checkbox" id="fxStOriotisDestroy"> └ かわりに破壊する（マグナム・ルピア型）</label>
         <label>🌀 相手ターン開始時、相手マナのアンタップを <input type="number" id="fxManaUntapN" min="0" max="99" style="width:58px" value="0"> 枚までに制限（0=制限なし・ガ・リュザーク型は3）</label>
         <label><input type="checkbox" id="fxNoUntap"> 常在：ターン開始時にアンタップしない（自身）</label>
         <label title="このクリーチャーは封印されない（禁断・零龍などの封印を受け付けない・パーフェクト・エイティー型）"><input type="checkbox" id="fxNoSeal"> 🔏 封印されない（自身・パーフェクト・エイティー型）</label>
@@ -3751,13 +3755,15 @@ function emitEvent(actor,type,card){
       const newsOri=AZ0.battle.filter(x=>x._oriNew); // 🌀 まだオリオティス判定を受けていない新着（TTLなし・取りこぼし防止）
       if(zonesOf(defO).battle.some(b=>{const rb=getReg(b);return rb&&rb.stOriotis;})||(S.oriotisTurn&&S.oriotisTurn[defO])){
         const manaN=AZ0.mana.length;
+        // 🌀 破壊版（マグナム・ルピア型）：所有者の場に stOriotisDestroy を持つカードがあれば「破壊」、無ければ従来の「山札の下」
+        const oriDestroy=zonesOf(defO).battle.some(b=>{const rb=getReg(b);return rb&&rb.stOriotis&&rb.stOriotisDestroy;});
         const hits=newsOri.filter(x=>!x._oriChk&&(()=>{const rx=getReg(x);return rx&&isCreatureReg(rx)&&rx.cost!=null&&rx.cost>manaN;})());
         for(const hc of hits){
           hc._oriChk=true;
           // ⏱ APNAP：処理順はターンプレイヤーで変わるため、専用キューに積んでポンプ側で振り分ける
           //   ・オリオティス所有者(defO)がターンプレイヤー → 出た時(CIP)より先に判定
           //   ・出した側(actor)がターンプレイヤー → 全CIP解決後に判定
-          ORI_QUEUE.push({actor,defO,hc,manaN});
+          ORI_QUEUE.push({actor,defO,hc,manaN,destroy:oriDestroy});
         }
         // オリオティス所有者がターンプレイヤーなら、CIPポンプ前に処理されるよう誘発ジョブでも起動（保険）
         if(S.who===defO)enqueueWatchJob(async()=>{await drainOriotis(true);});
@@ -9836,10 +9842,20 @@ async function drainOriotis(activeOnly){
     while(guard++<40){
       const ix=ORI_QUEUE.findIndex(o=>activeOnly?(S.who===o.defO):true);
       if(ix<0)break;
-      const {actor,defO,hc,manaN}=ORI_QUEUE.splice(ix,1)[0];
+      const {actor,defO,hc,manaN,destroy}=ORI_QUEUE.splice(ix,1)[0];
       const AZ0=zonesOf(actor);
       try{await MOVE_TAP_CHAIN;}catch(e){}
       if(!AZ0.battle.some(x=>x.id===hc.id))continue; // 既にバトルゾーンを離れていたら中止
+      // 🌀 破壊版（マグナム・ルピア型）
+      if(destroy){
+        const yesD=await ask(`🌀 マグナム・ルピア型！\n《${faceNameOf(hc)}》（コスト${getReg(hc).cost}）は${S.players[actor].label}のマナ（${manaN}枚）より大きい。\nこのクリーチャーを破壊しますか？`);
+        if(!yesD)continue;
+        snap();
+        await destroyCreature(actor,hc);
+        renderAll();
+        toast(`🌀 マグナム・ルピア：${faceNameOf(hc)} を破壊`);
+        continue;
+      }
       const yes=await ask(`🌀 オリオティス！\n《${faceNameOf(hc)}》（コスト${getReg(hc).cost}）は${S.players[actor].label}のマナ（${manaN}枚）より大きい。\n山札の一番下に置きますか？`);
       if(!yes)continue;
       snap();
@@ -11090,7 +11106,7 @@ function fxTrigRowEl(i){
   const row=document.createElement("div");row.className="fxrow";
   row.style.cssText="display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%";
   const ev=document.createElement("select");
-  ev.style.cssText="flex:1 1 42%;min-width:160px;max-width:100%";
+  ev.style.cssText="flex:1 1 130px;min-width:130px;max-width:100%";
   for(const [v,lb] of TRIG_EVS){const o=document.createElement("option");o.value=v;o.textContent=lb;if(v===f.ev)o.selected=true;ev.appendChild(o);}
   ev.onchange=()=>{f.ev=ev.value;};
   const evb=document.createElement("button");
@@ -11104,7 +11120,7 @@ function fxTrigRowEl(i){
     f.ev=v;ev.value=v;
   };
   const sel=document.createElement("select");
-  sel.style.cssText="flex:1 1 38%;min-width:150px;max-width:100%";
+  sel.style.cssText="flex:1 1 130px;min-width:130px;max-width:100%";
   buildFxTypeSelect(sel,f.t);
   fxAddSpecialOptions(sel,f.t);
   const num=document.createElement("select");
@@ -11988,6 +12004,7 @@ function renderFxEditor(){
   $("fxAGCond").value=FXEDIT.agCond||"";
   $("fxStUnblock").checked=!!FXEDIT.stUnblock;
   $("fxStOriotis").checked=!!FXEDIT.stOriotis;
+  {const e=$("fxStOriotisDestroy");if(e)e.checked=!!FXEDIT.stOriotisDestroy;}
   $("fxManaUntapN").value=FXEDIT.manaUntapN||0;
   $("fxStNoCheat").checked=!!FXEDIT.stNoCheat;
   {const e=$("fxStNoST");if(e)e.checked=!!FXEDIT.stNoST;}
@@ -12842,6 +12859,16 @@ function parseCardText(txt,mode){
     const cond=condFromPhrase(seg);
     if(cond){out.set.altCond=cond;out.notes.push(`💡 代替コストの条件式「${cond}」を自動設定（支払い数は代替コスト欄で指定）`);}
   }
+  // 🌀 オリオティス「相手が、自身のマナゾーンのカードの枚数よりコストが大きいクリーチャーを（バトルゾーンに）出した時、そのクリーチャーを〔破壊する／山札の一番下に置く〕」
+  {
+    const mOri=t.match(/相手が[、,]?[^■。]*?マナ(?:ゾーン)?(?:のカード)?の?枚数より?コストが(?:大きい|高い)クリーチャーを(?:バトルゾーンに)?出した時[、,]?そのクリーチャーを([^■。]*?)(?:する|置く)/);
+    if(mOri){
+      out.set.stOriotis=true;
+      if(/破壊/.test(mOri[1]))out.set.stOriotisDestroy=true;
+      out.notes.push({msg:`🌀 常在「相手が自分のマナ枚数よりコストの大きいクリーチャーを出したら${out.set.stOriotisDestroy?"破壊":"山札の下へ"}」を設定しました`,q:"オリオティス"});
+      out._oriClause=mOri[0]; // extractEffects前に tForFx から除去する
+    }
+  }
   // ── 本文中の「[ゾーン]に〜がN枚以上/以下」条件を候補として通知（該当効果の条件欄に貼れる）──
   // 💰 「〔墓地に名前《X》…がN枚以上〕あれば、召喚コストをn少なくする」（クロス・NEX型）→ 代替コスト（コスト−n）＋条件式を自動設定
   {const mSR=t.match(/([^■。]{4,60}?)(?:あれば|なら)[、,]?(?:このクリーチャーの)?召喚コストを(\d+)少なく/);
@@ -13207,6 +13234,7 @@ function parseCardText(txt,mode){
   }
   // 破壊された時（pig）誘発：その効果を誘発として登録し、出た時/常在の抽出からは除外する
   let tForFx=t;
+  if(out._oriClause){tForFx=tForFx.replace(out._oriClause,"■");delete out._oriClause;} // 🌀 オリオティス節を除去（destroyPick等の誤検出防止）
   {const mPig=t.match(/破壊された時[、,]?([\s\S]*?)(?=[■●]|$)/);
    if(mPig&&mPig[1]&&mPig[1].trim()){
      // 「そのターン中にn体以上破壊されていたら手札から出す」型は自身の破壊時（pig）ではないので誘発登録しない（文の除外だけ行う）
@@ -13814,6 +13842,7 @@ function openFxEditor(key){
     agCond:cur&&cur.agCond||"",
     stUnblock:cur?!!cur.stUnblock:false,
     stOriotis:cur?!!cur.stOriotis:false,
+    stOriotisDestroy:cur?!!cur.stOriotisDestroy:false,
     manaUntapN:cur?(cur.manaUntapN||0):0,
     stNoCheat:cur?!!cur.stNoCheat:false,
     stNoST:cur?!!cur.stNoST:false,
@@ -14150,6 +14179,7 @@ $("fxSave").addEventListener("click",async ()=>{
     agCond:$("fxAGCond").value.trim(),
     stUnblock:$("fxStUnblock").checked,
     stOriotis:$("fxStOriotis").checked,
+    stOriotisDestroy:$("fxStOriotisDestroy")?$("fxStOriotisDestroy").checked:false,
     manaUntapN:(parseInt($("fxManaUntapN").value,10)||0),
     stNoCheat:$("fxStNoCheat").checked,
     stNoST:$("fxStNoST")?$("fxStNoST").checked:false,
