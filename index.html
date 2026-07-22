@@ -692,6 +692,7 @@ body.shake{animation:bodyShake .4s ease-out}
         <button class="btn small primary" id="btnCardCivSearch">🔍 カードを探して追加（文明で絞る）</button>
         <span style="font-size:11px;color:var(--muted)">登録済みカードから選んで上のメインデッキ欄に追加</span>
       </div>
+      <div id="costCurve" style="margin:2px 0 6px"></div>
       <textarea id="grText" style="min-height:52px" placeholder="超GRゾーン12枚（不要なら空欄）"></textarea>
       <textarea id="hyText" style="min-height:52px" placeholder="超次元ゾーン8枚（不要なら空欄）"></textarea>
       <textarea id="spText" style="min-height:52px" placeholder="特殊カード（禁断/零龍など。ゲーム開始時に場に出ます。1行1枚）"></textarea>
@@ -2752,7 +2753,14 @@ function pickOneImageFile(){
   return new Promise(res=>{
     const inp=document.createElement("input");
     inp.type="file";inp.accept="image/*";
-    inp.onchange=()=>res((inp.files&&inp.files[0])||null);
+    inp.style.cssText="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0";
+    let done=false;
+    const finish=v=>{if(done)return;done=true;try{inp.remove();}catch(e){}res(v);};
+    inp.onchange=()=>finish((inp.files&&inp.files[0])||null);
+    // モバイルSafari/WKWebView対策：inputはDOMに接続してからclickしないとファイル選択が発火しない
+    document.body.appendChild(inp);
+    // キャンセル対策：ダイアログが閉じてフォーカスが戻り、少ししても未選択ならnullで解決（ハング防止）
+    window.addEventListener("focus",()=>{setTimeout(()=>{if(!done&&(!inp.files||!inp.files.length))finish(null);},800);},{once:true});
     inp.click();
   });
 }
@@ -3287,9 +3295,14 @@ async function runTurnEndTriggers(cur2){
             pick.faceup=true;pick.tapped=false;
             if(battleSlotFull(cur2)){ZK.grave.push(pick);toast(`🟥 バトルゾーン7面のため《${faceNameOf(pick)}》は墓地へ`);}
             else if(!battleEntryOk(cur2,pick)){ZK.deck.push(pick);toast(`⛔ 光臨：${faceNameOf(pick)} は出せないため山札の下へ`);}
-            else{ZK.battle.push(pick);markArrive(pick);emitEvent(cur2,"summon");enqueueFx(cur2,pick);toast(`🕊 P'S光臨！ ${faceNameOf(pick)} をバトルゾーンへ（残りは山札の下）`);}
+            else{ZK.battle.push(pick);markArrive(pick);emitEvent(cur2,"summon",pick);enqueueFx(cur2,pick);toast(`🕊 P'S光臨！ ${faceNameOf(pick)} をバトルゾーンへ（残りは山札の下）`);}
             renderAll();
+            // 🕊 光臨で出たクリーチャーの「出た時（CIP）」と召喚由来の誘発（allyEnter/oppSummon等）を、ターン終了中に処理し切る
+            TURN_END_PHASE="🕊 光臨で出たクリーチャーの出た時（CIP）を処理中";
             await waitFxIdle();
+            await WATCH_CHAIN;
+            await waitFxIdle();
+            TURN_END_PHASE="🕊 光臨の処理中（山札をめくって出すか選択してください）";
           }
         })();
       }
@@ -7248,21 +7261,12 @@ async function runFxList(pi,list,srcCard,inPump){
         sfx("tap");renderAll();
       }
     }else if(f.t==="breakOneAsk"){
-      // 💥 自分または相手のシールドをブレイク（S・トリガー処理つき）
-      for(let i=0;i<n;i++){
-        const side=await askChoice(`💥 ブレイクするのはどちらのシールド？（${i+1}/${n}）`,["自分のシールド","相手のシールド"]);
-        if(side===null)break;
+      // 💥 自分または相手のシールドをn枚ブレイク（同時ブレイク・S・トリガー一括処理）。側を1回だけ選び、まとめて割る
+      const side=await askChoice(`💥 どちらのシールドを${n>1?`${n}枚`:""}ブレイク？`,["自分のシールド","相手のシールド"]);
+      if(side!==null){
         const tp=side===0?pi:(pi===0?1:0);
-        const TZ=zonesOf(tp);
-        if(!TZ.shield.length){toast(`${S.players[tp].label}のシールドがありません`);continue;}
-        const si=await askChoice(`ブレイクするシールドを選択（${S.players[tp].label}）`,TZ.shield.map((x,i2)=>`盾${i2+1}${x.faceup?`（表：${faceNameOf(x)}）`:""}${x.under&&x.under.length?` +${x.under.length}`:""}`));
-        if(si===null)continue;
-        snap();
-        const sc=TZ.shield.splice(si,1)[0];
-        const stack=[sc,...(sc.under?sc.under.splice(0):[])];
-        sfx("break");
-        await processBroken(tp,stack,"効果によるブレイク");
-        renderAll();
+        if(!zonesOf(tp).shield.length){toast(`${S.players[tp].label}のシールドがありません`);}
+        else{ await breakShields(tp,n); renderAll(); }
       }
     }else if(f.t==="breakMineRandPeek"){
       // 🛡👁 自分のランダムなシールドをn枚、1枚ずつ「見てから」割るか選ぶ（ライオネル型）。割らなければそのまま盾に戻す
@@ -19156,6 +19160,7 @@ function openCardSheet(ctx){
   const masked=ctx.hidden;
   const link=LINKS.get(normName(c.name));
   const reg=getReg(c);
+  const isGear=reg&&(reg.ctype==="crossgear"||reg.ctype==="evocrossgear"); // クロスギアは攻撃・タップの対象外
   $("sheetName").textContent=(masked?"（相手の手札・非公開）":(c.faceup?faceNameOf(c):"（裏向き）"))+(S.vs?`　[${S.players[ctx.p].label}]`:"");
   $("sheetDesc").style.display="none";
   const box=$("sheetActions");box.innerHTML="";
@@ -19302,7 +19307,7 @@ function openCardSheet(ctx){
     inf.textContent=`🔒 封印中（${c.seals.length}）：クリーチャーとして扱われません。攻撃・効果・ゾーン移動は不可。まず封印を外してください`;
     box.appendChild(inf);
   }
-  if(ctx.zone==="battle"&&!isSealed(c)){
+  if(ctx.zone==="battle"&&!isSealed(c)&&!isGear){
     box.appendChild(actBtn("⚔ 攻撃する",()=>{startAttack(ctx.p,ctx.id);},"primary",true));
     if(S.vs)box.appendChild(actBtn("⚔ 相手クリーチャーとバトルする（効果によるバトル）",async ()=>{
       closeSheet();closeSel();
@@ -19406,7 +19411,7 @@ function openCardSheet(ctx){
       toast(`付与しました（${nextDur?"次の自分のターン開始まで持続":"ターン終了で解除"}・カード左下に表示）`);
     },"",true));
   }
-  if(ctx.zone==="battle"||ctx.zone==="mana"){
+  if((ctx.zone==="battle"&&!isGear)||ctx.zone==="mana"){
     box.appendChild(actBtn(c.tapped?"アンタップ":"タップ",()=>{c.tapped=!c.tapped;rerender();},"primary"));
   }
   if(ctx.zone==="mana"){
@@ -21566,7 +21571,7 @@ async function renameImageTo(key,nn){
 }
 function openImageManager(){
   $("vTitle").textContent=`登録画像の管理（${imgURL.size}枚）`;
-  $("vHint").textContent="画像をタップ → 名前の変更 / 削除ができます。";
+  $("vHint").textContent="画像をタップ → 名前の変更 / 削除ができます。検索は名前のほか文明（光水闇火自然無色）でも絞れます。";
   $("vOk").style.display="none";$("vStatus").textContent="";
   const search=$("vSearch");search.style.display="";search.value="";
   const g=$("vGrid");
@@ -21595,7 +21600,15 @@ function openImageManager(){
     let shown=0;
     for(const k of keys){
       const name=k==="__back__"?"（カード裏面）":(dispName.get(k)||k);
-      if(q&&k!=="__back__"&&!k.includes(q))continue;
+      if(q&&k!=="__back__"){
+        // 🎨 文明検索：入力に文明名（光水闇火自然無色/白青黒赤緑）が含まれれば、その文明のカードも対象にする
+        const CIVJP={"光":"light","水":"water","闇":"dark","火":"fire","自然":"nature","無色":"zero","ゼロ":"zero","白":"light","青":"water","黒":"dark","赤":"fire","緑":"nature"};
+        const civQ=[];for(const ch of search.value)if(CIVJP[ch]&&!civQ.includes(CIVJP[ch]))civQ.push(CIVJP[ch]);
+        const nameHit=k.includes(q);
+        let civHit=false;
+        if(civQ.length){const reg=FXDB.get(k);const cv=(reg&&reg.civs)||[];civHit=cv.length&&civQ.every(c=>cv.includes(c));}
+        if(!nameHit&&!civHit)continue;
+      }
       shown++;
       const el=vCardEl(k==="__back__"?"裏面":name);
       if(mgrSel.has(k))el.classList.add("picked");
@@ -22271,11 +22284,13 @@ function clearDeckEditor(){
   for(const id of ["deckName","deckText","grText","hyText","spText","exText"])$(id).value="";
   DECK_DIRTY=false;updateEditingBanner();
   $("deckStatus").textContent="";
+  renderCostCurve();
 }
 function openDeckPanel(){
   if(!DECK_DIRTY)clearDeckEditor();
   $("deckOlay").classList.add("open");
   refreshDeckSelects();
+  renderCostCurve();
 }
 $("btnSettings").addEventListener("click",openSettings);
 $("btnCloseSettings").addEventListener("click",()=>$("settingsOlay").classList.remove("open"));
@@ -22331,6 +22346,7 @@ $("btnNewDeck").addEventListener("click",async ()=>{
   toast("🆕 新規デッキ：まっさらな状態にしました");
 });
 $("btnSaveDeck").addEventListener("click",()=>doSaveDeck(false));
+$("deckText").addEventListener("input",renderCostCurve);
 $("btnSaveUseDeck").addEventListener("click",()=>doSaveDeck(true));
 $("btnLoadDeck").addEventListener("click",async ()=>{
   const name=$("deckSelect").value;if(!name)return;
@@ -22343,6 +22359,7 @@ $("btnLoadDeck").addEventListener("click",async ()=>{
   $("spText").value=listToText(d.sp||[]);
   DECK_DIRTY=false;updateEditingBanner();
   $("deckStatus").textContent=`「${name}」を編集欄に読み込みました`;
+  renderCostCurve();
 });
 $("btnViewDeck").addEventListener("click",async ()=>{
   const name=$("deckSelect").value;
@@ -22660,7 +22677,37 @@ $("importInput").addEventListener("change",async e=>{
 });
 
 /* ================= デッキ一覧 ================= */
-/* 📤 まとめて渡す：選択モード（true時はデッキ行にチェックボックスを表示）と選択集合 */
+/* 📊 コスト帯（マナカーブ）：メインデッキの各コストの枚数を棒グラフで表示 */
+function renderCostCurve(){
+  const el=$("costCurve");if(!el)return;
+  const entries=parseList($("deckText").value);
+  const buckets={};let unknown=0,total=0,has0=false;
+  for(const e of entries){
+    const r=FXDB.get(normName(e.name));
+    let cost=r&&Number.isFinite(r.cost)?r.cost:(r&&Number.isFinite(r.cost2)?r.cost2:null);
+    total+=e.count;
+    if(cost==null){unknown+=e.count;continue;}
+    if(cost<0)cost=0;
+    if(cost===0)has0=true;
+    const k=cost>=8?"8+":String(cost);
+    buckets[k]=(buckets[k]||0)+e.count;
+  }
+  if(!total){el.innerHTML="";return;}
+  const cols=(has0?["0"]:[]).concat(["1","2","3","4","5","6","7","8+"]);
+  const max=Math.max(1,...cols.map(k=>buckets[k]||0));
+  let bars="";
+  for(const k of cols){
+    const n=buckets[k]||0;
+    const h=Math.round((n/max)*40);
+    bars+=`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:14px">`
+      +`<span style="font-size:10px;line-height:1;height:12px;color:${n?"#c9a8ff":"var(--muted)"}">${n||""}</span>`
+      +`<div style="width:72%;height:${h}px;min-height:${n?2:0}px;background:${n?"#7b4bd6":"transparent"};border-radius:3px 3px 0 0"></div>`
+      +`<span style="font-size:10px;line-height:1.4;color:var(--muted)">${k}</span></div>`;
+  }
+  el.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:2px">📊 コスト帯（メイン${total}枚${unknown?` ／ コスト未登録 ${unknown}枚`:""}）</div>`
+    +`<div style="display:flex;align-items:flex-end;gap:3px;height:64px;background:#1a1730;border:1px solid #3a2f5a;border-radius:8px;padding:4px 6px">${bars}</div>`;
+}
+/* ================= デッキ一覧 ================= */
 let DL_PACK_MODE=false;
 const DL_PACK_SEL=new Set();
 async function renderDeckList(){
@@ -23594,6 +23641,7 @@ $("bCancel").addEventListener("click",()=>{
   $("exText").value=toText(B.counts.ex);
   $("builderOlay").classList.remove("open");
   $("deckStatus").textContent=`ビルダーの編集を保持しました：メイン${listTotal(parseList($("deckText").value))}枚。「保存して使用」で開始。`;
+  renderCostCurve();
 });
 $("bApply").addEventListener("click",()=>{
   const toText=m=>Array.from(m.entries()).sort((a,b)=>dispName.get(a[0]).localeCompare(dispName.get(b[0]),"ja")).map(([k,n])=>`${n} ${dispName.get(k)}`).join("\n");
@@ -23603,6 +23651,7 @@ $("bApply").addEventListener("click",()=>{
   $("exText").value=toText(B.counts.ex);
   $("builderOlay").classList.remove("open");
   $("deckStatus").textContent=`ビルダーから反映：メイン${listTotal(parseList($("deckText").value))}枚。「保存して使用」で開始。`;
+  renderCostCurve();
 });
 
 /* ================= init ================= */
