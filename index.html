@@ -5333,12 +5333,12 @@ async function checkZeroPower(){
       }
       if(!hit)break;
       toast(`💥 ${faceNameOf(hit)} はパワー0以下のため破壊`);
-      await destroyCreature(hitPi,hit);
+      await destroyCreature(hitPi,hit,{byZeroPow:true});
       renderAll();
     }
   }finally{ZERO_POW_RUNNING=false;}
 }
-async function destroyCreature(pi,c){
+async function destroyCreature(pi,c,opts){
   const Z=zonesOf(pi);
   const i=Z.battle.findIndex(x=>x.id===c.id);
   if(i<0)return;
@@ -5410,10 +5410,11 @@ async function destroyCreature(pi,c){
   if(S.expert){
     const rCX=getReg(c);
     const IGN=isIgnored(c,pi);
+    const byZeroPow=!!(opts&&opts.byZeroPow); // 💥 パワー0以下による破壊は「破壊されない」系（G・G・G/付与/条件常在/シールド・フォース）を貫通する。「離れない・とどまる」系（零龍/noLeave/COMPLEX等）と置換（EXライフ/エスケープ/サッヴァーク等）は従来どおり有効
     if(IGN&&rCX&&(rCX.ggg||rCX.sforceFx||rCX.cstCond||rCX.gimmick==="complex")){
       toast(`🚯 ${faceNameOf(c)} の能力は無視されている（破壊耐性なし）`);
     }
-    if(c.buff&&c.buff.noDestroy){
+    if(!byZeroPow&&c.buff&&c.buff.noDestroy){
       toast(`🪨 ${faceNameOf(c)} はこのターン破壊されない！`);
       return;
     }
@@ -5426,7 +5427,7 @@ async function destroyCreature(pi,c){
       toast(`⚓ ${faceNameOf(c)} はパワー0超のためバトルゾーンにとどまる！`);
       return;
     }
-    if(!IGN&&rCX&&rCX.cstCond&&(rCX.cstFx==="noDestroy"||rCX.cstFx==="noLeave")&&zoneCondOk(rCX.cstCond,pi,c)){
+    if(!IGN&&rCX&&rCX.cstCond&&((rCX.cstFx==="noDestroy"&&!byZeroPow)||rCX.cstFx==="noLeave")&&zoneCondOk(rCX.cstCond,pi,c)){
       toast(`✨ 条件常在（${rCX.cstCond}）：${faceNameOf(c)} は${rCX.cstFx==="noLeave"?"⚓離れない":"🪨破壊されない"}！`);
       return;
     }
@@ -5438,7 +5439,7 @@ async function destroyCreature(pi,c){
         return;
       }
     }
-    if(!IGN&&c.sfActive&&rCX&&rCX.sforceFx==="noDestroy"){
+    if(!IGN&&!byZeroPow&&c.sfActive&&rCX&&rCX.sforceFx==="noDestroy"){
       toast(`🪨✨ シールド・フォース有効中：${faceNameOf(c)} は破壊されない！`);
       return;
     }
@@ -5446,7 +5447,7 @@ async function destroyCreature(pi,c){
       toast(`⚓✨ シールド・フォース有効中：${faceNameOf(c)} は離れない！（パーフェクト・ギャラクシー型）`);
       return;
     }
-    if(!IGN&&rCX&&rCX.ggg==="noDestroy"&&Z.hand.length<=1){
+    if(!IGN&&!byZeroPow&&rCX&&rCX.ggg==="noDestroy"&&Z.hand.length<=1){
       toast(`🎸 G・G・G！ 手札${Z.hand.length}枚 → ${faceNameOf(c)} は破壊されない！`);
       return;
     }
@@ -5459,7 +5460,7 @@ async function destroyCreature(pi,c){
         if(Z.hand.length>1)return false; // 手札1枚以下という発動条件
         return lockFilterOk(rx.gggGrp||"",rCX,c);
       });
-      if(!IGN&&grpSaver){
+      if(!IGN&&!byZeroPow&&grpSaver){
         const self=(grpSaver.id===c.id);
         toast(`🎸 G・G・G（グループ）！ ${self?"":faceNameOf(grpSaver)+" の効果 → "}${faceNameOf(c)} は破壊されない！`);
         return;
@@ -12750,6 +12751,8 @@ function parseCardText(txt,mode){
     else if(/究極進化[：:]/.test(t))out.set.ctype="ultimate";
     else if(/NEO進化[：:]/.test(t)||/NEOクリーチャー/.test(t))out.set.ctype="neoevo";
     else if(/スター進化/.test(t))out.set.ctype="starevo";
+    else if(/[SＳ][-－ー‐]?\s*MAX進化/.test(t)&&/ゲームに負ける時/.test(t))out.set.ctype="onismaxevo"; // 鬼S-MAX進化（ジャオウガ型：負ける/離れる置換・離場は退化式で一番上を剥がす）
+    else if(/[SＳ][-－ー‐]?\s*MAX進化/.test(t))out.set.ctype="smaxevo"; // S-MAX進化
     else if(/G・?NEO進化/.test(t))out.set.ctype="gneo";
     else if(/ルナティック進化/.test(t))out.set.ctype="lunatic";
     else if(/進化クリーチャー/.test(t)&&/進化[：:‐\-－―]/.test(t))out.set.ctype="evo";
@@ -12774,6 +12777,22 @@ function parseCardText(txt,mode){
       if(mL)out.set.lunaTarget=mL[1].trim();
       const mc=tn.match(/ルナティック進化[^0-9]*?(\d+)/);
       if(mc)out.set.lunaCost=+mc[1];
+    }
+    // 🏷 種族抽出：「A／B」形式の種族行（効果記号・数値・文明のみの行は除外）。名前直後の行を想定。改行保持のため生テキストtxtを使う
+    if(!out.set.races){
+      const CIVW=["光","水","火","自然","闇","ゼロ","無色"];
+      for(const ln of String(txt).split(/\n/).map(s=>s.trim()).filter(Boolean)){
+        if(ln.length>40)continue;
+        if(/[■。：:0-9０-９()（）]/.test(ln))continue;
+        if(/進化|クリーチャー|呪文|コスト|パワー|ブレイカー|マナ|シールド|バトル|文明|レアリティ|タイプ/.test(ln))continue;
+        if(!/[\/／]/.test(ln))continue;
+        const toks=ln.split(/[\/／]/).map(x=>x.trim()).filter(Boolean);
+        if(toks.length<2||toks.length>5)continue;
+        if(!toks.every(x=>x.length>=2&&x.length<=12&&/^[ァ-ヶーぁ-ん一-龠・A-Za-zＡ-Ｚ号]+$/.test(x)))continue;
+        if(toks.every(x=>CIVW.includes(x)))continue;
+        out.set.races=toks.concat(["","","","",""]).slice(0,5);
+        break;
+      }
     }
   }
   // 🚩 革命N（盾N枚以下で追加能力）。「革命0トリガー」「革命チェンジ」は除外。
