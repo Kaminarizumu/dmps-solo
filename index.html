@@ -4845,6 +4845,7 @@ const FX_TYPES=[
   ["tapOpN","相手のクリーチャーをn体まで選んでタップ（「〜体までタップ」型）"],
   ["tapAnyN","⤵ クリーチャーをn体まで選んでタップ（両者どちらのクリーチャーでも対象・神光のカルマ ウイ型）"],
   ["foeFreezeAll","❄ 相手のクリーチャーすべては、次の相手のターンのはじめにアンタップしない（ボルパンサー型・タップはしない）"],
+  ["zenithSpark","🌟 自分の手札から最もコストの大きいカードをランダムに1枚表向きにし、そのコスト以下の相手クリーチャーをすべてタップ。表向きにしたのがゼニスなら、それらは次の相手のターン開始時にアンタップしない（創世と終焉のゼニスパーク型）"],
   ["turnEndUntapAll","🌙 このターン終了時、自分のクリーチャーをすべてアンタップする（ジャスティスの誓い型・唱えた/出したターンのみ）"],
   ["drawPerOppTapped","🃏 相手のタップしているクリーチャー1体につきカードを1枚引く（手札上限10枚まで・フラッシュ・スパーク型）"],
   ["pickCostSpellHand","🔢 数字を1つ選び、そのコストの呪文を山札から超探索して1枚公開し手札へ→シャッフル（ロジック・スパーク型）"],
@@ -6219,6 +6220,40 @@ async function runFxList(pi,list,srcCard,inPump){
       S.turnEndTasks=S.turnEndTasks||[];
       S.turnEndTasks.push({pi,t:"untapAllMine",by:srcCard?faceNameOf(srcCard):"効果"});
       toast(`🌙 このターン終了時、自分のクリーチャーをすべてアンタップします（予約）`);
+    }else if(f.t==="zenithSpark"){
+      // 🌟 創世と終焉のゼニスパーク型：手札から最もコストの大きいカードをランダムに1枚表向きに
+      //    → そのコスト以下の相手クリーチャーをすべてタップ → 表向きにしたのがゼニスなら、それらはフリーズ
+      const ZH=zonesOf(pi);
+      const known=ZH.hand.map(x=>{const rx=getReg(x);const cv=(rx&&rx.cost!=null&&rx.cost!=="")?(+rx.cost):null;return {c:x,cost:cv};})
+        .filter(o=>o.cost!=null&&!isNaN(o.cost));
+      if(!known.length){toast("🌟 手札にコストが登録されたカードがありません（カードのコストを登録してください）");renderAll();continue;}
+      const maxC=Math.max(...known.map(o=>o.cost));
+      const tops=known.filter(o=>o.cost===maxC);
+      const pick=tops[Math.floor(Math.random()*tops.length)];
+      const pc=pick.c,rp=getReg(pc);
+      const isZen=!!(rp&&raceMatch(rp,"ゼニス"));
+      sfx("flip");
+      toast(`🌟 手札から最もコストの大きいカードをランダムに表向き：${faceNameOf(pc)}（コスト${maxC}）${isZen?"／ゼニス！":""}`);
+      logOnly(`🌟 ゼニスパーク：${faceNameOf(pc)}（コスト${maxC}）を表向きにした${isZen?"（ゼニス）":""}`);
+      fxAnim(pc.id,"an-cip",700);
+      const OZz=zonesOf(op);
+      const tg=OZz.battle.filter(x=>{
+        const rx=getReg(x);
+        if(!rx||!isCreatureReg(rx))return false;
+        const cv=(rx.cost!=null&&rx.cost!=="")?(+rx.cost):null;
+        return cv!=null&&!isNaN(cv)&&cv<=maxC;
+      });
+      if(!tg.length){toast(`（コスト${maxC}以下の相手クリーチャーはいません）`);}
+      else{
+        let tn=0;
+        for(const b2 of tg){if(!b2.tapped){b2.tapped=true;tn++;}}
+        toast(`⚡ コスト${maxC}以下の相手クリーチャーをすべてタップ（${tg.length}体・新たにタップ${tn}体）`);
+        if(isZen){
+          tg.forEach(x=>{x.frozen=true;});
+          toast(`❄ ゼニスだった：それら${tg.length}体は次の相手のターン開始時にアンタップしない`);
+        }
+      }
+      renderAll();
     }else if(f.t==="foeFreezeAll"){
       // ❄ 相手のクリーチャーすべては次の相手のターンのはじめにアンタップしない（タップ状態は変えない・ボルパンサー型）
       const OZf=zonesOf(op);
@@ -14824,7 +14859,7 @@ function pickImage(title,hint){
       for(const k of keys){
         if(q&&!k.includes(q))continue;
         if(tf&&!typeMatch(k,tf))continue;
-        if(pickCivSel.size){const rC=FXDB.get(k);const cs=(rC&&rC.civs)||[];if(![...pickCivSel].every(cv=>cs.includes(cv)))continue;}
+        if(pickCivSel.size){const rC=FXDB.get(k);const cs=(rC&&rC.civs)||[];if(![...pickCivSel].some(cv=>cs.includes(cv)))continue;} // 選んだ文明のいずれかを含む（OR）
         const el=vCardEl(dispName.get(k));
         el.addEventListener("click",()=>{
           closeViewer();
@@ -23895,7 +23930,7 @@ function bRender(){
     const r=FXDB.get(k);const cs=(r&&r.civs)||[];
     if(civMulti&&cs.length<2)return false;
     if(!civSel.size)return true;
-    return [...civSel].every(cv=>cs.includes(cv)); // 選んだ文明を全て含む（光+水で光水多色 等）
+    return [...civSel].some(cv=>cs.includes(cv)); // 選んだ文明のいずれかを含む（光+水で 光単色/水単色/光水多色 すべて表示・「多色」と併用すると多色に限定）
   };
   const counts=B.counts[B.mode];
   const keys=Array.from(dispName.keys())
