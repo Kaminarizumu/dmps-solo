@@ -3295,7 +3295,7 @@ function nextTurn(){
     catch(e){ console.warn("turnEndTriggers",e); }
     finally{ NEXT_TURN_HOLD=Math.max(0,NEXT_TURN_HOLD-1); TURN_END_PHASE=""; NT_BLOCK_CNT=0; }
     if(_ntid!==NT_RUN_ID){ toast("（強制解除後のため、古いターン終了処理は破棄しました）"); return; }
-    finishNextTurn(cur);
+    await finishNextTurn(cur);
   })();
 }
 /* ⏳ ターン終了時誘発を直列処理。完了するまでターンは切り替わらない */
@@ -3451,7 +3451,7 @@ async function runTurnEndTriggers(cur2){
 }
 /* nextTurn 後半：実際のターン切替（who切替・アンタップ・ドロー・ターン開始時処理）。
    runTurnEndTriggers の完了後にのみ呼ばれる。 */
-function finishNextTurn(cur){
+async function finishNextTurn(cur){
   // 🌑 絶・無月の門はnextTurn冒頭のゲートで処理済み（ここでは何もしない）
   for(const P of S.players)P.zones.battle.forEach(c=>{
     if(c.buff&&c.buff._n&&c.buff._n.length){
@@ -3497,92 +3497,6 @@ function finishNextTurn(cur){
       else c.tapped=false;
     }
   });
-  if(S.expert){
-    // ギャラクシールド：ターンのはじめに表向き盾から召喚/詠唱（コスト支払い済み扱い）
-    const gsh=Z.shield.filter(x=>x.faceup&&(()=>{const r=getReg(x);return r&&r.galaxy;})());
-    if(gsh.length){
-      (async()=>{
-        for(const sc of [...gsh]){
-          const rS=getReg(sc);
-          const isSp=rS&&rS.ctype==="spell";
-          const go=await ask(`🛡 ギャラクシールド：《${faceNameOf(sc)}》が表向きの盾にあります。\nコストを支払ったものとして${isSp?"唱え":"召喚し"}ますか？`);
-          if(!go)continue;
-          snap();
-          const si=Z.shield.findIndex(x=>x.id===sc.id);
-          if(si<0)continue;
-          const rest=(sc.under&&sc.under.length)?sc.under.splice(0):[];
-          Z.shield.splice(si,1);
-          if(rest.length){const nh=rest.pop();nh.under=rest;Z.shield.splice(si,0,nh);}
-          sc.tapped=false;sc.faceup=true;
-          if(isSp){
-            if(Z.resolve.length){const olds=Z.resolve.splice(0);olds.forEach(o=>resolveOut(Z,o));}
-            Z.resolve.push(sc);
-            emitEvent(pi,"spell",sc);
-            toast(`🛡✨ ギャラクシールド：${faceNameOf(sc)} を唱えた（解決中へ）`);
-            enqueueFx(pi,sc);
-          }else{
-            Z.battle.push(sc);
-            markArrive(sc);
-            emitEvent(pi,"summon");
-            enqueueFx(pi,sc);
-            toast(`🛡✨ ギャラクシールド：${faceNameOf(sc)} を召喚した`);
-          }
-          sfx("ok");renderAll();
-        }
-      })();
-    }
-    const ts=Z.battle.filter(c=>{const r=getReg(c);return r&&r.watchFx&&r.watchFx.some(w=>w.ev==="turnStartMine");});
-    if(ts.length){
-      (async()=>{
-        for(const c of ts){
-          if(isIgnored(c,pi))continue;
-          const r=getReg(c);
-          const fx=r.watchFx.filter(w=>w.ev==="turnStartMine");
-          if(fx.length){toast(`⚡ターン開始時：${faceNameOf(c)}`);await runFxList(pi,fx,c);}
-        }
-        renderAll();
-      })();
-    }
-    // 🪦 ドレッド・ブラッド型：自分のターン開始時、墓地にあるこのカードは、自分のクリーチャーn体を破壊して墓地から出せる（任意）
-    const gRev=Z.grave.filter(c=>{const r=getReg(c);return r&&(+r.graveReviveN>0);});
-    if(gRev.length){
-      (async()=>{
-        for(const c of [...gRev]){
-          if(Z.grave.findIndex(x=>x.id===c.id)<0)continue; // まだ墓地にあるか
-          const r=getReg(c);
-          const needN=+r.graveReviveN||0;
-          const cres=()=>Z.battle.filter(x=>{const rx=getReg(x);return rx&&isCreatureReg(rx);});
-          if(cres().length<needN)continue; // n体破壊できないなら不発（「してもよい」＝できる時のみ）
-          const yes=await ask(`🪦 ${faceNameOf(c)}（墓地）\n自分のクリーチャー${needN}体を破壊して、このカードを墓地からバトルゾーンに出しますか？`);
-          if(!yes)continue;
-          // n体を選んで破壊
-          const chosen=[];
-          let aborted=false;
-          for(let k=0;k<needN;k++){
-            const pool=cres().filter(x=>!chosen.includes(x.id));
-            if(pool.length<1){aborted=true;break;}
-            const idx=pool.length===1?0:await pickCard(`💀 破壊する自分のクリーチャーを選択（${k+1}/${needN}）`,pool);
-            if(idx===null){aborted=true;break;}
-            chosen.push(pool[idx].id);
-          }
-          if(aborted||chosen.length<needN){toast("（破壊をキャンセルしました）");continue;}
-          snap();
-          for(const id of chosen){const t=Z.battle.find(x=>x.id===id);if(t)await destroyCreature(pi,t,{});}
-          // このカードを墓地からバトルゾーンへ（出た時も発火）
-          const gi=Z.grave.findIndex(x=>x.id===c.id);
-          if(gi>=0){
-            const dd=Z.grave.splice(gi,1)[0];
-            dd.faceup=true;dd.tapped=false;
-            Z.battle.push(dd);
-            markArrive(dd);emitEvent(pi,"summon");enqueueFx(pi,dd);
-            sfx("ok");toast(`🪦✨ ${faceNameOf(dd)} を墓地からバトルゾーンに出した`);
-          }
-          renderAll();
-        }
-        renderAll();
-      })();
-    }
-  }
   if(S.expert){
     const cpx=Z.battle.filter(c=>{const rc=getReg(c);return rc&&rc.gimmick==="complex";});
     if(cpx.length){
@@ -3677,6 +3591,94 @@ function finishNextTurn(cur){
   }
   Z.battle.forEach(c=>{c.sick=false;});
   if(jdN.length)toast(`🌀 ジャストダイバー終了：${jdN.join("、")}`);
+  // 🕐 自分のターンのはじめの誘発（ギャラクシールド／ターン開始時効果／墓地からの復活）は、
+  //    アンタップ・付与終了などの整理が終わったあと、ターン開始のドローより前に順番に処理する。
+  if(S.expert){
+    // ギャラクシールド：ターンのはじめに表向き盾から召喚/詠唱（コスト支払い済み扱い）
+    const gsh=Z.shield.filter(x=>x.faceup&&(()=>{const r=getReg(x);return r&&r.galaxy;})());
+    if(gsh.length){
+      await (async()=>{
+        for(const sc of [...gsh]){
+          const rS=getReg(sc);
+          const isSp=rS&&rS.ctype==="spell";
+          const go=await ask(`🛡 ギャラクシールド：《${faceNameOf(sc)}》が表向きの盾にあります。\nコストを支払ったものとして${isSp?"唱え":"召喚し"}ますか？`);
+          if(!go)continue;
+          snap();
+          const si=Z.shield.findIndex(x=>x.id===sc.id);
+          if(si<0)continue;
+          const rest=(sc.under&&sc.under.length)?sc.under.splice(0):[];
+          Z.shield.splice(si,1);
+          if(rest.length){const nh=rest.pop();nh.under=rest;Z.shield.splice(si,0,nh);}
+          sc.tapped=false;sc.faceup=true;
+          if(isSp){
+            if(Z.resolve.length){const olds=Z.resolve.splice(0);olds.forEach(o=>resolveOut(Z,o));}
+            Z.resolve.push(sc);
+            emitEvent(pi,"spell",sc);
+            toast(`🛡✨ ギャラクシールド：${faceNameOf(sc)} を唱えた（解決中へ）`);
+            enqueueFx(pi,sc);
+          }else{
+            Z.battle.push(sc);
+            markArrive(sc);
+            emitEvent(pi,"summon");
+            enqueueFx(pi,sc);
+            toast(`🛡✨ ギャラクシールド：${faceNameOf(sc)} を召喚した`);
+          }
+          sfx("ok");renderAll();
+        }
+      })();
+    }
+    const ts=Z.battle.filter(c=>{const r=getReg(c);return r&&r.watchFx&&r.watchFx.some(w=>w.ev==="turnStartMine");});
+    if(ts.length){
+      await (async()=>{
+        for(const c of ts){
+          if(isIgnored(c,pi))continue;
+          const r=getReg(c);
+          const fx=r.watchFx.filter(w=>w.ev==="turnStartMine");
+          if(fx.length){toast(`⚡ターン開始時：${faceNameOf(c)}`);await runFxList(pi,fx,c);}
+        }
+        renderAll();
+      })();
+    }
+    // 🪦 ドレッド・ブラッド型：自分のターン開始時、墓地にあるこのカードは、自分のクリーチャーn体を破壊して墓地から出せる（任意）
+    const gRev=Z.grave.filter(c=>{const r=getReg(c);return r&&(+r.graveReviveN>0);});
+    if(gRev.length){
+      await (async()=>{
+        for(const c of [...gRev]){
+          if(Z.grave.findIndex(x=>x.id===c.id)<0)continue; // まだ墓地にあるか
+          const r=getReg(c);
+          const needN=+r.graveReviveN||0;
+          const cres=()=>Z.battle.filter(x=>{const rx=getReg(x);return rx&&isCreatureReg(rx);});
+          if(cres().length<needN)continue; // n体破壊できないなら不発（「してもよい」＝できる時のみ）
+          const yes=await ask(`🪦 ${faceNameOf(c)}（墓地）\n自分のクリーチャー${needN}体を破壊して、このカードを墓地からバトルゾーンに出しますか？`);
+          if(!yes)continue;
+          // n体を選んで破壊
+          const chosen=[];
+          let aborted=false;
+          for(let k=0;k<needN;k++){
+            const pool=cres().filter(x=>!chosen.includes(x.id));
+            if(pool.length<1){aborted=true;break;}
+            const idx=pool.length===1?0:await pickCard(`💀 破壊する自分のクリーチャーを選択（${k+1}/${needN}）`,pool);
+            if(idx===null){aborted=true;break;}
+            chosen.push(pool[idx].id);
+          }
+          if(aborted||chosen.length<needN){toast("（破壊をキャンセルしました）");continue;}
+          snap();
+          for(const id of chosen){const t=Z.battle.find(x=>x.id===id);if(t)await destroyCreature(pi,t,{});}
+          // このカードを墓地からバトルゾーンへ（出た時も発火）
+          const gi=Z.grave.findIndex(x=>x.id===c.id);
+          if(gi>=0){
+            const dd=Z.grave.splice(gi,1)[0];
+            dd.faceup=true;dd.tapped=false;
+            Z.battle.push(dd);
+            markArrive(dd);emitEvent(pi,"summon");enqueueFx(pi,dd);
+            sfx("ok");toast(`🪦✨ ${faceNameOf(dd)} を墓地からバトルゾーンに出した`);
+          }
+          renderAll();
+        }
+        renderAll();
+      })();
+    }
+  }
   draw(pi,1);
   toast(`ターン ${S.turn}：${S.players[pi].label} のターン${extra?"（⚡エクストラターン！）":""}（アンタップ＆ドロー）`);
   if(S.expert){
@@ -3827,15 +3829,26 @@ function runWatchFx(pi,type,trigCard){
         const _oks=_onceKeys.slice();
         // ⏱ APNAP：CIPポンプ稼働中の誘発は保留キューへ（ターンプレイヤーの誘発はCIP前・非ターン側は全CIP後に処理）。
         //    ポンプ停止中（攻撃時誘発など）は従来通り即時ジョブ＝挙動不変。
+        const _job=async()=>{
+          toast(`⚡誘発処理：${faceNameOf(c)}`);
+          await runFxList(pi,fx,c);
+          S._watchOnce=S._watchOnce||{};
+          for(const k of _oks)S._watchOnce[k]=`${S.turn}:${S.who}`;
+        };
         if(S.expert&&S.vs&&fxRunning){
           TRIG_PENDING.push({pi,fx,c,onceKeys:_oks});
-        }else{
-          enqueueWatchJob(async()=>{
-            toast(`⚡誘発処理：${faceNameOf(c)}`);
-            await runFxList(pi,fx,c);
-            S._watchOnce=S._watchOnce||{};
-            for(const k of _oks)S._watchOnce[k]=`${S.turn}:${S.who}`;
+        }else if(S.expert&&(type==="allyEnter"||type==="allyEvo")){
+          // 🕐 出た時の誘発（キューティ・ルピア型＝盤面に居るカードの常在的な誘発）は、
+          //    出たカード自身のCIPより先に処理する（デュエプレ実機の挙動）。
+          //    この時点ではまだCIPポンプが起動していないことがあるため、1マイクロタスク待ってから判定し、
+          //    ポンプ稼働中なら保留キューへ回す。保留キューはCIP解決の直前に処理されるので、
+          //    CIPの途中で墓地に落ちたカードの「墓地に置かれた時」（ゾルザーク型）よりも先に解決される。
+          Promise.resolve().then(()=>{
+            if(fxRunning)TRIG_PENDING.push({pi,fx,c,onceKeys:_oks});
+            else enqueueWatchJob(_job);
           });
+        }else{
+          enqueueWatchJob(_job);
         }
       }
     }
@@ -4037,7 +4050,7 @@ async function findByCond(pi){
   const c=Z.deck.splice(idx,1)[0];
   const dst=await askChoice(`《${c.name}》の行き先`,["手札へ","バトルへ","マナへ","墓地へ","シールドへ（裏）","シールドへ（表向き）","解決中へ"]);
   c.faceup=true;c.tapped=false;
-  if(dst===1){if(!battleEntryOk(pi,c)){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}else{const ok=await summonCreatureNeoAware(pi,c,{});if(!ok){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}}}
+  if(dst===1){if(!battleEntryOk(pi,c)){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}else{await summonCreatureNeoAware(pi,c,{});}}
   else if(dst===2)Z.mana.push(c);
   else if(dst===3)Z.grave.push(c);
   else if(dst===4||dst===5){
@@ -4092,7 +4105,7 @@ async function searchZone(pi,zone,kinds){
   const c=src.splice(idx,1)[0];
   const dst=await askChoice(`《${c.name}》の行き先`,["手札へ","バトルへ","マナへ","墓地へ","シールドへ（裏）","シールドへ（表向き）","解決中へ"]);
   c.faceup=true;c.tapped=false;
-  if(dst===1){if(!battleEntryOk(pi,c)){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}else{const ok=await summonCreatureNeoAware(pi,c,{});if(!ok){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}}}
+  if(dst===1){if(!battleEntryOk(pi,c)){Z.hand.push(c);markArrive(c);toast(`（出せないため手札へ）`);}else{await summonCreatureNeoAware(pi,c,{});}}
   else if(dst===2)Z.mana.push(c);
   else if(dst===3)Z.grave.push(c);
   else if(dst===4||dst===5){
@@ -5225,7 +5238,7 @@ async function autoTapCost(pi,c){
     {const mZ=String(w).match(/^(墓地|マナ|手札|山札|盾|シールド|バトル)[:：]/);
      if(mZ){symZone={"墓地":"grave","マナ":"mana","手札":"hand","山札":"deck","盾":"shield","シールド":"shield","バトル":"battle"}[mZ[1]];w=String(w).slice(mZ[0].length);}}
     const toks=String(w).split(/[／\/、,]/).map(x=>x.trim()).filter(Boolean);
-    const srcZone=Z[symZone]||Z.battle;
+    const srcZone=zoneCards(Z,symZone||"battle"); // ⚙ バトルはクロス中のギアも含む
     const cnt=srcZone.filter(b=>{
       if(b.id===c.id)return false;
       const rb=getReg(b);
@@ -7293,7 +7306,7 @@ async function runFxList(pi,list,srcCard,inPump){
       const mZ=spec.match(/^(墓地|マナ|手札|山札|盾|シールド|バトル)[:：](.*)$/);
       const zoneKey=mZ?{"墓地":"grave","マナ":"mana","手札":"hand","山札":"deck","盾":"shield","シールド":"shield","バトル":"battle"}[mZ[1]]:"grave";
       const filt=mZ?mZ[2].trim():spec;
-      const srcZone=zonesOf(pi)[zoneKey]||[];
+      const srcZone=zoneCards(zonesOf(pi),zoneKey); // ⚙ バトルはクロス中のギアもエレメントとして数える
       const cnt=srcZone.filter(x=>{const rx=getReg(x);if(!rx)return false;if(!filt||filt==="クリーチャー")return isCreatureReg(rx);return lockFilterOk(filt,rx,x);}).length;
       const amt=cnt*(n||1)*1000;
       const pool=zonesOf(op).battle.filter(x=>{const rx=getReg(x);return rx&&isCreatureReg(rx);});
@@ -8117,10 +8130,20 @@ function handesBlockedBy(owner){
   return zonesOf(owner).battle.find(x=>{const rx=getReg(x);return rx&&rx.stNoHandes&&!isSealed(x);})||null;
 }
 /* ---- 常在ロック（呪文/クリーチャー制限）＆ターン限定ロック ---- */
+/* ⚙ ゾーンのカード一覧。バトルゾーンはクロス中のクロスギアもエレメントとして含める
+   （クロスギアはクリーチャーに重ねて表示されるためZ.battle配列には入らない） */
+function zoneCards(Z,zoneKey){
+  if(!Z)return [];
+  const arr=Z[zoneKey]||[];
+  if(zoneKey!=="battle")return arr;
+  const out=[...arr];
+  for(const b of arr){if(b.gear&&b.gear.length)out.push(...b.gear);}
+  return out;
+}
 /* ゾーンの対象枚数（動的コストロック用）：zn例「マナ」、filt例「スノーフェアリー」 */
 function zoneCountSimple(zn,filt,pi){
   const zmap={"マナ":"mana","墓地":"grave","手札":"hand","盾":"shield","シールド":"shield","バトル":"battle","山札":"deck"};
-  const Z=zonesOf(pi);const arr=(Z&&Z[zmap[zn]])||[];
+  const Z=zonesOf(pi);const arr=zoneCards(Z,zmap[zn]);
   if(!filt)return arr.length;
   return arr.filter(x=>{const rr=getReg(x);return (rr&&raceMatch(rr,filt))||String(x.name||"").includes(filt);}).length;
 }
@@ -8891,7 +8914,7 @@ function dispCost(c,pi){
       const mZ=String(w).match(/^(墓地|マナ|手札|山札|盾|シールド|バトル)[:：]/);
       if(mZ){symZone={"墓地":"grave","マナ":"mana","手札":"hand","山札":"deck","盾":"shield","シールド":"shield","バトル":"battle"}[mZ[1]];w=String(w).slice(mZ[0].length);}
       const toks=String(w).split(/[／\/、,]/).map(x=>x.trim()).filter(Boolean);
-      const srcZone=zonesOf(pi)[symZone]||zonesOf(pi).battle;
+      const srcZone=zoneCards(zonesOf(pi),symZone||"battle"); // ⚙ バトルはクロス中のギアも含む
       const cnt=srcZone.filter(b=>{
         if(b.id===c.id)return false;const rb=getReg(b);
         return toks.some(tk=>{
@@ -9861,6 +9884,11 @@ async function breakShields(op,count,attacker,forceIdx){
     }
   }
   if(idxs!=null){}
+  else if(Array.isArray(forceIdx)){
+    // 🛡 複数枚を同時にブレイク（まとめてブレイク）：指定された盾をまとめて1回の処理で割る
+    idxs=[...new Set(forceIdx.filter(i=>i>=0&&i<OZ.shield.length))];
+    if(!idxs.length){toast("ブレイクするシールドがありません");return;}
+  }
   else if(forceIdx!=null&&total===1){
     idxs=[forceIdx];
   }else if(OZ.shield.length<=total){
@@ -20180,14 +20208,20 @@ function openCardSheet(ctx){
       const rr=getReg(cc);
       const evoS=isEvoReg(rr);
       cc.sick=(S.turn>0)&&!evoS&&!(rr&&rr.sa);
-      zonesOf(ctx.p).battle.push(cc);
-      markArrive(cc);
+      closeSheet();closeSel();closeViewer();
       if(S.expert&&S.autoTap&&!S.freePlay){
         MOVE_TAP_CHAIN=MOVE_TAP_CHAIN.then(()=>autoTapCost(ctx.p,cc)).catch(()=>{});
       }
-      emitEvent(ctx.p,"summon");
-      enqueueFx(ctx.p,cc);
-      closeSheet();closeSel();closeViewer();sfx("ok");renderAll();
+      // 🧬 NEOクリーチャー／進化クリーチャーは「NEO進化として重ねる／そのまま出す」を選べる経路で出す
+      //    （マナ・墓地からの召喚でも手札召喚と同じ選択パネルが出る）
+      const okS=await summonCreatureNeoAware(ctx.p,cc,{});
+      if(!okS){
+        // 出せなかった場合（ドリーム同名・バトルゾーン上限）は、その処理の中で
+        // 既に手札／墓地へ置かれているのでここでは何もしない（二重配置の防止）
+        renderAll();
+        return;
+      }
+      sfx("ok");renderAll();
       toast(`⚔ 召喚：${faceNameOf(cc)}（${zlbl}から・コスト支払い）`);
       await waitFxIdle();renderAll();
     },"primary",true));
@@ -20850,12 +20884,11 @@ function openMultiSheet(){
         const byP=new Map();
         for(const s of shSel){if(!byP.has(s.p))byP.set(s.p,[]);byP.get(s.p).push(s.id);}
         for(const [pp,ids2] of byP){
-          for(const sid of ids2){
-            const ZP=zonesOf(pp);
-            const idx=ZP.shield.findIndex(x=>x.id===sid);
-            if(idx<0)continue; // 置換等で既に無い
-            await breakShields(pp,1,null,idx);
-          }
+          const ZP=zonesOf(pp);
+          // 選んだ盾のインデックスをまとめて渡し、1回の処理で同時にブレイクする
+          const idxs=ids2.map(sid=>ZP.shield.findIndex(x=>x.id===sid)).filter(i=>i>=0);
+          if(!idxs.length)continue; // 置換等で既に無い
+          await breakShields(pp,idxs.length,null,idxs);
         }
         endMulti();renderAll();
       },"primary"));
@@ -23835,7 +23868,7 @@ function zoneCondOk(expr,pi,selfCard){
       const key=nm.replace(/^相手/,"").replace(/^自分の?/,"");
       const ZZ=opp?OZ:Z;
       const map={"盾":"shield","墓地":"grave","手札":"hand","バトル":"battle","マナ":"mana","山札":"deck"};
-      return map[key]!=null?ZZ[map[key]].length:null;
+      return map[key]!=null?zoneCards(ZZ,map[key]).length:null; // ⚙ バトルはクロス中のギアも含む
     };
     return terms.every(t=>{
       if(t==="相手ターン"||t==="相手のターン")return S.who!==pi;
